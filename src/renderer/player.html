@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>七星追剧 - 播放器</title>
+    <link rel="stylesheet" href="css/player.css">
+</head>
+
+<body>
+    <div id="player-app">
+        <!-- 播放器容器 - 全屏布局 -->
+        <div class="player-container">
+            <video id="video-player" controls autoplay>
+                您的浏览器不支持视频播放。
+            </video>
+
+            <!-- 悬浮控制栏 -->
+            <div class="player-overlay" id="player-overlay">
+                <div class="overlay-header">
+                    <div class="video-info">
+                        <h3 id="video-title">视频标题</h3>
+                        <span id="video-episode">正片</span>
+                    </div>
+                    <div class="overlay-controls">
+                        <button id="toggle-episodes" class="btn-control" title="显示/隐藏选集">
+                            <span class="icon">📋</span>
+                        </button>
+                        <button id="prev-episode" class="btn-control" disabled title="上一集">
+                            <span class="icon">⏮️</span>
+                        </button>
+                        <button id="next-episode" class="btn-control" title="下一集">
+                            <span class="icon">⏭️</span>
+                        </button>
+                        <button id="close-player" class="btn-close" title="关闭播放器">
+                            <span class="icon">❌</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 加载状态 -->
+            <div id="player-loading" class="player-loading hidden">
+                <div class="loading-spinner"></div>
+                <p>视频加载中...</p>
+            </div>
+
+            <!-- 错误状态 -->
+            <div id="player-error" class="player-error hidden">
+                <p>视频加载失败，请重试</p>
+                <button id="retry-btn" class="btn-retry">重试</button>
+            </div>
+        </div>
+
+        <!-- 可收纳的选集列表 -->
+        <div class="episode-panel" id="episode-panel">
+            <div class="episode-panel-header">
+                <h4>播放列表</h4>
+                <button id="close-episodes" class="btn-panel-close" title="关闭选集面板">
+                    <span class="icon">❌</span>
+                </button>
+            </div>
+
+            <!-- 线路选择区域 -->
+            <div class="route-selection" id="route-selection">
+                <div class="route-tabs" id="route-tabs"></div>
+            </div>
+
+            <!-- 剧集列表区域 -->
+            <div class="episode-list">
+                <div id="episodes" class="episodes"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="js/player.js"></script>
+</body>
+
+</html>

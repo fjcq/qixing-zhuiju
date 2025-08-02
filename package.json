@@ -1,0 +1,60 @@
+{
+    "name": "qixing-zhuiju",
+    "version": "1.0.0",
+    "description": "七星追剧 - 播放苹果CMS资源站的影视节目",
+    "main": "main.js",
+    "scripts": {
+        "start": "electron .",
+        "build": "electron-builder",
+        "dev": "electron . --dev",
+        "dist": "electron-builder --win"
+    },
+    "keywords": [
+        "electron",
+        "video",
+        "player",
+        "cms"
+    ],
+    "author": "止水制造",
+    "license": "MIT",
+    "devDependencies": {
+        "electron": "^27.0.0",
+        "electron-builder": "^24.6.4"
+    },
+    "dependencies": {
+        "axios": "^1.5.0",
+        "hls.js": "^1.4.12"
+    },
+    "build": {
+        "appId": "com.qxyys.zj",
+        "productName": "七星追剧",
+        "directories": {
+            "output": "dist"
+        },
+        "files": [
+            "**/*",
+            "!**/node_modules/*/{README.md,README,readme.md,readme}",
+            "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+            "!**/node_modules/*.d.ts",
+            "!**/node_modules/.bin",
+            "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+            "!.editorconfig",
+            "!**/._*",
+            "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+            "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+            "!**/{appveyor.yml,.travis.yml,circle.yml}",
+            "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+        ],
+        "win": {
+            "target": "dir",
+            "icon": "assets/icon.png",
+            "certificateFile": null,
+            "certificateSha1": null,
+            "sign": null
+        },
+        "nsis": {
+            "oneClick": false,
+            "allowToChangeInstallationDirectory": true
+        }
+    }
+}
