@@ -11,6 +11,61 @@ class QixingZhuijuApp {
             page: 1,
             totalPages: 1
         };
+
+        // 初始化标题栏控制
+        this.initializeTitlebarControls();
+    }
+
+    // 初始化标题栏控制
+    initializeTitlebarControls() {
+        // 如果DOM已经加载完成，直接初始化
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            this.setupTitlebarEvents();
+        } else {
+            // 否则等待DOM加载完成
+            document.addEventListener('DOMContentLoaded', () => {
+                this.setupTitlebarEvents();
+            });
+        }
+    }
+
+    // 设置标题栏事件
+    setupTitlebarEvents() {
+        // 最小化按钮
+        const minimizeBtn = document.getElementById('minimize-btn');
+        if (minimizeBtn) {
+            minimizeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (window.electron && window.electron.window) {
+                    window.electron.window.minimize();
+                }
+            });
+        }
+
+        // 最大化/还原按钮
+        const maximizeBtn = document.getElementById('maximize-btn');
+        if (maximizeBtn) {
+            maximizeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (window.electron && window.electron.window) {
+                    window.electron.window.maximize();
+                }
+            });
+        }
+
+        // 关闭按钮
+        const closeBtn = document.getElementById('close-btn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (window.electron && window.electron.window) {
+                    window.electron.window.close();
+                }
+            });
+        }
     }
 
     // 初始化应用
@@ -27,6 +82,9 @@ class QixingZhuijuApp {
 
             // 加载初始数据
             await this.loadInitialData();
+
+            // 加载并显示版本号
+            await this.loadVersionInfo();
 
             // 清理过期数据
             this.storageService.cleanupOldData();
@@ -201,6 +259,50 @@ class QixingZhuijuApp {
 
         // 加载推荐视频
         await this.loadRecommendedVideos();
+    }
+
+    // 加载并显示版本号
+    async loadVersionInfo() {
+        try {
+            const versionElement = document.getElementById('version-info');
+            const aboutVersionElement = document.getElementById('about-version');
+
+            // 尝试从主进程获取版本号
+            if (window.electron && window.electron.ipcRenderer) {
+                const version = await window.electron.ipcRenderer.invoke('get-app-version');
+                if (version) {
+                    const versionText = `v${version}`;
+                    if (versionElement) {
+                        versionElement.textContent = versionText;
+                    }
+                    if (aboutVersionElement) {
+                        aboutVersionElement.textContent = versionText;
+                    }
+                    return;
+                }
+            }
+
+            // 如果无法从主进程获取，使用默认版本号
+            const defaultVersion = 'v1.2.0';
+            if (versionElement) {
+                versionElement.textContent = defaultVersion;
+            }
+            if (aboutVersionElement) {
+                aboutVersionElement.textContent = defaultVersion;
+            }
+        } catch (error) {
+            console.warn('获取版本号失败:', error);
+            // 使用默认版本号
+            const defaultVersion = 'v1.2.0';
+            const versionElement = document.getElementById('version-info');
+            const aboutVersionElement = document.getElementById('about-version');
+            if (versionElement) {
+                versionElement.textContent = defaultVersion;
+            }
+            if (aboutVersionElement) {
+                aboutVersionElement.textContent = defaultVersion;
+            }
+        }
     }
 
     // 加载站点选择器

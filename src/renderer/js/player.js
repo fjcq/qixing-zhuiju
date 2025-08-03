@@ -11,6 +11,61 @@ class VideoPlayer {
         this.isAutoNext = true;
         this.playbackHistory = [];
         this.storageService = null; // 添加存储服务引用
+
+        // 初始化标题栏控制
+        this.initializeTitlebarControls();
+    }
+
+    // 初始化标题栏控制
+    initializeTitlebarControls() {
+        // 如果DOM已经加载完成，直接初始化
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            this.setupTitlebarEvents();
+        } else {
+            // 否则等待DOM加载完成
+            document.addEventListener('DOMContentLoaded', () => {
+                this.setupTitlebarEvents();
+            });
+        }
+    }
+
+    // 设置标题栏事件
+    setupTitlebarEvents() {
+        // 最小化按钮
+        const minimizeBtn = document.getElementById('minimize-btn');
+        if (minimizeBtn) {
+            minimizeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (window.electron && window.electron.window) {
+                    window.electron.window.minimize();
+                }
+            });
+        }
+
+        // 最大化/还原按钮
+        const maximizeBtn = document.getElementById('maximize-btn');
+        if (maximizeBtn) {
+            maximizeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (window.electron && window.electron.window) {
+                    window.electron.window.maximize();
+                }
+            });
+        }
+
+        // 关闭按钮
+        const closeBtn = document.getElementById('close-btn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (window.electron && window.electron.window) {
+                    window.electron.window.close();
+                }
+            });
+        }
     }
 
     // 初始化播放器
@@ -693,14 +748,6 @@ class VideoPlayer {
         if (nextBtn) {
             nextBtn.addEventListener('click', () => {
                 this.playNextEpisode();
-            });
-        }
-
-        // 关闭播放器按钮
-        const closeBtn = document.getElementById('close-player');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => {
-                this.closePlayer();
             });
         }
 

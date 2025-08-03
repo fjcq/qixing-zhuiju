@@ -272,7 +272,11 @@ class QixingZhuiju {
                 preload: path.join(__dirname, 'src', 'preload.js')
             },
             icon: path.join(__dirname, 'assets', 'icon.png'),
-            titleBarStyle: 'default',
+            frame: false,  // 取消标题栏
+            transparent: true,  // 启用透明窗口
+            backgroundColor: '#00000000',  // 完全透明的背景
+            vibrancy: 'dark',  // macOS亚克力效果（仅macOS）
+            backgroundMaterial: 'acrylic',  // Windows亚克力效果（仅Windows 10+）
             autoHideMenuBar: true,  // 自动隐藏菜单栏
             show: false,
             title: '七星追剧'
@@ -447,6 +451,11 @@ class QixingZhuiju {
             icon: path.join(__dirname, 'assets', 'icon.png'),
             parent: this.mainWindow,
             show: false,
+            frame: false,  // 取消标题栏
+            transparent: true,  // 启用透明窗口
+            backgroundColor: '#00000000',  // 完全透明的背景
+            vibrancy: 'dark',  // macOS亚克力效果（仅macOS）
+            backgroundMaterial: 'acrylic',  // Windows亚克力效果（仅Windows 10+）
             autoHideMenuBar: true,  // 自动隐藏菜单栏
             title: videoData?.title || '七星追剧播放器'
         });
@@ -566,6 +575,32 @@ class QixingZhuiju {
         ipcMain.handle('get-app-version', () => {
             return app.getVersion();
         });
+
+        // 窗口控制处理器
+        ipcMain.handle('window-close', (event) => {
+            const window = BrowserWindow.fromWebContents(event.sender);
+            if (window) {
+                window.close();
+            }
+        });
+
+        ipcMain.handle('window-minimize', (event) => {
+            const window = BrowserWindow.fromWebContents(event.sender);
+            if (window) {
+                window.minimize();
+            }
+        });
+
+        ipcMain.handle('window-maximize', (event) => {
+            const window = BrowserWindow.fromWebContents(event.sender);
+            if (window) {
+                if (window.isMaximized()) {
+                    window.unmaximize();
+                } else {
+                    window.maximize();
+                }
+            }
+        });
     }
 
     async initialize() {
@@ -673,13 +708,15 @@ process.on('unhandledRejection', (reason, promise) => {
 // 禁用安全警告
 process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true';
 
-// 禁用硬件加速以解决GPU崩溃问题
-app.disableHardwareAcceleration();
+// 启用透明窗口和亚克力效果所需的设置
+// 注意：为了支持透明效果，我们需要启用硬件加速
+// app.disableHardwareAcceleration(); // 注释掉，因为透明窗口需要GPU支持
 
-// 添加命令行参数解决GPU问题
-app.commandLine.appendSwitch('--disable-gpu');
+// 添加命令行参数优化渲染
+// app.commandLine.appendSwitch('--disable-gpu'); // 注释掉，透明窗口需要GPU
+app.commandLine.appendSwitch('--enable-transparent-visuals');  // 启用透明视觉效果
 app.commandLine.appendSwitch('--disable-gpu-sandbox');
-app.commandLine.appendSwitch('--disable-software-rasterizer');
+// app.commandLine.appendSwitch('--disable-software-rasterizer'); // 注释掉
 app.commandLine.appendSwitch('--disable-background-timer-throttling');
 app.commandLine.appendSwitch('--disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('--disable-renderer-backgrounding');

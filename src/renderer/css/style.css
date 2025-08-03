@@ -7,32 +7,136 @@
 
 body {
     font-family: 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
-    background: #1a1a1a;
+    background: rgba(26, 26, 26, 0.85);
+    /* 半透明背景 */
+    backdrop-filter: blur(20px);
+    /* 背景模糊效果 */
+    -webkit-backdrop-filter: blur(20px);
+    /* Safari支持 */
     color: #ffffff;
     overflow: hidden;
+    border-radius: 12px;
+    /* WIN11风格圆角 */
+}
+
+/* 自定义标题栏样式 */
+.custom-titlebar {
+    height: 30px;
+    background: rgba(45, 45, 45, 0.8);
+    /* 半透明背景 */
+    backdrop-filter: blur(15px);
+    /* 背景模糊效果 */
+    -webkit-backdrop-filter: blur(15px);
+    /* Safari支持 */
+    border-bottom: 1px solid rgba(64, 64, 64, 0.5);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    -webkit-app-region: no-drag;
+    user-select: none;
+    border-radius: 12px 12px 0 0;
+    /* 顶部圆角 */
+}
+
+.titlebar-drag-region {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+    -webkit-app-region: drag;
+}
+
+.titlebar-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    object-fit: contain;
+}
+
+.titlebar-title {
+    font-size: 13px;
+    color: #ffffff;
+    font-weight: 400;
+}
+
+.titlebar-controls {
+    display: flex;
+    -webkit-app-region: no-drag;
+}
+
+.titlebar-button {
+    width: 46px;
+    height: 30px;
+    border: none;
+    background: transparent;
+    color: #ffffff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s ease;
+}
+
+.titlebar-button:hover {
+    background: #404040;
+}
+
+.titlebar-button.close-btn:hover {
+    background: #e81123;
+}
+
+.titlebar-button svg {
+    opacity: 0.8;
+}
+
+.titlebar-button:hover svg {
+    opacity: 1;
+}
+
+/* 应用主内容区 */
+.app-content {
+    display: flex;
+    height: calc(100vh - 30px);
+    /* 减去标题栏高度 */
 }
 
 #app {
     display: flex;
+    flex-direction: column;
     height: 100vh;
 }
 
 /* 侧边栏样式 */
 .sidebar {
     width: 200px;
-    background: #2d2d2d;
-    border-right: 1px solid #404040;
+    background: rgba(45, 45, 45, 0.7);
+    /* 半透明背景 */
+    backdrop-filter: blur(15px);
+    /* 背景模糊效果 */
+    -webkit-backdrop-filter: blur(15px);
+    /* Safari支持 */
+    border-right: 1px solid rgba(64, 64, 64, 0.5);
     display: flex;
     flex-direction: column;
+    border-radius: 0 0 0 12px;
+    /* 左下角圆角 */
 }
 
 .sidebar-header {
     padding: 15px 10px;
-    border-bottom: 1px solid #404040;
+    border-bottom: 1px solid rgba(64, 64, 64, 0.5);
     text-align: center;
     display: flex;
     flex-direction: column;
     align-items: center;
+    background: rgba(45, 45, 45, 0.3);
+    /* 更浅的半透明背景 */
+}
+
+.logo-container {
+    position: relative;
+    display: inline-block;
 }
 
 .logo {
@@ -41,6 +145,21 @@ body {
     max-width: 120px;
     border-radius: 4px;
     object-fit: contain;
+}
+
+.version-info {
+    position: absolute;
+    bottom: -2px;
+    right: -8px;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 400;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 1px 4px;
+    border-radius: 8px;
+    line-height: 1.2;
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
 }
 
 .nav-menu {
@@ -90,12 +209,23 @@ body {
     content: '⚙️';
 }
 
+.icon-about::before {
+    content: 'ℹ️';
+}
+
 /* 主内容区域 */
 .main-content {
     flex: 1;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    background: rgba(26, 26, 26, 0.3);
+    /* 轻微的半透明背景 */
+    backdrop-filter: blur(10px);
+    /* 轻微的背景模糊 */
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 0 0 12px 0;
+    /* 右下角圆角 */
 }
 
 .page {
@@ -114,12 +244,15 @@ body {
 .fixed-search-header {
     position: sticky;
     top: 0;
-    background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
-    border-bottom: 1px solid #404040;
+    background: rgba(26, 26, 26, 0.8);
+    /* 半透明背景 */
+    backdrop-filter: blur(20px);
+    /* 增强背景模糊 */
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(64, 64, 64, 0.5);
     padding: 20px;
     z-index: 100;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(8px);
 }
 
 /* 搜索区域增强样式 */
@@ -682,4 +815,232 @@ body {
         min-width: auto;
         width: 100%;
     }
+}
+
+/* 关于页面样式 */
+.about-content {
+    padding: 20px;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.about-hero {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 40px;
+    padding: 30px;
+    background: rgba(45, 45, 45, 0.5);
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.about-logo {
+    width: 80px;
+    height: auto;
+    border-radius: 8px;
+}
+
+.about-info h1 {
+    font-size: 2.5em;
+    margin: 0 0 8px 0;
+    color: #ffffff;
+}
+
+.about-info .version {
+    font-size: 1.1em;
+    color: #0078d4;
+    margin-bottom: 8px;
+}
+
+.about-info .description {
+    font-size: 1em;
+    color: #cccccc;
+    margin: 0;
+}
+
+.about-section {
+    margin-bottom: 35px;
+}
+
+.about-section h3 {
+    font-size: 1.4em;
+    color: #ffffff;
+    margin-bottom: 15px;
+    border-bottom: 2px solid #0078d4;
+    padding-bottom: 8px;
+}
+
+.about-section p {
+    line-height: 1.6;
+    color: #cccccc;
+    margin-bottom: 15px;
+}
+
+.feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.feature-item {
+    background: rgba(45, 45, 45, 0.4);
+    padding: 20px;
+    border-radius: 8px;
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    border: 1px solid rgba(64, 64, 64, 0.3);
+}
+
+.feature-item h4 {
+    color: #ffffff;
+    margin-bottom: 8px;
+    font-size: 1.1em;
+}
+
+.feature-item p {
+    color: #cccccc;
+    font-size: 0.9em;
+    margin: 0;
+    line-height: 1.4;
+}
+
+.changelog {
+    margin-top: 20px;
+}
+
+.changelog-item {
+    background: rgba(45, 45, 45, 0.4);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    border: 1px solid rgba(64, 64, 64, 0.3);
+}
+
+.version-tag {
+    display: inline-block;
+    background: #0078d4;
+    color: white;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.changelog-content h4 {
+    color: #ffffff;
+    margin-bottom: 12px;
+    font-size: 1.1em;
+}
+
+.changelog-content ul {
+    list-style: none;
+    padding: 0;
+}
+
+.changelog-content li {
+    color: #cccccc;
+    margin-bottom: 6px;
+    padding-left: 0;
+    line-height: 1.4;
+}
+
+.author-info {
+    background: rgba(45, 45, 45, 0.4);
+    padding: 20px;
+    border-radius: 8px;
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    border: 1px solid rgba(64, 64, 64, 0.3);
+}
+
+.author-item {
+    display: flex;
+    margin-bottom: 12px;
+    align-items: center;
+}
+
+.author-item:last-child {
+    margin-bottom: 0;
+}
+
+.author-item .label {
+    color: #cccccc;
+    font-weight: 500;
+    min-width: 80px;
+}
+
+.author-item .value {
+    color: #ffffff;
+    font-weight: 400;
+}
+
+.repo-links {
+    margin-top: 15px;
+}
+
+.repo-link {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px 20px;
+    background: rgba(45, 45, 45, 0.4);
+    border: 1px solid rgba(64, 64, 64, 0.3);
+    border-radius: 8px;
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    width: 100%;
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+}
+
+.repo-link:hover {
+    background: rgba(0, 120, 212, 0.2);
+    border-color: rgba(0, 120, 212, 0.5);
+    transform: translateY(-2px);
+}
+
+.repo-icon {
+    font-size: 1.5em;
+}
+
+.repo-info {
+    flex: 1;
+    text-align: left;
+}
+
+.repo-name {
+    color: #ffffff;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.repo-url {
+    color: #0078d4;
+    font-size: 0.9em;
+}
+
+.about-footer {
+    text-align: center;
+    margin-top: 40px;
+    padding: 25px;
+    background: rgba(45, 45, 45, 0.4);
+    border-radius: 8px;
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    border: 1px solid rgba(64, 64, 64, 0.3);
+}
+
+.about-footer p {
+    color: #cccccc;
+    font-size: 1em;
+    margin: 0;
+    line-height: 1.5;
 }

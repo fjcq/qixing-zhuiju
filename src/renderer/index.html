@@ -12,124 +12,271 @@
 
 <body>
     <div id="app">
-        <!-- 侧边栏导航 -->
-        <nav class="sidebar">
-            <div class="sidebar-header">
-                <img src="logo.png" alt="七星追剧" class="logo">
+        <!-- 自定义标题栏 -->
+        <div class="custom-titlebar">
+            <div class="titlebar-drag-region">
+                <img src="../../assets/icon.png" alt="七星追剧" class="titlebar-icon">
+                <span class="titlebar-title">七星追剧</span>
             </div>
-            <ul class="nav-menu">
-                <li class="nav-item active">
-                    <a href="#" data-page="home">
-                        <i class="icon-home"></i>
-                        <span>首页</span>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="#" data-page="history">
-                        <i class="icon-history"></i>
-                        <span>播放历史</span>
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a href="#" data-page="settings">
-                        <i class="icon-settings"></i>
-                        <span>设置</span>
-                    </a>
-                </li>
-            </ul>
-        </nav>
+            <div class="titlebar-controls">
+                <button class="titlebar-button minimize-btn" id="minimize-btn" title="最小化">
+                    <svg width="12" height="12" viewBox="0 0 12 12">
+                        <path d="M0 6h12" stroke="currentColor" stroke-width="1" />
+                    </svg>
+                </button>
+                <button class="titlebar-button maximize-btn" id="maximize-btn" title="最大化/还原">
+                    <svg width="12" height="12" viewBox="0 0 12 12">
+                        <path d="M1 1h10v10H1z" fill="none" stroke="currentColor" stroke-width="1" />
+                    </svg>
+                </button>
+                <button class="titlebar-button close-btn" id="close-btn" title="关闭">
+                    <svg width="12" height="12" viewBox="0 0 12 12">
+                        <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1" />
+                    </svg>
+                </button>
+            </div>
+        </div>
 
-        <!-- 主内容区域 -->
-        <main class="main-content">
-            <!-- 首页内容 -->
-            <div id="home-page" class="page active">
-                <!-- 固定搜索栏 -->
-                <div class="fixed-search-header">
-                    <div class="search-section">
-                        <div class="site-selector">
-                            <select id="site-select">
-                                <option value="qxyys">七星追剧</option>
-                            </select>
-                        </div>
-                        <div class="category-filter">
-                            <select id="category-select">
-                                <option value="">全部分类</option>
-                            </select>
-                        </div>
-                        <div class="search-box">
-                            <input type="text" id="search-input" placeholder="搜索影片名称...">
-                            <button id="search-btn">搜索</button>
-                        </div>
+        <!-- 应用主内容区 -->
+        <div class="app-content">
+            <!-- 侧边栏导航 -->
+            <nav class="sidebar">
+                <div class="sidebar-header">
+                    <div class="logo-container">
+                        <img src="logo.png" alt="七星追剧" class="logo">
+                        <div class="version-info" id="version-info">v1.2.0</div>
                     </div>
                 </div>
+                <ul class="nav-menu">
+                    <li class="nav-item active">
+                        <a href="#" data-page="home">
+                            <i class="icon-home"></i>
+                            <span>首页</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" data-page="history">
+                            <i class="icon-history"></i>
+                            <span>播放历史</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" data-page="settings">
+                            <i class="icon-settings"></i>
+                            <span>设置</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" data-page="about">
+                            <i class="icon-about"></i>
+                            <span>关于</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
 
-                <!-- 滚动内容区域 -->
-                <div class="scrollable-content">
-                    <div id="loading" class="loading hidden">加载中...</div>
-                    <div id="video-grid" class="video-grid"></div>
-                    <div id="pagination" class="pagination"></div>
-                </div>
-            </div>
-
-            <!-- 详情页面 -->
-            <div id="detail-page" class="page">
-                <div class="page-content">
-                    <div class="detail-header">
-                        <button id="back-btn" class="back-btn">← 返回</button>
-                        <h2 id="detail-title">影片详情</h2>
-                    </div>
-                    <div id="detail-content" class="detail-content"></div>
-                </div>
-            </div>
-
-            <!-- 播放历史页面 -->
-            <div id="history-page" class="page">
-                <div class="page-content">
-                    <div class="page-header">
-                        <h2>播放历史</h2>
-                        <button id="clear-history-btn" class="btn-secondary">清空历史</button>
-                    </div>
-                    <div id="history-list" class="history-list"></div>
-                </div>
-            </div>
-
-            <!-- 设置页面 -->
-            <div id="settings-page" class="page">
-                <div class="page-content">
-                    <div class="page-header">
-                        <h2>设置</h2>
-                    </div>
-                    <div class="settings-content">
-                        <div class="settings-section">
-                            <h3>数据管理</h3>
-                            <p class="settings-description">导入导出所有设置数据，包括站点配置、线路别名等</p>
-                            <div class="data-management-actions">
-                                <button id="export-data-btn" class="btn-primary">导出配置</button>
-                                <button id="import-data-btn" class="btn-secondary">导入配置</button>
-                                <input type="file" id="import-file-input" accept=".json" style="display: none;">
+            <!-- 主内容区域 -->
+            <main class="main-content">
+                <!-- 首页内容 -->
+                <div id="home-page" class="page active">
+                    <!-- 固定搜索栏 -->
+                    <div class="fixed-search-header">
+                        <div class="search-section">
+                            <div class="site-selector">
+                                <select id="site-select">
+                                    <option value="qxyys">七星追剧</option>
+                                </select>
+                            </div>
+                            <div class="category-filter">
+                                <select id="category-select">
+                                    <option value="">全部分类</option>
+                                </select>
+                            </div>
+                            <div class="search-box">
+                                <input type="text" id="search-input" placeholder="搜索影片名称...">
+                                <button id="search-btn">搜索</button>
                             </div>
                         </div>
+                    </div>
 
-                        <div class="settings-section">
-                            <h3>站点管理</h3>
-                            <div class="site-list" id="site-list"></div>
-                            <button id="add-site-btn" class="btn-primary">添加站点</button>
+                    <!-- 滚动内容区域 -->
+                    <div class="scrollable-content">
+                        <div id="loading" class="loading hidden">加载中...</div>
+                        <div id="video-grid" class="video-grid"></div>
+                        <div id="pagination" class="pagination"></div>
+                    </div>
+                </div>
+
+                <!-- 详情页面 -->
+                <div id="detail-page" class="page">
+                    <div class="page-content">
+                        <div class="detail-header">
+                            <button id="back-btn" class="back-btn">← 返回</button>
+                            <h2 id="detail-title">影片详情</h2>
                         </div>
+                        <div id="detail-content" class="detail-content"></div>
+                    </div>
+                </div>
 
-                        <div class="settings-section">
-                            <h3>线路设置</h3>
-                            <p class="settings-description">为播放线路设置自定义别名，让线路名称更易理解</p>
-                            <div class="route-aliases-list" id="route-aliases-list"></div>
-                            <button id="manage-routes-btn" class="btn-primary">管理线路别名</button>
+                <!-- 播放历史页面 -->
+                <div id="history-page" class="page">
+                    <div class="page-content">
+                        <div class="page-header">
+                            <h2>播放历史</h2>
+                            <button id="clear-history-btn" class="btn-secondary">清空历史</button>
+                        </div>
+                        <div id="history-list" class="history-list"></div>
+                    </div>
+                </div>
+
+                <!-- 设置页面 -->
+                <div id="settings-page" class="page">
+                    <div class="page-content">
+                        <div class="page-header">
+                            <h2>设置</h2>
+                        </div>
+                        <div class="settings-content">
+                            <div class="settings-section">
+                                <h3>数据管理</h3>
+                                <p class="settings-description">导入导出所有设置数据，包括站点配置、线路别名等</p>
+                                <div class="data-management-actions">
+                                    <button id="export-data-btn" class="btn-primary">导出配置</button>
+                                    <button id="import-data-btn" class="btn-secondary">导入配置</button>
+                                    <input type="file" id="import-file-input" accept=".json" style="display: none;">
+                                </div>
+                            </div>
+
+                            <div class="settings-section">
+                                <h3>站点管理</h3>
+                                <div class="site-list" id="site-list"></div>
+                                <button id="add-site-btn" class="btn-primary">添加站点</button>
+                            </div>
+
+                            <div class="settings-section">
+                                <h3>线路设置</h3>
+                                <p class="settings-description">为播放线路设置自定义别名，让线路名称更易理解</p>
+                                <div class="route-aliases-list" id="route-aliases-list"></div>
+                                <button id="manage-routes-btn" class="btn-primary">管理线路别名</button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-    </div>
-    </div>
-    </div>
-    </main>
-    </div>
+
+                <!-- 关于页面 -->
+                <div id="about-page" class="page">
+                    <div class="page-content">
+                        <div class="page-header">
+                            <h2>关于</h2>
+                        </div>
+                        <div class="about-content">
+                            <div class="about-hero">
+                                <img src="logo.png" alt="七星追剧" class="about-logo">
+                                <div class="about-info">
+                                    <h1>七星追剧</h1>
+                                    <p class="version">版本 <span id="about-version">v1.2.0</span></p>
+                                    <p class="description">基于 Electron 的桌面影视播放应用</p>
+                                </div>
+                            </div>
+
+                            <div class="about-section">
+                                <h3>软件简介</h3>
+                                <p>七星追剧是一款现代化的桌面影视播放应用，专为播放苹果CMS资源站的影视节目而设计。采用 Electron
+                                    框架开发，支持多站点管理、智能线路过滤、实时弹幕互动等功能，为用户提供优质的观影体验。</p>
+
+                                <div class="feature-grid">
+                                    <div class="feature-item">
+                                        <h4>🎬 多站点支持</h4>
+                                        <p>支持多个苹果CMS API站点，兼容JSON/XML格式</p>
+                                    </div>
+                                    <div class="feature-item">
+                                        <h4>🎭 弹幕互动</h4>
+                                        <p>实时弹幕系统，支持多彩弹幕样式和智能房间分配</p>
+                                    </div>
+                                    <div class="feature-item">
+                                        <h4>📱 现代UI</h4>
+                                        <p>半透明亚克力效果，WIN11风格圆角设计</p>
+                                    </div>
+                                    <div class="feature-item">
+                                        <h4>⚙️ 智能管理</h4>
+                                        <p>线路屏蔽、别名设置、配置导入导出</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="about-section">
+                                <h3>更新日志</h3>
+                                <div class="changelog">
+                                    <div class="changelog-item">
+                                        <div class="version-tag">v1.2.0</div>
+                                        <div class="changelog-content">
+                                            <h4>2025-08-03</h4>
+                                            <ul>
+                                                <li>🆕 新增弹幕功能，支持实时弹幕和时间轴弹幕双模式</li>
+                                                <li>🆕 新增悬停式弹幕输入，鼠标悬停播放器自动显示输入框</li>
+                                                <li>🆕 新增多彩弹幕样式，支持7种颜色和3种大小</li>
+                                                <li>🆕 新增智能弹幕房间，基于视频内容自动分配</li>
+                                                <li>🔧 优化弹幕输入交互，解决与播放器操作的冲突</li>
+                                                <li>🐛 修复播放历史存储问题，确保数据持久化保存</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                    <div class="changelog-item">
+                                        <div class="version-tag">v1.1.0</div>
+                                        <div class="changelog-content">
+                                            <h4>2025-08-03</h4>
+                                            <ul>
+                                                <li>🆕 新增线路别名功能，支持自定义线路显示名称</li>
+                                                <li>🆕 新增线路屏蔽功能，可屏蔽指定播放线路</li>
+                                                <li>🆕 新增配置导入导出功能，支持数据备份和迁移</li>
+                                                <li>🔧 优化站点管理界面，美化UI交互体验</li>
+                                                <li>🐛 修复屏蔽线路过滤逻辑，提高播放稳定性</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="about-section">
+                                <h3>作者信息</h3>
+                                <div class="author-info">
+                                    <div class="author-item">
+                                        <span class="label">开发者：</span>
+                                        <span class="value">止水制造</span>
+                                    </div>
+                                    <div class="author-item">
+                                        <span class="label">许可证：</span>
+                                        <span class="value">MIT License</span>
+                                    </div>
+                                    <div class="author-item">
+                                        <span class="label">技术栈：</span>
+                                        <span class="value">Electron + HLS.js + WebSocket</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="about-section">
+                                <h3>仓库链接</h3>
+                                <div class="repo-links">
+                                    <button class="repo-link"
+                                        onclick="window.electronAPI.openExternal('https://github.com/fjcq/qixing-zhuiju')">
+                                        <span class="repo-icon">📁</span>
+                                        <div class="repo-info">
+                                            <div class="repo-name">GitHub 仓库</div>
+                                            <div class="repo-url">github.com/fjcq/qixing-zhuiju</div>
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="about-footer">
+                                <p>感谢您使用七星追剧！如果您喜欢这个应用，请给我们一个⭐Star支持！</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div> <!-- 关闭 app-content -->
+    </div> <!-- 关闭 app -->
 
     <!-- 模态框 -->
     <div id="modal" class="modal hidden">

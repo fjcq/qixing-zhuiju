@@ -9,6 +9,30 @@
 </head>
 
 <body>
+    <!-- 自定义标题栏 -->
+    <div class="custom-titlebar">
+        <div class="titlebar-drag-region">
+            <span class="titlebar-title">七星追剧 - 播放器</span>
+        </div>
+        <div class="titlebar-controls">
+            <button class="titlebar-button minimize-btn" id="minimize-btn" title="最小化">
+                <svg width="12" height="12" viewBox="0 0 12 12">
+                    <path d="M0 6h12" stroke="currentColor" stroke-width="1" />
+                </svg>
+            </button>
+            <button class="titlebar-button maximize-btn" id="maximize-btn" title="最大化/还原">
+                <svg width="12" height="12" viewBox="0 0 12 12">
+                    <path d="M1 1h10v10H1z" fill="none" stroke="currentColor" stroke-width="1" />
+                </svg>
+            </button>
+            <button class="titlebar-button close-btn" id="close-btn" title="关闭">
+                <svg width="12" height="12" viewBox="0 0 12 12">
+                    <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1" />
+                </svg>
+            </button>
+        </div>
+    </div>
+
     <div id="player-app">
         <!-- 播放器容器 - 全屏布局 -->
         <div class="player-container">
@@ -38,9 +62,6 @@
                         </button>
                         <button id="next-episode" class="btn-control" title="下一集">
                             <span class="icon">⏭️</span>
-                        </button>
-                        <button id="close-player" class="btn-close" title="关闭播放器">
-                            <span class="icon">❌</span>
                         </button>
                     </div>
                 </div>
@@ -102,7 +123,7 @@
                 <div id="episodes" class="episodes"></div>
             </div>
         </div>
-    </div>
+    </div> <!-- 关闭 player-app -->
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script src="js/storage.js"></script>
