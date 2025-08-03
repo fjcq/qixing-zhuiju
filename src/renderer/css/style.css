@@ -40,16 +40,7 @@ body {
     height: 32px;
     max-width: 120px;
     border-radius: 4px;
-    margin-bottom: 10px;
     object-fit: contain;
-}
-
-.sidebar-header h1 {
-    font-size: 14px;
-    color: #ffffff;
-    font-weight: 600;
-    margin: 0;
-    margin-top: 8px;
 }
 
 .nav-menu {
