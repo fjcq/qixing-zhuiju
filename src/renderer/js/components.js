@@ -846,206 +846,6 @@ class ComponentService {
         });
     }
 
-    // 检测是否为外部播放器链接
-    isExternalPlayerUrl(url) {
-        if (!url) return false;
-
-        const lowerUrl = url.toLowerCase();
-
-        // 首先排除直接的视频文件
-        const isDirectVideo = ['.m3u8', '.mp4', '.flv', '.avi', '.mkv', '.mov', '.wmv'].some(ext =>
-            lowerUrl.includes(ext)
-        );
-
-        if (isDirectVideo) {
-            console.log('[COMPONENTS] 检测到直接视频文件，使用内置播放器');
-            return false;
-        }
-
-        // 检查外部播放器的特征
-        const externalPlayerIndicators = [
-            // 播放器页面关键词
-            /jiexi|player|play(?!list)|parse|video/i,
-            // 常见的播放器参数
-            /[?&](url|vid|v|id|play|video|src)=/i,
-            // 第三方视频平台
-            /(?:iqiyi|qq|youku|bilibili|mgtv|sohu|163|sina)\.com/i,
-            // 解析接口
-            /(?:api|parse|jx|player)\.php/i,
-            // HTML播放页面
-            /\.html?.*[?&]/i
-        ];
-
-        const hasExternalIndicator = externalPlayerIndicators.some(pattern => pattern.test(url));
-
-        // 检查域名是否为知名视频平台
-        const isKnownVideoPlatform = [
-            'iqiyi.com', 'qq.com', 'youku.com', 'bilibili.com',
-            'mgtv.com', 'sohu.com', '163.com', 'sina.com'
-        ].some(domain => lowerUrl.includes(domain));
-
-        // 检查是否为网页而非直接文件
-        const isWebPage = lowerUrl.includes('.html') ||
-            lowerUrl.includes('.php') ||
-            lowerUrl.includes('.asp') ||
-            lowerUrl.includes('.jsp') ||
-            (!lowerUrl.includes('.'));
-
-        const isExternal = hasExternalIndicator || (isKnownVideoPlatform && isWebPage);
-
-        console.log('[COMPONENTS] 外部播放器检测:', {
-            url: url,
-            isDirectVideo,
-            hasExternalIndicator,
-            isKnownVideoPlatform,
-            isWebPage,
-            isExternal
-        });
-
-        return isExternal;
-    }
-
-    // 在外部浏览器中打开链接
-    openInExternalBrowser(url, videoTitle) {
-        try {
-            if (window.electron && window.electron.shell) {
-                window.electron.shell.openExternal(url);
-                this.showNotification(`正在外部浏览器中播放: ${videoTitle}`, 'success');
-                return true;
-            } else {
-                // 备用方案：尝试在新窗口中打开
-                window.open(url, '_blank');
-                this.showNotification(`正在新窗口中播放: ${videoTitle}`, 'success');
-                return true;
-            }
-        } catch (error) {
-            console.error('[COMPONENTS] 外部浏览器打开失败:', error);
-            this.showNotification('无法在外部浏览器中打开链接', 'error');
-            return false;
-        }
-    }
-
-    // 显示播放方式选择对话框
-    showPlayModeDialog(videoData, routeIndex, episodeIndex, episodeUrl, allRoutes) {
-        const currentRoute = allRoutes[routeIndex];
-        const currentEpisode = currentRoute.episodes[episodeIndex];
-
-        const content = `
-            <h3>选择播放方式</h3>
-            <div class="play-mode-dialog">
-                <div class="video-info">
-                    <h4>${videoData.vod_name}</h4>
-                    <p>${currentEpisode?.name}</p>
-                    <p class="url-preview">${episodeUrl}</p>
-                </div>
-                <div class="play-options">
-                    <button type="button" class="btn-primary option-btn" id="play-external">
-                        <i>🌐</i>
-                        <div>
-                            <strong>外部浏览器播放</strong>
-                            <small>在系统默认浏览器中打开</small>
-                        </div>
-                    </button>
-                    <button type="button" class="btn-primary option-btn" id="play-internal">
-                        <i>📱</i>
-                        <div>
-                            <strong>内置播放器播放</strong>
-                            <small>使用应用内置播放器</small>
-                        </div>
-                    </button>
-                </div>
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" id="cancel-play">取消</button>
-                </div>
-            </div>
-        `;
-
-        this.showModal(content);
-
-        const playExternalBtn = document.getElementById('play-external');
-        const playInternalBtn = document.getElementById('play-internal');
-        const cancelBtn = document.getElementById('cancel-play');
-
-        playExternalBtn.addEventListener('click', () => {
-            this.hideModal();
-            this.playVideoExternal(videoData, routeIndex, episodeIndex, episodeUrl, allRoutes);
-        });
-
-        playInternalBtn.addEventListener('click', () => {
-            this.hideModal();
-            this.playVideoInternal(videoData, routeIndex, episodeIndex, episodeUrl, allRoutes);
-        });
-
-        cancelBtn.addEventListener('click', () => {
-            this.hideModal();
-        });
-    }
-
-    // 在外部播放器中播放
-    async playVideoExternal(videoData, routeIndex, episodeIndex, episodeUrl, allRoutes) {
-        const currentRoute = allRoutes[routeIndex];
-        const currentEpisode = currentRoute.episodes[episodeIndex];
-
-        // 添加到播放历史
-        this.storageService.addPlayHistory({
-            vod_id: videoData.vod_id,
-            vod_name: videoData.vod_name,
-            vod_pic: videoData.vod_pic,
-            type_name: videoData.type_name || '未知类型',
-            current_episode: episodeIndex + 1,
-            episode_name: currentEpisode?.name || `第${episodeIndex + 1}集`,
-            site_name: '当前站点'
-        });
-
-        const videoTitle = `${videoData.vod_name} - ${currentEpisode?.name}`;
-        this.openInExternalBrowser(episodeUrl, videoTitle);
-    }
-
-    // 在内置播放器中播放
-    async playVideoInternal(videoData, routeIndex, episodeIndex, episodeUrl, allRoutes) {
-        const currentRoute = allRoutes[routeIndex];
-        const currentEpisode = currentRoute.episodes[episodeIndex];
-
-        // 添加到播放历史
-        this.storageService.addPlayHistory({
-            vod_id: videoData.vod_id,
-            vod_name: videoData.vod_name,
-            vod_pic: videoData.vod_pic,
-            type_name: videoData.type_name || '未知类型',
-            current_episode: episodeIndex + 1,
-            episode_name: currentEpisode?.name || `第${episodeIndex + 1}集`,
-            site_name: '当前站点'
-        });
-
-        // 检查Electron环境
-        if (!window.electron || !window.electron.ipcRenderer) {
-            console.error('[COMPONENTS] Electron IPC 不可用');
-            this.showNotification('无法打开播放器 - Electron环境异常', 'error');
-            return;
-        }
-
-        // 打开播放器窗口
-        const playerData = {
-            url: episodeUrl,
-            title: `${videoData.vod_name} - ${currentEpisode?.name}`,
-            videoData: {
-                ...videoData,
-                currentRoute: routeIndex,
-                currentEpisode: episodeIndex,
-                routes: allRoutes
-            }
-        };
-
-        try {
-            const result = await window.electron.ipcRenderer.invoke('open-player', playerData);
-            console.log('[COMPONENTS] IPC调用结果:', result);
-            this.showNotification(`正在播放: ${currentEpisode?.name}`, 'success');
-        } catch (ipcError) {
-            console.error('[COMPONENTS] IPC调用失败:', ipcError);
-            this.showNotification(`打开播放器失败: ${ipcError.message}`, 'error');
-        }
-    }
-
     // 播放视频
     async playVideo(videoData, routeIndex, episodeIndex, episodeUrl, allRoutes) {
         try {
@@ -1058,15 +858,48 @@ class ComponentService {
             console.log('[COMPONENTS] 当前剧集:', currentEpisode.name);
             console.log('[COMPONENTS] 播放URL:', episodeUrl);
 
-            // 检查是否为外部播放器链接
-            if (this.isExternalPlayerUrl(episodeUrl)) {
-                console.log('[COMPONENTS] 检测到可能的外部播放器链接，显示选择对话框');
-                this.showPlayModeDialog(videoData, routeIndex, episodeIndex, episodeUrl, allRoutes);
+            // 获取当前活跃站点信息
+            const activeSite = this.apiService.getActiveSite();
+            const siteName = activeSite ? activeSite.name : '未知站点';
+
+            // 添加到播放历史
+            this.storageService.addPlayHistory({
+                vod_id: videoData.vod_id,
+                vod_name: videoData.vod_name,
+                vod_pic: videoData.vod_pic,
+                type_name: videoData.type_name || '未知类型',
+                current_episode: episodeIndex + 1,
+                episode_name: currentEpisode?.name || `第${episodeIndex + 1}集`,
+                site_name: siteName
+            });
+
+            // 检查Electron环境
+            if (!window.electron || !window.electron.ipcRenderer) {
+                console.error('[COMPONENTS] Electron IPC 不可用');
+                this.showNotification('无法打开播放器 - Electron环境异常', 'error');
                 return;
             }
 
-            // 直接使用内置播放器
-            await this.playVideoInternal(videoData, routeIndex, episodeIndex, episodeUrl, allRoutes);
+            // 打开播放器窗口
+            const playerData = {
+                url: episodeUrl,
+                title: `${videoData.vod_name} - ${currentEpisode?.name}`,
+                videoData: {
+                    ...videoData,
+                    currentRoute: routeIndex,
+                    currentEpisode: episodeIndex,
+                    routes: allRoutes
+                }
+            };
+
+            try {
+                const result = await window.electron.ipcRenderer.invoke('open-player', playerData);
+                console.log('[COMPONENTS] IPC调用结果:', result);
+                this.showNotification(`正在播放: ${currentEpisode?.name}`, 'success');
+            } catch (ipcError) {
+                console.error('[COMPONENTS] IPC调用失败:', ipcError);
+                this.showNotification(`打开播放器失败: ${ipcError.message}`, 'error');
+            }
 
         } catch (error) {
             console.error('[COMPONENTS] 播放视频失败:', error);
@@ -1711,7 +1544,9 @@ class ComponentService {
                     <div class="file-info">
                         <p class="info-note">
                             <i>💡</i> 
-                            请选择之前导出的 .json 配置文件
+                            支持以下格式的配置文件：<br>
+                            • 七星追剧导出的 .json 配置文件（完整导入）<br>
+                            • 主站信息格式的 JSON 文件（仅提取站点名称和API地址，统一设置为JSON格式）
                         </p>
                     </div>
                 </div>
@@ -1804,14 +1639,17 @@ class ComponentService {
                 console.warn('[COMPONENTS] 导入警告:', validation.warnings);
             }
 
+            // 使用转换后的数据
+            const finalImportData = validation.convertedData || importData;
+
             // 生成数据类型选择界面
-            this.generateImportDataTypes(importData);
+            this.generateImportDataTypes(finalImportData);
 
             // 显示导入选项
             document.getElementById('import-options').style.display = 'block';
             document.getElementById('confirm-import-btn').disabled = false;
 
-            this.currentImportData = importData;
+            this.currentImportData = finalImportData;
 
         } catch (error) {
             console.error('[COMPONENTS] 文件验证失败:', error);
@@ -1943,6 +1781,18 @@ class ComponentService {
 
             // 显示导入结果
             this.showImportResults(results);
+
+            // 如果导入了站点配置，需要重新初始化API服务
+            const importedSites = results.imported.some(item => item.includes('站点配置'));
+            if (importedSites && window.app && window.app.apiService) {
+                console.log('[COMPONENTS] 检测到站点配置变更，重新初始化API服务...');
+                try {
+                    await window.app.apiService.initialize();
+                    console.log('[COMPONENTS] API服务重新初始化完成');
+                } catch (error) {
+                    console.error('[COMPONENTS] API服务重新初始化失败:', error);
+                }
+            }
 
             // 刷新相关界面
             if (window.app) {

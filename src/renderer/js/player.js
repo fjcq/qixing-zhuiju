@@ -25,6 +25,9 @@ class VideoPlayer {
         this.setupVideoEvents();
         this.setupControlEvents();
 
+        // 初始化视频显示属性
+        this.adjustVideoDisplay();
+
         // 确保选集面板默认隐藏
         this.hideEpisodePanel();
 
@@ -270,31 +273,185 @@ class VideoPlayer {
 
         console.log('处理后的视频URL:', cleanUrl);
 
-        // 检查是否为m3u8格式
-        if (cleanUrl.includes('.m3u8') || cleanUrl.includes('m3u8') || cleanUrl.includes('.M3U8')) {
-            await this.loadHLSVideo(cleanUrl);
-        } else if (cleanUrl.includes('.mp4') || cleanUrl.includes('.MP4') ||
-            cleanUrl.includes('.avi') || cleanUrl.includes('.mkv') ||
-            cleanUrl.includes('.flv') || cleanUrl.includes('.webm')) {
-            await this.loadDirectVideo(cleanUrl);
+        // 简化判断：检查是否为直接视频文件
+        if (this.isDirectVideoFile(cleanUrl)) {
+            console.log('检测到直接视频文件，使用原生播放器');
+            await this.loadVideoFile(cleanUrl);
         } else {
-            // 尝试作为HLS流处理
-            console.log('URL格式未知，尝试作为HLS流处理');
-            try {
-                await this.loadHLSVideo(cleanUrl);
-            } catch (hlsError) {
-                console.log('HLS播放失败，尝试直接播放:', hlsError);
-                await this.loadDirectVideo(cleanUrl);
-            }
+            console.log('检测到网页链接，使用iframe播放器');
+            await this.loadWebPage(cleanUrl);
         }
 
-        // 恢复播放进度
-        this.restorePlaybackProgress();
+        // 恢复播放进度（仅对直接视频文件有效）
+        if (this.isDirectVideoFile(cleanUrl)) {
+            this.restorePlaybackProgress();
+        }
+    }
+
+    // 检查是否为直接视频文件
+    isDirectVideoFile(url) {
+        const lowerUrl = url.toLowerCase();
+        const videoExtensions = ['.m3u8', '.mp4', '.flv', '.avi', '.mkv', '.mov', '.wmv', '.webm', '.ogg', '.3gp'];
+        return videoExtensions.some(ext => lowerUrl.includes(ext));
+    }
+
+    // 加载直接视频文件
+    async loadVideoFile(videoUrl) {
+        console.log('加载直接视频文件:', videoUrl);
+
+        // 显示原生video元素并设置正确的显示属性
+        this.video.style.display = 'block';
+        this.video.style.objectFit = 'contain';
+        this.video.style.width = '100%';
+        this.video.style.height = '100%';
+        this.video.style.maxWidth = '100%';
+        this.video.style.maxHeight = '100%';
+
+        // 清理可能存在的iframe
+        this.cleanupWebPage();
+
+        // 根据文件类型选择播放方式
+        if (videoUrl.includes('.m3u8') || videoUrl.includes('m3u8') || videoUrl.includes('.M3U8')) {
+            await this.loadHLSVideo(videoUrl);
+        } else {
+            await this.loadDirectVideo(videoUrl);
+        }
+    }
+
+    // 加载网页（云播）
+    async loadWebPage(webPageUrl) {
+        console.log('加载网页播放器:', webPageUrl);
+
+        // 隐藏原生video元素
+        this.video.style.display = 'none';
+
+        const playerContainer = document.querySelector('.player-container');
+
+        // 创建或获取iframe容器
+        let webPageContainer = document.getElementById('webpage-player-container');
+        if (!webPageContainer) {
+            webPageContainer = document.createElement('div');
+            webPageContainer.id = 'webpage-player-container';
+            webPageContainer.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: #000;
+                display: flex;
+                flex-direction: column;
+                z-index: 1;
+            `;
+            playerContainer.appendChild(webPageContainer);
+        }
+
+        // 创建工具栏
+        const toolbar = document.createElement('div');
+        toolbar.style.cssText = `
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 8px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            flex-shrink: 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        `;
+
+        toolbar.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <span>🌐 网页播放器</span>
+                <button id="refresh-webpage" style="padding: 4px 8px; background: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">刷新</button>
+            </div>
+            <div>
+                <button id="toggle-fullscreen" style="padding: 4px 8px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">全屏</button>
+            </div>
+        `;
+
+        // 创建iframe
+        const iframe = document.createElement('iframe');
+        iframe.src = webPageUrl;
+        iframe.style.cssText = `
+            width: 100%;
+            flex: 1;
+            border: none;
+            background: #000;
+        `;
+        iframe.allowFullscreen = true;
+        iframe.allow = "autoplay; fullscreen; encrypted-media; picture-in-picture";
+        iframe.sandbox = "allow-same-origin allow-scripts allow-forms allow-popups allow-presentation allow-top-navigation-by-user-activation";
+
+        // 清空容器并添加新内容
+        webPageContainer.innerHTML = '';
+        webPageContainer.appendChild(toolbar);
+        webPageContainer.appendChild(iframe);
+
+        // 添加工具栏按钮事件
+        const refreshBtn = toolbar.querySelector('#refresh-webpage');
+        const fullscreenBtn = toolbar.querySelector('#toggle-fullscreen');
+
+        refreshBtn.addEventListener('click', () => {
+            iframe.src = webPageUrl + (webPageUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
+        });
+
+        fullscreenBtn.addEventListener('click', () => {
+            if (iframe.requestFullscreen) {
+                iframe.requestFullscreen();
+            } else if (iframe.webkitRequestFullscreen) {
+                iframe.webkitRequestFullscreen();
+            }
+        });
+
+        return new Promise((resolve) => {
+            iframe.onload = () => {
+                console.log('网页iframe加载完成');
+                resolve();
+            };
+
+            iframe.onerror = (error) => {
+                console.error('网页iframe加载失败:', error);
+                toolbar.innerHTML = `
+                    <div style="color: #ff6b6b;">网页加载失败</div>
+                    <div>
+                        <button onclick="location.reload()" style="padding: 4px 8px; background: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer;">重试</button>
+                    </div>
+                `;
+                resolve();
+            };
+
+            // 设置超时
+            setTimeout(() => {
+                console.log('网页iframe加载完成（超时结束）');
+                resolve();
+            }, 8000);
+        });
+    }
+
+    // 清理网页播放器
+    cleanupWebPage() {
+        const webPageContainer = document.getElementById('webpage-player-container');
+        if (webPageContainer) {
+            webPageContainer.remove();
+        }
+
+        // 恢复原生video元素
+        if (this.video) {
+            this.video.style.display = 'block';
+        }
     }
 
     // 加载HLS视频
     async loadHLSVideo(videoUrl) {
         console.log('加载HLS视频:', videoUrl);
+
+        // 确保视频元素的显示属性
+        this.video.style.objectFit = 'contain';
+        this.video.style.width = '100%';
+        this.video.style.height = '100%';
+        this.video.style.maxWidth = '100%';
+        this.video.style.maxHeight = '100%';
 
         if (typeof Hls !== 'undefined' && Hls.isSupported()) {
             this.hls = new Hls({
@@ -348,10 +505,24 @@ class VideoPlayer {
     // 加载普通视频
     async loadDirectVideo(videoUrl) {
         console.log('加载普通视频:', videoUrl);
+
+        // 确保视频元素的显示属性
+        this.video.style.objectFit = 'contain';
+        this.video.style.width = '100%';
+        this.video.style.height = '100%';
+        this.video.style.maxWidth = '100%';
+        this.video.style.maxHeight = '100%';
+
         this.video.src = videoUrl;
 
         return new Promise((resolve, reject) => {
             const onLoadedMetadata = () => {
+                console.log('[PLAYER] 视频元数据加载完成:', {
+                    videoWidth: this.video.videoWidth,
+                    videoHeight: this.video.videoHeight,
+                    duration: this.video.duration
+                });
+
                 this.video.removeEventListener('loadedmetadata', onLoadedMetadata);
                 this.video.removeEventListener('error', onError);
                 this.video.play().then(resolve).catch(reject);
@@ -387,8 +558,15 @@ class VideoPlayer {
             }
         });
 
-        // 播放错误事件
+        // 播放错误事件 - 只在使用原生播放器时显示错误
         this.video.addEventListener('error', (e) => {
+            // 检查是否正在使用网页播放器
+            const webPageContainer = document.getElementById('webpage-player-container');
+            if (webPageContainer && webPageContainer.style.display !== 'none') {
+                console.log('网页播放器正在使用，忽略video元素错误');
+                return;
+            }
+
             console.error('视频播放错误:', e);
             this.showError('视频播放出现错误');
         });
@@ -407,6 +585,38 @@ class VideoPlayer {
             if (e.target.tagName.toLowerCase() !== 'input') {
                 this.handleKeyboard(e);
             }
+        });
+
+        // 窗口大小变化监听器 - 确保视频适应新窗口大小
+        window.addEventListener('resize', () => {
+            console.log('[PLAYER] 窗口大小变化，调整视频显示');
+            this.adjustVideoDisplay();
+        });
+
+        // 视频尺寸变化监听器
+        this.video.addEventListener('loadedmetadata', () => {
+            console.log('[PLAYER] 视频元数据加载完成，调整显示');
+            this.adjustVideoDisplay();
+        });
+    }
+
+    // 调整视频显示以适应窗口
+    adjustVideoDisplay() {
+        if (!this.video) return;
+
+        // 确保视频使用正确的缩放模式
+        this.video.style.objectFit = 'contain';
+        this.video.style.width = '100%';
+        this.video.style.height = '100%';
+        this.video.style.maxWidth = '100%';
+        this.video.style.maxHeight = '100%';
+
+        console.log('[PLAYER] 视频显示属性已调整:', {
+            videoWidth: this.video.videoWidth,
+            videoHeight: this.video.videoHeight,
+            containerWidth: this.video.offsetWidth,
+            containerHeight: this.video.offsetHeight,
+            objectFit: this.video.style.objectFit
         });
     }
 
@@ -660,6 +870,13 @@ class VideoPlayer {
 
     // 记录播放历史
     recordPlayback(episodeIndex, episodeUrl) {
+        console.log('[PLAYER] 记录播放历史:', {
+            视频ID: this.videoData.vod_id,
+            集数索引: episodeIndex,
+            URL: episodeUrl
+        });
+
+        // 保存到内部播放历史数组
         this.playbackHistory.push({
             videoId: this.videoData.vod_id,
             episodeIndex,
@@ -670,6 +887,41 @@ class VideoPlayer {
         // 限制历史记录长度
         if (this.playbackHistory.length > 50) {
             this.playbackHistory = this.playbackHistory.slice(-50);
+        }
+
+        // 更新全局播放历史记录
+        if (this.storageService && this.videoData) {
+            try {
+                // 查找当前剧集信息
+                const currentRoute = this.allRoutes[this.currentRouteIndex];
+                const currentEpisode = this.allEpisodes.find(ep => ep.index === episodeIndex);
+                
+                // 获取当前活跃站点信息
+                let siteName = '未知站点';
+                if (window.parent && window.parent.app && window.parent.app.apiService) {
+                    const activeSite = window.parent.app.apiService.getActiveSite();
+                    siteName = activeSite ? activeSite.name : '未知站点';
+                }
+
+                // 更新播放历史
+                const historyData = {
+                    vod_id: this.videoData.vod_id,
+                    vod_name: this.videoData.vod_name,
+                    vod_pic: this.videoData.vod_pic,
+                    type_name: this.videoData.type_name || '未知类型',
+                    current_episode: episodeIndex,
+                    episode_name: currentEpisode?.name || `第${episodeIndex}集`,
+                    site_name: siteName
+                };
+
+                console.log('[PLAYER] 更新播放历史数据:', historyData);
+                this.storageService.addPlayHistory(historyData);
+                console.log('[PLAYER] 播放历史已更新');
+            } catch (error) {
+                console.error('[PLAYER] 更新播放历史失败:', error);
+            }
+        } else {
+            console.warn('[PLAYER] 存储服务不可用，无法更新播放历史');
         }
     }
 
@@ -788,6 +1040,9 @@ class VideoPlayer {
             this.video.src = '';
             this.video.load();
         }
+
+        // 清理网页播放器
+        this.cleanupWebPage();
     }
 
     // 销毁播放器

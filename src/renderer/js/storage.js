@@ -369,6 +369,9 @@ class StorageService {
                 throw new Error('导入数据格式无效');
             }
 
+            // 检测并转换特殊格式（如主站信息格式）
+            importData = this.convertSpecialFormats(importData);
+
             const results = {
                 success: true,
                 imported: [],
@@ -379,16 +382,34 @@ class StorageService {
             // 导入站点配置
             if (importData.sites && Array.isArray(importData.sites)) {
                 try {
+                    // 对于从主站信息格式转换的数据，再次确保所有站点类型为json
+                    if (importData.exportInfo && importData.exportInfo.source &&
+                        importData.exportInfo.source.includes('主站信息格式转换')) {
+                        importData.sites.forEach(site => {
+                            site.type = 'json'; // 强制确保类型为json
+                            console.log(`[STORAGE] 确认站点类型: ${site.name} -> ${site.type}`);
+                        });
+                    }
+
                     if (options.overwriteSites) {
                         localStorage.setItem(this.STORAGE_KEYS.VIDEO_SITES, JSON.stringify(importData.sites));
                         results.imported.push(`站点配置 (${importData.sites.length} 个站点)`);
+                        console.log('[STORAGE] 覆盖模式保存站点数据:', importData.sites);
                     } else {
                         // 合并站点，避免重复
                         const existingSites = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.VIDEO_SITES) || '[]');
                         const mergedSites = this.mergeSites(existingSites, importData.sites);
                         localStorage.setItem(this.STORAGE_KEYS.VIDEO_SITES, JSON.stringify(mergedSites));
                         results.imported.push(`站点配置 (合并 ${importData.sites.length} 个站点)`);
+                        console.log('[STORAGE] 合并模式保存站点数据:', mergedSites);
                     }
+
+                    // 验证数据是否正确保存
+                    const savedSites = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.VIDEO_SITES) || '[]');
+                    console.log('[STORAGE] 验证保存结果，站点总数:', savedSites.length);
+                    savedSites.forEach(site => {
+                        console.log(`[STORAGE] 验证站点: ${site.name} (id: ${site.id}, active: ${site.active}, type: ${site.type})`);
+                    });
                 } catch (error) {
                     results.errors.push('站点配置导入失败: ' + error.message);
                 }
@@ -480,10 +501,15 @@ class StorageService {
         const mergedSites = [...existingSites];
         const existingUrls = new Set(existingSites.map(site => site.url));
 
-        newSites.forEach(newSite => {
+        newSites.forEach((newSite, index) => {
             if (!existingUrls.has(newSite.url)) {
-                // 为新站点生成唯一ID
-                newSite.id = Date.now() + Math.random();
+                // 确保新站点有正确的字段和ID格式
+                if (!newSite.id || typeof newSite.id !== 'string') {
+                    newSite.id = `merged_${Date.now()}_${index}`;
+                }
+                if (typeof newSite.active === 'undefined') {
+                    newSite.active = false;
+                }
                 mergedSites.push(newSite);
             }
         });
@@ -516,25 +542,29 @@ class StorageService {
             return { isValid: false, errors };
         }
 
-        // 检查导出信息
-        if (!data.exportInfo) {
+        // 检测并转换特殊格式
+        const convertedData = this.convertSpecialFormats(data);
+
+        // 检查导出信息（对于标准格式）
+        if (!convertedData.exportInfo && !convertedData.站点 && !convertedData.sites) {
             errors.push('缺少导出信息，可能不是有效的配置文件');
         }
 
         // 检查站点数据
-        if (data.sites && !Array.isArray(data.sites)) {
+        if (convertedData.sites && !Array.isArray(convertedData.sites)) {
             errors.push('站点数据格式无效');
         }
 
         // 检查线路别名数据
-        if (data.routeAliases && typeof data.routeAliases !== 'object') {
+        if (convertedData.routeAliases && typeof convertedData.routeAliases !== 'object') {
             errors.push('线路别名数据格式无效');
         }
 
         return {
             isValid: errors.length === 0,
             errors,
-            warnings: this.getImportWarnings(data)
+            warnings: this.getImportWarnings(convertedData),
+            convertedData: convertedData // 返回转换后的数据
         };
     }
 
@@ -550,7 +580,105 @@ class StorageService {
             warnings.push(`站点配置包含 ${data.sites.length} 个站点，可能影响性能`);
         }
 
+        // 如果检测到是从主站信息格式转换的，添加相应提示
+        if (data.exportInfo && data.exportInfo.source && data.exportInfo.source.includes('主站信息格式转换')) {
+            warnings.push(`检测到主站信息格式，已自动转换为站点配置（仅导入站点信息）`);
+        }
+
         return warnings;
+    }
+
+    // 转换特殊格式的数据（如主站信息格式）
+    convertSpecialFormats(data) {
+        // 检测是否为主站信息格式
+        if (data.站点 && Array.isArray(data.站点)) {
+            console.log('[STORAGE] 检测到主站信息格式，开始转换...');
+            return this.convertMainSiteFormat(data);
+        }
+
+        // 其他格式检测可以在这里添加
+
+        return data; // 如果不是特殊格式，返回原数据
+    }
+
+    // 转换主站信息格式
+    convertMainSiteFormat(data) {
+        const convertedData = {
+            exportInfo: {
+                appName: '七星追剧',
+                version: '1.1.0',
+                exportTime: new Date().toISOString(),
+                source: '主站信息格式转换 - 仅导入站点配置'
+            },
+            sites: [],
+            // 不导入播放器和接口信息，只专注于站点数据
+            routeAliases: {},
+            userSettings: {}
+        };
+
+        // 转换站点数据
+        if (data.站点 && Array.isArray(data.站点)) {
+            data.站点.forEach((site, index) => {
+                try {
+                    // 过滤掉无效的站点数据
+                    if (!site.标题 || (!site.列表 && !site.详情)) {
+                        console.warn('[STORAGE] 跳过无效站点数据:', site);
+                        return;
+                    }
+
+                    // 获取API地址，优先使用列表地址，如果没有则使用详情地址
+                    const apiUrl = site.列表 || site.详情;
+
+                    const convertedSite = {
+                        id: `imported_${Date.now()}_${index}`, // 生成字符串格式的唯一ID
+                        name: site.标题,
+                        url: apiUrl,
+                        type: 'json', // 强制设置为JSON格式，不使用detectSiteType
+                        enabled: true,
+                        active: false, // 添加active字段，默认为false
+                        addTime: Date.now(),
+                        description: `从主站信息导入 - JSON格式`
+                    };
+
+                    convertedData.sites.push(convertedSite);
+                    console.log(`[STORAGE] 强制转换站点为JSON: ${convertedSite.name} -> ${convertedSite.url} (type: ${convertedSite.type})`);
+                } catch (error) {
+                    console.error('[STORAGE] 站点转换失败:', site, error);
+                }
+            });
+        }
+
+        // 不导入播放器和接口配置，保持简洁
+        console.log(`[STORAGE] 主站信息格式转换完成，共转换 ${convertedData.sites.length} 个站点`);
+        console.log(`[STORAGE] 所有站点已强制设置为JSON格式，已忽略播放器配置 ${data.播放器?.length || 0} 个，解析接口 ${data.接口?.length || 0} 个`);
+
+        return convertedData;
+    }
+
+    // 检测站点类型
+    detectSiteType(site) {
+        const url = site.列表 || site.详情 || '';
+        const title = site.标题 || '';
+
+        // 根据标题前缀判断站点类别
+        if (title.startsWith('[P]')) {
+            return 'standard'; // 标准影视站点
+        } else if (title.startsWith('[A]')) {
+            return 'adult'; // 成人站点
+        }
+
+        // 根据URL特征和类型字段判断API格式
+        if (url.includes('api.php/provide/vod')) {
+            // 类型为"1"表示JSON API，"2"表示XML API
+            return site.类型 === '1' || site.类型 === 1 ? 'json' : 'xml';
+        }
+
+        // 根据URL特征进一步判断
+        if (url.includes('/api.php') || url.includes('provide/vod')) {
+            return 'json'; // 默认为JSON格式
+        }
+
+        return 'unknown';
     }
 }
 
