@@ -5,7 +5,8 @@ class StorageService {
             PLAY_HISTORY: 'play_history',
             WATCH_PROGRESS: 'watch_progress',
             USER_SETTINGS: 'user_settings',
-            VIDEO_SITES: 'video_sites'
+            VIDEO_SITES: 'video_sites',
+            ROUTE_ALIASES: 'route_aliases'
         };
     }
 
@@ -32,7 +33,9 @@ class StorageService {
             current_episode: videoData.current_episode || 1,
             episode_name: videoData.episode_name || '第1集',
             watch_time: Date.now(),
-            site_name: videoData.site_name || '未知站点'
+            site_name: videoData.site_name || '未知站点',
+            progress: videoData.progress || 0,
+            play_duration: videoData.play_duration || 0 // 添加播放时长字段
         };
 
         console.log('创建历史记录项:', historyItem);
@@ -84,12 +87,12 @@ class StorageService {
 
         localStorage.setItem(this.STORAGE_KEYS.WATCH_PROGRESS, JSON.stringify(progressData));
 
-        // 同时更新播放历史中的进度
-        this.updateHistoryProgress(vodId, episode, percentage);
+        // 同时更新播放历史中的进度和播放时长
+        this.updateHistoryProgress(vodId, episode, percentage, Math.round(currentTime));
     }
 
     // 更新历史记录中的进度
-    updateHistoryProgress(vodId, episode, percentage) {
+    updateHistoryProgress(vodId, episode, percentage, playDuration = null) {
         let history = this.getPlayHistory();
         const historyItem = history.find(item => item.vod_id === vodId);
 
@@ -97,6 +100,18 @@ class StorageService {
             historyItem.current_episode = episode;
             historyItem.progress = percentage;
             historyItem.watch_time = Date.now();
+
+            // 更新播放时长（如果提供了的话）
+            if (playDuration !== null && playDuration > 0) {
+                historyItem.play_duration = playDuration;
+                console.log('[STORAGE] 更新播放历史时长:', {
+                    vodId,
+                    episode,
+                    playDuration,
+                    vodName: historyItem.vod_name
+                });
+            }
+
             localStorage.setItem(this.STORAGE_KEYS.PLAY_HISTORY, JSON.stringify(history));
         }
     }
@@ -268,6 +283,274 @@ class StorageService {
         const sizes = ['Bytes', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // 获取线路别名配置
+    getRouteAliases() {
+        const aliases = localStorage.getItem(this.STORAGE_KEYS.ROUTE_ALIASES);
+        return aliases ? JSON.parse(aliases) : {};
+    }
+
+    // 保存线路别名配置
+    saveRouteAliases(aliases) {
+        localStorage.setItem(this.STORAGE_KEYS.ROUTE_ALIASES, JSON.stringify(aliases));
+    }
+
+    // 获取线路别名
+    getRouteAlias(routeName) {
+        const aliases = this.getRouteAliases();
+        return aliases[routeName] || routeName;
+    }
+
+    // 设置线路别名
+    setRouteAlias(routeName, alias) {
+        const aliases = this.getRouteAliases();
+        aliases[routeName] = alias;
+        this.saveRouteAliases(aliases);
+    }
+
+    // 删除线路别名
+    removeRouteAlias(routeName) {
+        const aliases = this.getRouteAliases();
+        delete aliases[routeName];
+        this.saveRouteAliases(aliases);
+    }
+
+    // 获取所有已设置的线路别名
+    getAllRouteAliases() {
+        return this.getRouteAliases();
+    }
+
+    // ==================== 数据导入导出功能 ====================
+
+    // 导出所有配置数据
+    exportAllData() {
+        try {
+            const exportData = {
+                // 导出时间戳和版本信息
+                exportInfo: {
+                    timestamp: Date.now(),
+                    date: new Date().toLocaleString('zh-CN'),
+                    version: '1.1.0',
+                    appName: '七星追剧'
+                },
+
+                // 站点配置
+                sites: JSON.parse(localStorage.getItem(this.STORAGE_KEYS.VIDEO_SITES) || '[]'),
+
+                // 线路别名
+                routeAliases: JSON.parse(localStorage.getItem(this.STORAGE_KEYS.ROUTE_ALIASES) || '{}'),
+
+                // 用户设置
+                userSettings: JSON.parse(localStorage.getItem(this.STORAGE_KEYS.USER_SETTINGS) || '{}'),
+
+                // 播放历史（可选，用户可以选择是否包含）
+                playHistory: JSON.parse(localStorage.getItem(this.STORAGE_KEYS.PLAY_HISTORY) || '[]'),
+
+                // 观看进度
+                watchProgress: JSON.parse(localStorage.getItem(this.STORAGE_KEYS.WATCH_PROGRESS) || '{}')
+            };
+
+            console.log('[STORAGE] 准备导出数据:', exportData);
+            return exportData;
+        } catch (error) {
+            console.error('[STORAGE] 导出数据失败:', error);
+            throw new Error('导出数据失败: ' + error.message);
+        }
+    }
+
+    // 导入配置数据
+    importAllData(importData, options = {}) {
+        try {
+            console.log('[STORAGE] 开始导入数据:', importData);
+
+            // 验证数据格式
+            if (!importData || typeof importData !== 'object') {
+                throw new Error('导入数据格式无效');
+            }
+
+            const results = {
+                success: true,
+                imported: [],
+                skipped: [],
+                errors: []
+            };
+
+            // 导入站点配置
+            if (importData.sites && Array.isArray(importData.sites)) {
+                try {
+                    if (options.overwriteSites) {
+                        localStorage.setItem(this.STORAGE_KEYS.VIDEO_SITES, JSON.stringify(importData.sites));
+                        results.imported.push(`站点配置 (${importData.sites.length} 个站点)`);
+                    } else {
+                        // 合并站点，避免重复
+                        const existingSites = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.VIDEO_SITES) || '[]');
+                        const mergedSites = this.mergeSites(existingSites, importData.sites);
+                        localStorage.setItem(this.STORAGE_KEYS.VIDEO_SITES, JSON.stringify(mergedSites));
+                        results.imported.push(`站点配置 (合并 ${importData.sites.length} 个站点)`);
+                    }
+                } catch (error) {
+                    results.errors.push('站点配置导入失败: ' + error.message);
+                }
+            }
+
+            // 导入线路别名
+            if (importData.routeAliases && typeof importData.routeAliases === 'object') {
+                try {
+                    if (options.overwriteAliases) {
+                        localStorage.setItem(this.STORAGE_KEYS.ROUTE_ALIASES, JSON.stringify(importData.routeAliases));
+                        results.imported.push(`线路别名 (${Object.keys(importData.routeAliases).length} 个别名)`);
+                    } else {
+                        // 合并别名
+                        const existingAliases = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.ROUTE_ALIASES) || '{}');
+                        const mergedAliases = { ...existingAliases, ...importData.routeAliases };
+                        localStorage.setItem(this.STORAGE_KEYS.ROUTE_ALIASES, JSON.stringify(mergedAliases));
+                        results.imported.push(`线路别名 (合并 ${Object.keys(importData.routeAliases).length} 个别名)`);
+                    }
+                } catch (error) {
+                    results.errors.push('线路别名导入失败: ' + error.message);
+                }
+            }
+
+            // 导入用户设置
+            if (importData.userSettings && typeof importData.userSettings === 'object') {
+                try {
+                    if (options.overwriteSettings) {
+                        localStorage.setItem(this.STORAGE_KEYS.USER_SETTINGS, JSON.stringify(importData.userSettings));
+                        results.imported.push('用户设置');
+                    } else {
+                        const existingSettings = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.USER_SETTINGS) || '{}');
+                        const mergedSettings = { ...existingSettings, ...importData.userSettings };
+                        localStorage.setItem(this.STORAGE_KEYS.USER_SETTINGS, JSON.stringify(mergedSettings));
+                        results.imported.push('用户设置 (合并)');
+                    }
+                } catch (error) {
+                    results.errors.push('用户设置导入失败: ' + error.message);
+                }
+            }
+
+            // 导入播放历史（可选）
+            if (options.importHistory && importData.playHistory && Array.isArray(importData.playHistory)) {
+                try {
+                    if (options.overwriteHistory) {
+                        localStorage.setItem(this.STORAGE_KEYS.PLAY_HISTORY, JSON.stringify(importData.playHistory));
+                        results.imported.push(`播放历史 (${importData.playHistory.length} 条记录)`);
+                    } else {
+                        const existingHistory = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.PLAY_HISTORY) || '[]');
+                        const mergedHistory = this.mergeHistory(existingHistory, importData.playHistory);
+                        localStorage.setItem(this.STORAGE_KEYS.PLAY_HISTORY, JSON.stringify(mergedHistory));
+                        results.imported.push(`播放历史 (合并 ${importData.playHistory.length} 条记录)`);
+                    }
+                } catch (error) {
+                    results.errors.push('播放历史导入失败: ' + error.message);
+                }
+            } else if (importData.playHistory) {
+                results.skipped.push(`播放历史 (${importData.playHistory.length} 条记录，用户选择跳过)`);
+            }
+
+            // 导入观看进度（可选）
+            if (options.importProgress && importData.watchProgress && typeof importData.watchProgress === 'object') {
+                try {
+                    if (options.overwriteProgress) {
+                        localStorage.setItem(this.STORAGE_KEYS.WATCH_PROGRESS, JSON.stringify(importData.watchProgress));
+                        results.imported.push(`观看进度 (${Object.keys(importData.watchProgress).length} 个进度)`);
+                    } else {
+                        const existingProgress = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.WATCH_PROGRESS) || '{}');
+                        const mergedProgress = { ...existingProgress, ...importData.watchProgress };
+                        localStorage.setItem(this.STORAGE_KEYS.WATCH_PROGRESS, JSON.stringify(mergedProgress));
+                        results.imported.push(`观看进度 (合并 ${Object.keys(importData.watchProgress).length} 个进度)`);
+                    }
+                } catch (error) {
+                    results.errors.push('观看进度导入失败: ' + error.message);
+                }
+            } else if (importData.watchProgress) {
+                results.skipped.push(`观看进度 (${Object.keys(importData.watchProgress).length} 个进度，用户选择跳过)`);
+            }
+
+            console.log('[STORAGE] 数据导入完成:', results);
+            return results;
+        } catch (error) {
+            console.error('[STORAGE] 导入数据失败:', error);
+            throw new Error('导入数据失败: ' + error.message);
+        }
+    }
+
+    // 合并站点数据，避免重复
+    mergeSites(existingSites, newSites) {
+        const mergedSites = [...existingSites];
+        const existingUrls = new Set(existingSites.map(site => site.url));
+
+        newSites.forEach(newSite => {
+            if (!existingUrls.has(newSite.url)) {
+                // 为新站点生成唯一ID
+                newSite.id = Date.now() + Math.random();
+                mergedSites.push(newSite);
+            }
+        });
+
+        return mergedSites;
+    }
+
+    // 合并播放历史，避免重复
+    mergeHistory(existingHistory, newHistory) {
+        const mergedHistory = [...existingHistory];
+        const existingIds = new Set(existingHistory.map(item => item.vod_id));
+
+        newHistory.forEach(newItem => {
+            if (!existingIds.has(newItem.vod_id)) {
+                mergedHistory.push(newItem);
+            }
+        });
+
+        // 按时间排序，限制数量
+        mergedHistory.sort((a, b) => b.watch_time - a.watch_time);
+        return mergedHistory.slice(0, 200); // 最多保留200条记录
+    }
+
+    // 验证导入数据的完整性
+    validateImportData(data) {
+        const errors = [];
+
+        if (!data || typeof data !== 'object') {
+            errors.push('数据格式无效');
+            return { isValid: false, errors };
+        }
+
+        // 检查导出信息
+        if (!data.exportInfo) {
+            errors.push('缺少导出信息，可能不是有效的配置文件');
+        }
+
+        // 检查站点数据
+        if (data.sites && !Array.isArray(data.sites)) {
+            errors.push('站点数据格式无效');
+        }
+
+        // 检查线路别名数据
+        if (data.routeAliases && typeof data.routeAliases !== 'object') {
+            errors.push('线路别名数据格式无效');
+        }
+
+        return {
+            isValid: errors.length === 0,
+            errors,
+            warnings: this.getImportWarnings(data)
+        };
+    }
+
+    // 获取导入警告信息
+    getImportWarnings(data) {
+        const warnings = [];
+
+        if (data.playHistory && data.playHistory.length > 100) {
+            warnings.push(`播放历史包含 ${data.playHistory.length} 条记录，建议选择性导入`);
+        }
+
+        if (data.sites && data.sites.length > 20) {
+            warnings.push(`站点配置包含 ${data.sites.length} 个站点，可能影响性能`);
+        }
+
+        return warnings;
     }
 }
 

@@ -52,6 +52,7 @@ class ComponentService {
                 </div>
                 <div class="site-details">
                     <p class="site-url">${site.url}</p>
+                    ${site.blockedRoutes ? `<p class="site-blocked-routes">屏蔽线路: ${site.blockedRoutes}</p>` : ''}
                     <div class="site-actions">
                         <button class="btn-test" data-site-id="${site.id}" title="测试API连接和数据格式">
                             测试
@@ -105,6 +106,12 @@ class ComponentService {
                         <option value="xml">XML</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label for="blocked-routes">屏蔽线路 <span class="form-hint">（可选）</span></label>
+                    <input type="text" id="blocked-routes" name="blockedRoutes" 
+                           placeholder="如：线路1,线路2,m3u8 （多个线路用半角逗号分隔）">
+                    <small class="form-description">填写需要屏蔽的线路名称，播放时将自动忽略这些线路</small>
+                </div>
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" id="cancel-btn">取消</button>
                     <button type="button" class="btn-primary" id="test-btn">测试连接</button>
@@ -129,7 +136,8 @@ class ComponentService {
             const siteData = {
                 name: formData.get('name'),
                 url: formData.get('url'),
-                type: formData.get('type')
+                type: formData.get('type'),
+                blockedRoutes: formData.get('blockedRoutes') || ''
             };
 
             try {
@@ -167,6 +175,13 @@ class ComponentService {
                         <option value="xml" ${site.type === 'xml' ? 'selected' : ''}>XML</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label for="edit-blocked-routes">屏蔽线路 <span class="form-hint">（可选）</span></label>
+                    <input type="text" id="edit-blocked-routes" name="blockedRoutes" 
+                           value="${site.blockedRoutes || ''}"
+                           placeholder="如：线路1,线路2,m3u8 （多个线路用半角逗号分隔）">
+                    <small class="form-description">填写需要屏蔽的线路名称，播放时将自动忽略这些线路</small>
+                </div>
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" id="cancel-edit-btn">取消</button>
                     <button type="button" class="btn-primary" id="test-edit-btn">测试连接</button>
@@ -191,7 +206,8 @@ class ComponentService {
             const siteData = {
                 name: formData.get('name'),
                 url: formData.get('url'),
-                type: formData.get('type')
+                type: formData.get('type'),
+                blockedRoutes: formData.get('blockedRoutes') || ''
             };
 
             try {
@@ -471,33 +487,100 @@ class ComponentService {
 
     // 创建历史记录项
     createHistoryItem(history) {
+        console.log('[COMPONENTS] 创建历史记录项，数据:', history);
+
         const item = document.createElement('div');
         item.className = 'history-item';
-        item.dataset.videoId = history.id;
+        item.dataset.videoId = history.vod_id;
 
-        let posterUrl = history.pic || '';
+        let posterUrl = history.vod_pic || '';
         if (posterUrl && !posterUrl.startsWith('http')) {
             posterUrl = 'https:' + posterUrl;
         }
 
+        // 获取播放进度信息
+        const progressPercentage = history.progress || 0;
+        const progressText = progressPercentage > 0 ? `观看进度: ${progressPercentage}%` : '';
+
+        // 格式化观看时间
+        const watchTimeText = history.watch_time ?
+            new Date(history.watch_time).toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            }) : '未知时间';
+
+        // 格式化播放时长（如果有的话）
+        const playDurationText = history.play_duration ?
+            this.formatPlayDuration(history.play_duration) : '';
+
+        // 计算播放时间显示
+        const playTimeDisplay = playDurationText ?
+            `已播放: ${playDurationText}` :
+            (progressPercentage > 0 ? progressText : '');
+
+        console.log('[COMPONENTS] 格式化后的时间信息:', {
+            watchTimeText,
+            playDurationText,
+            playTimeDisplay,
+            progressPercentage,
+            originalWatchTime: history.watch_time,
+            watchTimeType: typeof history.watch_time,
+            historyVodName: history.vod_name,
+            historyEpisodeName: history.episode_name
+        });
+
+        console.log('[COMPONENTS] 具体的watchTimeText值:', watchTimeText);
+        console.log('[COMPONENTS] 具体的playDurationText值:', playDurationText);
+        console.log('[COMPONENTS] 具体的playTimeDisplay值:', playTimeDisplay);
+
         item.innerHTML = `
             <div class="history-poster">
-                <img src="${posterUrl}" alt="${history.name}" 
+                <img src="${posterUrl}" alt="${history.vod_name}" 
                      onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPuaaguaXoOa1t+aKpTwvdGV4dD48L3N2Zz4='; this.alt='暂无海报';">
+                ${progressPercentage > 0 ? `<div class="history-progress-overlay">${progressPercentage}%</div>` : ''}
             </div>
             <div class="history-info">
-                <h4 class="history-title">${history.name}</h4>
-                <p class="history-episode">${history.episodeName || '未知集数'}</p>
-                <p class="history-time">${new Date(history.watchTime).toLocaleString()}</p>
+                <h4 class="history-title">${history.vod_name}</h4>
+                <p class="history-meta">
+                    <span class="history-type">${history.type_name || '未知类型'}</span>
+                    <span class="history-separator">•</span>
+                    <span class="history-site">${history.site_name || '未知站点'}</span>
+                </p>
+                <p class="history-episode">观看到: ${history.episode_name || '第' + (history.current_episode || 1) + '集'}</p>
+                <p class="history-time">观看时间: ${watchTimeText}</p>
+                ${playTimeDisplay ? `<p class="history-duration">${playTimeDisplay}</p>` : ''}
+                ${progressPercentage > 0 ? `
                 <div class="history-progress">
-                    <div class="progress-bar" style="width: ${(history.currentTime / history.duration * 100) || 0}%"></div>
+                    <div class="progress-bar" style="width: ${progressPercentage}%"></div>
                 </div>
+                ` : ''}
+            </div>
+            <div class="history-actions">
+                <button class="btn-continue" title="继续播放">继续</button>
+                <button class="btn-remove" title="删除记录">删除</button>
             </div>
         `;
 
+        // 添加继续播放事件
+        const continueBtn = item.querySelector('.btn-continue');
+        continueBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.continuePlayback(history);
+        });
+
+        // 添加删除记录事件
+        const removeBtn = item.querySelector('.btn-remove');
+        removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.removeHistoryItem(history.vod_id, item);
+        });
+
         // 添加点击事件
         item.addEventListener('click', () => {
-            this.showVideoDetail(history.id);
+            this.showVideoDetail(history.vod_id);
         });
 
         return item;
@@ -560,6 +643,16 @@ class ComponentService {
         this.currentRoutes = routes;
         this.currentActiveRoute = 0; // 默认选中第一个线路
 
+        // 预处理线路别名
+        const routesWithAliases = routes.map(route => ({
+            ...route,
+            displayName: this.ensureRouteAlias(route.name)
+        }));
+
+        // 获取当前活跃站点信息
+        const activeSite = this.apiService.getActiveSite();
+        const activeSiteName = activeSite ? activeSite.name : '当前站点';
+
         detailContent.innerHTML = `
             <div class="detail-container">
                 <div class="detail-poster">
@@ -567,6 +660,23 @@ class ComponentService {
                 </div>
                 <div class="detail-info">
                     <h2 class="detail-title">${video.vod_name}</h2>
+                    
+                    <!-- 当前播放站点标识和标签在同一行 -->
+                    <div class="site-and-tags-row">
+                        <div class="current-site-badge">
+                            <i>🌐</i>
+                            <span>来源：${activeSiteName}</span>
+                        </div>
+                        
+                        <!-- 标签区域 - 与站点标识在同一行 -->
+                        ${video.vod_tag ? `
+                        <div class="detail-tags">
+                            ${video.vod_tag.split(',').map(tag =>
+            `<span class="tag">${tag.trim()}</span>`
+        ).join('')}
+                        </div>
+                        ` : ''}
+                    </div>
                     
                     <!-- 基本信息区域 -->
                     <div class="detail-meta">
@@ -639,31 +749,24 @@ class ComponentService {
                         ` : ''}
                     </div>
                     
-                    <!-- 标签区域 -->
-                    ${video.vod_tag ? `
-                    <div class="detail-tags">
-                        ${video.vod_tag.split(',').map(tag =>
-            `<span class="tag">${tag.trim()}</span>`
-        ).join('')}
-                    </div>
-                    ` : ''}
-                    
                     <!-- 简介区域 -->
                     <div class="detail-desc">
                         <h4>剧情简介</h4>
                         <p>${video.vod_content ? video.vod_content.replace(/<[^>]*>/g, '') : '暂无简介'}</p>
                     </div>
                     
-                    ${routes && routes.length > 0 ? `
+                    <!-- 播放列表 - 恢复到原来的位置（选集区域上方） -->
+                    ${routesWithAliases && routesWithAliases.length > 0 ? `
                         <div class="episodes-section">
                             <h3>播放列表</h3>
                             <!-- 线路切换标签 -->
                             <div class="route-tabs">
-                                ${routes.map((route, index) => `
-                                    <button class="route-tab ${index === 0 ? 'active' : ''}" data-route-index="${index}">
-                                        ${route.name} (${route.episodes.length}集)
+                                ${routesWithAliases.map((route, index) => `
+                                    <button class="route-tab ${index === 0 ? 'active' : ''}" data-route-index="${index}" title="原名称: ${route.name}">
+                                        ${route.displayName} (${route.episodes.length}集)
                                     </button>
                                 `).join('')}
+                            </div>
                             </div>
                             <!-- 当前线路的剧集列表 -->
                             <div class="episodes-container">
@@ -677,7 +780,7 @@ class ComponentService {
             </div>
         `;
 
-        if (routes && routes.length > 0) {
+        if (routesWithAliases && routesWithAliases.length > 0) {
             // 设置线路切换事件
             this.setupRouteTabEvents();
             // 加载默认线路的剧集
@@ -1121,6 +1224,805 @@ class ComponentService {
             // 文字不超出时，隐藏走马灯元素
             marqueeDiv.style.display = 'none';
         }
+    }
+
+    // 继续播放历史记录
+    continuePlayback(history) {
+        console.log('[COMPONENTS] 继续播放:', history);
+
+        // 先跳转到详情页面，然后继续播放
+        this.showVideoDetail(history.vod_id).then(() => {
+            // 页面切换完成后，如果有播放信息，继续播放指定集数
+            if (history.current_episode && history.episode_name) {
+                // 延迟一段时间确保详情页面完全加载
+                setTimeout(() => {
+                    this.continueFromHistory(history);
+                }, 500);
+            }
+        }).catch(error => {
+            console.error('[COMPONENTS] 跳转到详情页面失败:', error);
+            this.showNotification('无法跳转到详情页面', 'error');
+        });
+    }
+
+    // 从历史记录继续播放
+    continueFromHistory(history) {
+        console.log('[COMPONENTS] 从历史记录继续播放:', history);
+
+        // 查找对应的剧集按钮并高亮
+        const episodeButtons = document.querySelectorAll('.episode-btn');
+        let targetButton = null;
+
+        // 尝试根据剧集名称或集数找到对应按钮
+        for (const btn of episodeButtons) {
+            const buttonText = btn.textContent.trim();
+            const episodeIndex = parseInt(btn.dataset.episode);
+
+            // 匹配剧集名称或集数
+            if (buttonText === history.episode_name ||
+                episodeIndex === (history.current_episode - 1)) {
+                targetButton = btn;
+                break;
+            }
+        }
+
+        if (targetButton) {
+            // 高亮目标按钮
+            episodeButtons.forEach(btn => btn.classList.remove('current-episode'));
+            targetButton.classList.add('current-episode');
+
+            // 滚动到目标按钮
+            targetButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+            // 显示继续播放提示
+            this.showNotification(`正在继续播放《${history.vod_name}》${history.episode_name}...`, 'success');
+
+            // 自动开始播放，延迟一点时间确保界面更新完成
+            setTimeout(() => {
+                console.log('[COMPONENTS] 自动触发播放按钮点击');
+                targetButton.click();
+            }, 800);
+        } else {
+            this.showNotification(`未找到对应的剧集：${history.episode_name}`, 'warning');
+        }
+    }
+
+    // 格式化播放时长
+    formatPlayDuration(seconds) {
+        if (!seconds || seconds < 0) return '0秒';
+
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+
+        if (hours > 0) {
+            return `${hours}小时${minutes}分钟${secs}秒`;
+        } else if (minutes > 0) {
+            return `${minutes}分钟${secs}秒`;
+        } else {
+            return `${secs}秒`;
+        }
+    }
+
+    // 删除历史记录项
+    removeHistoryItem(vodId, itemElement) {
+        console.log('[COMPONENTS] 删除历史记录:', vodId);
+
+        // 确认删除
+        const content = `
+            <h3>删除确认</h3>
+            <p>确定要删除这条播放历史吗？</p>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" id="cancel-remove-btn">取消</button>
+                <button type="button" class="btn-delete" id="confirm-remove-btn">删除</button>
+            </div>
+        `;
+
+        this.showModal(content);
+
+        const cancelBtn = document.getElementById('cancel-remove-btn');
+        const confirmBtn = document.getElementById('confirm-remove-btn');
+
+        cancelBtn.addEventListener('click', () => {
+            this.hideModal();
+        });
+
+        confirmBtn.addEventListener('click', () => {
+            // 从存储中删除
+            this.storageService.removePlayHistory(vodId);
+
+            // 从DOM中删除
+            itemElement.remove();
+
+            this.hideModal();
+            this.showNotification('历史记录已删除', 'success');
+
+            // 检查是否还有历史记录，如果没有则显示空状态
+            const historyList = document.getElementById('history-list');
+            if (historyList && historyList.children.length === 0) {
+                historyList.innerHTML = `
+                    <div class="empty-state">
+                        <i>📺</i>
+                        <h3>暂无播放历史</h3>
+                        <p>开始观看视频后，历史记录会显示在这里</p>
+                    </div>
+                `;
+            }
+        });
+    }
+
+    // ==================== 线路别名管理 ====================
+
+    // 显示线路别名管理模态框
+    showRouteAliasModal() {
+        const aliases = this.storageService.getAllRouteAliases();
+        const aliasEntries = Object.entries(aliases);
+
+        const content = `
+            <h3>管理线路别名</h3>
+            <div class="route-alias-manager">
+                <div class="route-alias-list-modal">
+                    ${aliasEntries.length > 0 ?
+                aliasEntries.map(([routeName, alias]) => `
+                            <div class="route-alias-edit-item" data-route="${routeName}">
+                                <div class="alias-edit-info">
+                                    <div class="alias-original-name">原名称: ${routeName}</div>
+                                    <div class="alias-input-group">
+                                        <label>别名:</label>
+                                        <input type="text" class="alias-input" value="${alias}" 
+                                               data-route="${routeName}" placeholder="输入自定义别名">
+                                    </div>
+                                </div>
+                                <div class="alias-edit-actions">
+                                    <button type="button" class="btn-save-alias btn-primary" 
+                                            data-route="${routeName}">保存</button>
+                                    <button type="button" class="btn-remove-alias btn-secondary" 
+                                            data-route="${routeName}">删除</button>
+                                </div>
+                            </div>
+                        `).join('')
+                : '<div class="empty-alias-state"><p>暂无线路别名设置</p><p>在视频播放页面会自动为遇到的线路创建别名设置</p></div>'
+            }
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="close-alias-modal">关闭</button>
+                </div>
+            </div>
+        `;
+
+        this.showModal(content);
+
+        // 绑定事件
+        this.setupRouteAliasEvents();
+    }
+
+    // 设置线路别名事件
+    setupRouteAliasEvents() {
+        const closeBtn = document.getElementById('close-alias-modal');
+        const saveButtons = document.querySelectorAll('.btn-save-alias');
+        const removeButtons = document.querySelectorAll('.btn-remove-alias');
+
+        closeBtn?.addEventListener('click', () => this.hideModal());
+
+        saveButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const routeName = e.target.dataset.route;
+                const input = document.querySelector(`.alias-input[data-route="${routeName}"]`);
+                const newAlias = input.value.trim();
+
+                if (newAlias) {
+                    this.storageService.setRouteAlias(routeName, newAlias);
+                    this.showNotification('别名保存成功', 'success');
+                } else {
+                    this.showNotification('别名不能为空', 'warning');
+                }
+            });
+        });
+
+        removeButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const routeName = e.target.dataset.route;
+                this.confirmRemoveRouteAlias(routeName);
+            });
+        });
+    }
+
+    // 确认删除线路别名
+    confirmRemoveRouteAlias(routeName) {
+        const content = `
+            <h3>删除确认</h3>
+            <p>确定要删除线路 "<strong>${routeName}</strong>" 的别名设置吗？</p>
+            <p>删除后将显示原始线路名称。</p>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" id="cancel-remove-alias">取消</button>
+                <button type="button" class="btn-delete" id="confirm-remove-alias">删除</button>
+            </div>
+        `;
+
+        this.showModal(content);
+
+        const cancelBtn = document.getElementById('cancel-remove-alias');
+        const confirmBtn = document.getElementById('confirm-remove-alias');
+
+        cancelBtn.addEventListener('click', () => {
+            this.hideModal();
+            // 重新显示别名管理界面
+            setTimeout(() => this.showRouteAliasModal(), 100);
+        });
+
+        confirmBtn.addEventListener('click', () => {
+            this.storageService.removeRouteAlias(routeName);
+            this.hideModal();
+            this.showNotification('别名已删除', 'success');
+            // 刷新设置页面
+            if (window.app) {
+                window.app.loadSettings();
+            }
+            // 重新显示别名管理界面
+            setTimeout(() => this.showRouteAliasModal(), 100);
+        });
+    }
+
+    // 创建线路别名列表项
+    createRouteAliasItem(routeName, alias) {
+        const item = document.createElement('div');
+        item.className = 'route-alias-item';
+        item.dataset.route = routeName;
+
+        item.innerHTML = `
+            <div class="route-alias-info">
+                <div class="route-alias-original">原名称: ${routeName}</div>
+                <div class="route-alias-display">显示为: ${alias}</div>
+            </div>
+            <div class="route-alias-actions">
+                <button class="btn-edit btn-edit-alias" data-route="${routeName}">编辑</button>
+                <button class="btn-delete btn-remove-alias" data-route="${routeName}">删除</button>
+            </div>
+        `;
+
+        // 添加事件监听
+        const editBtn = item.querySelector('.btn-edit-alias');
+        const removeBtn = item.querySelector('.btn-remove-alias');
+
+        editBtn.addEventListener('click', () => {
+            this.editRouteAlias(routeName, alias);
+        });
+
+        removeBtn.addEventListener('click', () => {
+            this.confirmRemoveRouteAlias(routeName);
+        });
+
+        return item;
+    }
+
+    // 编辑线路别名
+    editRouteAlias(routeName, currentAlias) {
+        const content = `
+            <h3>编辑线路别名</h3>
+            <form id="edit-alias-form" class="alias-form">
+                <div class="form-group">
+                    <label>原线路名称</label>
+                    <input type="text" value="${routeName}" readonly class="readonly-input">
+                </div>
+                <div class="form-group">
+                    <label for="alias-input">自定义别名</label>
+                    <input type="text" id="alias-input" value="${currentAlias}" 
+                           placeholder="输入自定义别名" required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancel-edit-alias">取消</button>
+                    <button type="submit" class="btn-primary">保存</button>
+                </div>
+            </form>
+        `;
+
+        this.showModal(content);
+
+        const form = document.getElementById('edit-alias-form');
+        const cancelBtn = document.getElementById('cancel-edit-alias');
+
+        cancelBtn.addEventListener('click', () => this.hideModal());
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const newAlias = document.getElementById('alias-input').value.trim();
+
+            if (newAlias) {
+                this.storageService.setRouteAlias(routeName, newAlias);
+                this.hideModal();
+                this.showNotification('别名更新成功', 'success');
+                // 刷新设置页面
+                if (window.app) {
+                    window.app.loadSettings();
+                }
+            } else {
+                this.showNotification('别名不能为空', 'warning');
+            }
+        });
+    }
+
+    // 获取线路显示名称（优先使用别名）
+    getRouteDisplayName(routeName) {
+        return this.storageService.getRouteAlias(routeName);
+    }
+
+    // 确保线路有别名设置（如果没有则创建默认别名）
+    ensureRouteAlias(routeName) {
+        const alias = this.storageService.getRouteAlias(routeName);
+        if (alias === routeName) {
+            // 没有设置别名，创建默认别名
+            this.storageService.setRouteAlias(routeName, routeName);
+        }
+        return alias;
+    }
+
+    // ==================== 数据导入导出功能 ====================
+
+    // 显示导出配置对话框
+    showExportDataModal() {
+        const content = `
+            <h3>导出配置数据</h3>
+            <div class="export-data-modal">
+                <div class="export-options">
+                    <h4>选择要导出的数据类型：</h4>
+                    <div class="export-checkboxes">
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="export-sites" checked>
+                            <span class="checkmark"></span>
+                            站点配置（推荐）
+                            <small>包含所有站点信息、API地址、屏蔽线路等</small>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="export-aliases" checked>
+                            <span class="checkmark"></span>
+                            线路别名（推荐）
+                            <small>包含所有自定义线路别名设置</small>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="export-settings">
+                            <span class="checkmark"></span>
+                            用户设置
+                            <small>包含应用个人偏好设置</small>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="export-history">
+                            <span class="checkmark"></span>
+                            播放历史
+                            <small>包含观看记录（文件可能较大）</small>
+                        </label>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="export-progress">
+                            <span class="checkmark"></span>
+                            观看进度
+                            <small>包含视频播放进度信息</small>
+                        </label>
+                    </div>
+                </div>
+                <div class="export-info">
+                    <p class="info-note">
+                        <i>💡</i> 
+                        推荐至少导出站点配置和线路别名，这样可以快速恢复常用设置。
+                    </p>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancel-export-btn">取消</button>
+                    <button type="button" class="btn-primary" id="confirm-export-btn">开始导出</button>
+                </div>
+            </div>
+        `;
+
+        this.showModal(content);
+
+        const cancelBtn = document.getElementById('cancel-export-btn');
+        const confirmBtn = document.getElementById('confirm-export-btn');
+
+        cancelBtn.addEventListener('click', () => {
+            this.hideModal();
+        });
+
+        confirmBtn.addEventListener('click', () => {
+            this.performDataExport();
+        });
+    }
+
+    // 执行数据导出
+    performDataExport() {
+        try {
+            // 获取导出选项
+            const exportSites = document.getElementById('export-sites').checked;
+            const exportAliases = document.getElementById('export-aliases').checked;
+            const exportSettings = document.getElementById('export-settings').checked;
+            const exportHistory = document.getElementById('export-history').checked;
+            const exportProgress = document.getElementById('export-progress').checked;
+
+            if (!exportSites && !exportAliases && !exportSettings && !exportHistory && !exportProgress) {
+                this.showNotification('请至少选择一种数据类型进行导出', 'warning');
+                return;
+            }
+
+            // 获取完整数据
+            const fullData = this.storageService.exportAllData();
+
+            // 根据用户选择过滤数据
+            const exportData = {
+                exportInfo: fullData.exportInfo
+            };
+
+            if (exportSites) exportData.sites = fullData.sites;
+            if (exportAliases) exportData.routeAliases = fullData.routeAliases;
+            if (exportSettings) exportData.userSettings = fullData.userSettings;
+            if (exportHistory) exportData.playHistory = fullData.playHistory;
+            if (exportProgress) exportData.watchProgress = fullData.watchProgress;
+
+            // 生成文件名
+            const timestamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+            const fileName = `七星追剧-配置备份-${timestamp}.json`;
+
+            // 创建下载链接
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+                type: 'application/json'
+            });
+            const url = URL.createObjectURL(blob);
+
+            // 触发下载
+            const downloadLink = document.createElement('a');
+            downloadLink.href = url;
+            downloadLink.download = fileName;
+            downloadLink.style.display = 'none';
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            URL.revokeObjectURL(url);
+
+            this.hideModal();
+            this.showNotification(`配置已导出到：${fileName}`, 'success');
+
+            console.log('[COMPONENTS] 导出完成:', {
+                fileName,
+                dataTypes: {
+                    sites: exportSites,
+                    aliases: exportAliases,
+                    settings: exportSettings,
+                    history: exportHistory,
+                    progress: exportProgress
+                }
+            });
+
+        } catch (error) {
+            console.error('[COMPONENTS] 导出失败:', error);
+            this.showNotification('导出失败: ' + error.message, 'error');
+        }
+    }
+
+    // 显示导入配置对话框
+    showImportDataModal() {
+        const content = `
+            <h3>导入配置数据</h3>
+            <div class="import-data-modal">
+                <div class="import-file-section">
+                    <h4>选择配置文件：</h4>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="import-file-select" accept=".json" style="display: none;">
+                        <button type="button" class="btn-secondary" id="select-file-btn">
+                            <i>📁</i> 选择文件
+                        </button>
+                        <span id="selected-file-name" class="selected-file-name">未选择文件</span>
+                    </div>
+                    <div class="file-info">
+                        <p class="info-note">
+                            <i>💡</i> 
+                            请选择之前导出的 .json 配置文件
+                        </p>
+                    </div>
+                </div>
+
+                <div class="import-options" id="import-options" style="display: none;">
+                    <h4>导入选项：</h4>
+                    <div class="import-mode-selection">
+                        <label class="radio-item">
+                            <input type="radio" name="import-mode" value="merge" checked>
+                            <span class="radio-mark"></span>
+                            合并模式（推荐）
+                            <small>保留现有数据，只添加新数据</small>
+                        </label>
+                        <label class="radio-item">
+                            <input type="radio" name="import-mode" value="overwrite">
+                            <span class="radio-mark"></span>
+                            覆盖模式
+                            <small>完全替换现有数据，请谨慎使用</small>
+                        </label>
+                    </div>
+
+                    <div class="import-data-types" id="import-data-types">
+                        <!-- 数据类型选择将根据文件内容动态生成 -->
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancel-import-btn">取消</button>
+                    <button type="button" class="btn-primary" id="confirm-import-btn" disabled>开始导入</button>
+                </div>
+            </div>
+        `;
+
+        this.showModal(content);
+
+        // 绑定事件
+        this.setupImportDataEvents();
+    }
+
+    // 设置导入数据事件
+    setupImportDataEvents() {
+        const fileInput = document.getElementById('import-file-select');
+        const selectFileBtn = document.getElementById('select-file-btn');
+        const selectedFileName = document.getElementById('selected-file-name');
+        const importOptions = document.getElementById('import-options');
+        const confirmImportBtn = document.getElementById('confirm-import-btn');
+        const cancelImportBtn = document.getElementById('cancel-import-btn');
+
+        selectFileBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                selectedFileName.textContent = file.name;
+                this.validateImportFile(file);
+            } else {
+                selectedFileName.textContent = '未选择文件';
+                importOptions.style.display = 'none';
+                confirmImportBtn.disabled = true;
+            }
+        });
+
+        confirmImportBtn.addEventListener('click', () => {
+            this.performDataImport(fileInput.files[0]);
+        });
+
+        cancelImportBtn.addEventListener('click', () => {
+            this.hideModal();
+        });
+    }
+
+    // 验证导入文件
+    async validateImportFile(file) {
+        try {
+            const fileContent = await this.readFileAsText(file);
+            const importData = JSON.parse(fileContent);
+
+            // 验证数据
+            const validation = this.storageService.validateImportData(importData);
+
+            if (!validation.isValid) {
+                this.showNotification('文件格式无效: ' + validation.errors.join(', '), 'error');
+                return;
+            }
+
+            // 显示警告信息
+            if (validation.warnings.length > 0) {
+                console.warn('[COMPONENTS] 导入警告:', validation.warnings);
+            }
+
+            // 生成数据类型选择界面
+            this.generateImportDataTypes(importData);
+
+            // 显示导入选项
+            document.getElementById('import-options').style.display = 'block';
+            document.getElementById('confirm-import-btn').disabled = false;
+
+            this.currentImportData = importData;
+
+        } catch (error) {
+            console.error('[COMPONENTS] 文件验证失败:', error);
+            this.showNotification('文件读取失败: ' + error.message, 'error');
+        }
+    }
+
+    // 生成导入数据类型选择界面
+    generateImportDataTypes(importData) {
+        const dataTypesDiv = document.getElementById('import-data-types');
+        const dataTypes = [];
+
+        if (importData.sites && importData.sites.length > 0) {
+            dataTypes.push({
+                key: 'sites',
+                label: '站点配置',
+                description: `${importData.sites.length} 个站点`,
+                recommended: true
+            });
+        }
+
+        if (importData.routeAliases && Object.keys(importData.routeAliases).length > 0) {
+            dataTypes.push({
+                key: 'routeAliases',
+                label: '线路别名',
+                description: `${Object.keys(importData.routeAliases).length} 个别名`,
+                recommended: true
+            });
+        }
+
+        if (importData.userSettings && Object.keys(importData.userSettings).length > 0) {
+            dataTypes.push({
+                key: 'userSettings',
+                label: '用户设置',
+                description: '个人偏好设置',
+                recommended: false
+            });
+        }
+
+        if (importData.playHistory && importData.playHistory.length > 0) {
+            dataTypes.push({
+                key: 'playHistory',
+                label: '播放历史',
+                description: `${importData.playHistory.length} 条记录`,
+                recommended: false
+            });
+        }
+
+        if (importData.watchProgress && Object.keys(importData.watchProgress).length > 0) {
+            dataTypes.push({
+                key: 'watchProgress',
+                label: '观看进度',
+                description: `${Object.keys(importData.watchProgress).length} 个进度`,
+                recommended: false
+            });
+        }
+
+        if (dataTypes.length === 0) {
+            dataTypesDiv.innerHTML = '<p class="no-data-warning">该文件中没有可导入的数据</p>';
+            document.getElementById('confirm-import-btn').disabled = true;
+            return;
+        }
+
+        const checkboxes = dataTypes.map(type => `
+            <label class="checkbox-item">
+                <input type="checkbox" id="import-${type.key}" ${type.recommended ? 'checked' : ''}>
+                <span class="checkmark"></span>
+                ${type.label}${type.recommended ? ' （推荐）' : ''}
+                <small>${type.description}</small>
+            </label>
+        `).join('');
+
+        dataTypesDiv.innerHTML = `
+            <h5>选择要导入的数据类型：</h5>
+            <div class="import-checkboxes">
+                ${checkboxes}
+            </div>
+        `;
+    }
+
+    // 执行数据导入
+    async performDataImport(file) {
+        try {
+            if (!this.currentImportData) {
+                this.showNotification('请先选择有效的配置文件', 'warning');
+                return;
+            }
+
+            // 获取导入选项
+            const importMode = document.querySelector('input[name="import-mode"]:checked').value;
+            const isOverwrite = importMode === 'overwrite';
+
+            const importOptions = {
+                // 覆盖选项
+                overwriteSites: isOverwrite,
+                overwriteAliases: isOverwrite,
+                overwriteSettings: isOverwrite,
+                overwriteHistory: isOverwrite,
+                overwriteProgress: isOverwrite,
+
+                // 导入选项
+                importHistory: document.getElementById('import-playHistory')?.checked || false,
+                importProgress: document.getElementById('import-watchProgress')?.checked || false
+            };
+
+            // 过滤要导入的数据
+            const filteredData = { ...this.currentImportData };
+
+            if (!document.getElementById('import-sites')?.checked) {
+                delete filteredData.sites;
+            }
+            if (!document.getElementById('import-routeAliases')?.checked) {
+                delete filteredData.routeAliases;
+            }
+            if (!document.getElementById('import-userSettings')?.checked) {
+                delete filteredData.userSettings;
+            }
+            if (!importOptions.importHistory) {
+                delete filteredData.playHistory;
+            }
+            if (!importOptions.importProgress) {
+                delete filteredData.watchProgress;
+            }
+
+            // 执行导入
+            const results = this.storageService.importAllData(filteredData, importOptions);
+
+            this.hideModal();
+
+            // 显示导入结果
+            this.showImportResults(results);
+
+            // 刷新相关界面
+            if (window.app) {
+                window.app.loadSettings();
+                window.app.loadSiteSelector();
+                window.app.loadCategorySelector();
+            }
+
+        } catch (error) {
+            console.error('[COMPONENTS] 导入失败:', error);
+            this.showNotification('导入失败: ' + error.message, 'error');
+        }
+    }
+
+    // 显示导入结果
+    showImportResults(results) {
+        const successItems = results.imported.map(item => `<div>✅ ${item}</div>`).join('');
+        const skippedItems = results.skipped.map(item => `<div>⏭️ ${item}</div>`).join('');
+        const errorItems = results.errors.map(item => `<div>❌ ${item}</div>`).join('');
+
+        const content = `
+            <h3>导入完成</h3>
+            <div class="import-results">
+                ${results.imported.length > 0 ? `
+                    <div class="result-section success">
+                        <h4>成功导入 (${results.imported.length})</h4>
+                        <div class="result-items">${successItems}</div>
+                    </div>
+                ` : ''}
+                
+                ${results.skipped.length > 0 ? `
+                    <div class="result-section info">
+                        <h4>跳过的项目 (${results.skipped.length})</h4>
+                        <div class="result-items">${skippedItems}</div>
+                    </div>
+                ` : ''}
+                
+                ${results.errors.length > 0 ? `
+                    <div class="result-section error">
+                        <h4>导入失败 (${results.errors.length})</h4>
+                        <div class="result-items">${errorItems}</div>
+                    </div>
+                ` : ''}
+                
+                <div class="import-summary">
+                    <p>
+                        <strong>导入汇总：</strong>
+                        成功 ${results.imported.length} 项，
+                        跳过 ${results.skipped.length} 项，
+                        失败 ${results.errors.length} 项
+                    </p>
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn-primary" id="close-results-btn">确定</button>
+            </div>
+        `;
+
+        this.showModal(content);
+
+        document.getElementById('close-results-btn').addEventListener('click', () => {
+            this.hideModal();
+        });
+
+        // 显示通知
+        if (results.errors.length > 0) {
+            this.showNotification(`导入完成，但有 ${results.errors.length} 项失败`, 'warning');
+        } else {
+            this.showNotification('配置导入成功！', 'success');
+        }
+    }
+
+    // 读取文件为文本
+    readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = (e) => reject(new Error('文件读取失败'));
+            reader.readAsText(file, 'utf-8');
+        });
     }
 }
 

@@ -10,11 +10,16 @@ class VideoPlayer {
         this.currentRouteIndex = 0;
         this.isAutoNext = true;
         this.playbackHistory = [];
+        this.storageService = null; // 添加存储服务引用
     }
 
     // 初始化播放器
     initialize() {
         console.log('[PLAYER] 初始化播放器...');
+
+        // 初始化存储服务
+        this.storageService = new StorageService();
+        console.log('[PLAYER] 存储服务初始化完成');
 
         this.video = document.getElementById('video-player');
         this.setupVideoEvents();
@@ -582,30 +587,27 @@ class VideoPlayer {
 
     // 保存播放进度
     savePlaybackProgress() {
-        if (!this.video || !this.videoData) return;
+        if (!this.video || !this.videoData || !this.storageService) return;
 
         const currentTime = this.video.currentTime;
         const duration = this.video.duration;
 
         if (currentTime > 0 && duration > 0) {
+            console.log('[PLAYER] 保存播放进度:', {
+                vodId: this.videoData.vod_id,
+                episode: this.currentEpisodeIndex,
+                currentTime: Math.round(currentTime),
+                duration: Math.round(duration),
+                percentage: Math.round((currentTime / duration) * 100)
+            });
+
             // 使用存储服务保存进度
-            if (window.parent && window.parent.app && window.parent.app.storageService) {
-                window.parent.app.storageService.saveWatchProgress(
-                    this.videoData.vod_id,
-                    this.currentEpisodeIndex,
-                    currentTime,
-                    duration
-                );
-            } else {
-                // 直接使用localStorage
-                const progressKey = `progress_${this.videoData.vod_id}_${this.currentEpisodeIndex}`;
-                localStorage.setItem(progressKey, JSON.stringify({
-                    currentTime,
-                    duration,
-                    percentage: Math.round((currentTime / duration) * 100),
-                    updateTime: Date.now()
-                }));
-            }
+            this.storageService.saveWatchProgress(
+                this.videoData.vod_id,
+                this.currentEpisodeIndex,
+                currentTime,
+                duration
+            );
         }
     }
 

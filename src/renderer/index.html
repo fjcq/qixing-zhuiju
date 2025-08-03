@@ -102,9 +102,26 @@
                     </div>
                     <div class="settings-content">
                         <div class="settings-section">
+                            <h3>数据管理</h3>
+                            <p class="settings-description">导入导出所有设置数据，包括站点配置、线路别名等</p>
+                            <div class="data-management-actions">
+                                <button id="export-data-btn" class="btn-primary">导出配置</button>
+                                <button id="import-data-btn" class="btn-secondary">导入配置</button>
+                                <input type="file" id="import-file-input" accept=".json" style="display: none;">
+                            </div>
+                        </div>
+
+                        <div class="settings-section">
                             <h3>站点管理</h3>
                             <div class="site-list" id="site-list"></div>
                             <button id="add-site-btn" class="btn-primary">添加站点</button>
+                        </div>
+
+                        <div class="settings-section">
+                            <h3>线路设置</h3>
+                            <p class="settings-description">为播放线路设置自定义别名，让线路名称更易理解</p>
+                            <div class="route-aliases-list" id="route-aliases-list"></div>
+                            <button id="manage-routes-btn" class="btn-primary">管理线路别名</button>
                         </div>
                     </div>
                 </div>

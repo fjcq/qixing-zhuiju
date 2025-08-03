@@ -474,13 +474,75 @@ class ApiService {
             }
         }
 
+        // 过滤被屏蔽的线路
+        const filteredRoutes = this.filterBlockedRoutes(routes);
+
         // 合并所有剧集（用于兼容性）
-        const allEpisodes = routes.length > 0 ? routes[0].episodes : [];
+        const allEpisodes = filteredRoutes.length > 0 ? filteredRoutes[0].episodes : [];
 
-        console.log('[DEBUG] 最终解析结果:', { routes: routes.length, allEpisodes: allEpisodes.length });
-        console.log('[DEBUG] 详细线路信息:', routes);
+        console.log('[DEBUG] 过滤屏蔽线路后结果:', { routes: filteredRoutes.length, allEpisodes: allEpisodes.length });
+        console.log('[DEBUG] 详细线路信息:', filteredRoutes);
 
-        return { routes, allEpisodes };
+        return { routes: filteredRoutes, allEpisodes };
+    }
+
+    // 过滤被屏蔽的线路
+    filterBlockedRoutes(routes) {
+        console.log('[DEBUG] 当前站点信息:', this.currentSite);
+
+        if (!this.currentSite || !this.currentSite.blockedRoutes) {
+            console.log('[DEBUG] 无屏蔽线路配置，返回所有线路');
+            return routes;
+        }
+
+        const blockedRoutes = this.currentSite.blockedRoutes
+            .split(',')
+            .map(route => route.trim().toLowerCase())
+            .filter(route => route);
+
+        if (blockedRoutes.length === 0) {
+            return routes;
+        }
+
+        console.log('[DEBUG] 站点屏蔽线路配置:', this.currentSite.blockedRoutes);
+        console.log('[DEBUG] 解析后的屏蔽线路列表:', blockedRoutes);
+        console.log('[DEBUG] 原始线路列表:', routes.map(r => r.name));
+
+        const filteredRoutes = routes.filter(route => {
+            const routeName = route.name.toLowerCase();
+            const isBlocked = blockedRoutes.some(blockedRoute => {
+                // 使用精确的匹配策略
+                // 1. 完全匹配（不区分大小写）
+                if (routeName === blockedRoute) {
+                    console.log('[DEBUG] 完全匹配屏蔽:', route.name, '匹配规则:', blockedRoute);
+                    return true;
+                }
+
+                // 2. 检查屏蔽关键词是否是线路名的完整单词
+                // 使用词边界匹配，避免部分匹配问题
+                const pattern = `\\b${blockedRoute.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`;
+                const regex = new RegExp(pattern, 'i');
+
+                if (regex.test(route.name)) {
+                    console.log('[DEBUG] 词边界匹配屏蔽:', route.name, '匹配规则:', blockedRoute, '正则:', pattern);
+                    return true;
+                }
+
+                return false;
+            });
+
+            if (isBlocked) {
+                console.log('[DEBUG] 线路被屏蔽:', route.name);
+                return false;
+            } else {
+                console.log('[DEBUG] 线路通过过滤:', route.name);
+                return true;
+            }
+        });
+
+        console.log(`[DEBUG] 过滤前线路数: ${routes.length}, 过滤后线路数: ${filteredRoutes.length}`);
+
+        return filteredRoutes;
     }    // 从播放数据中提取线路名称
     extractRouteName(playData) {
         // 检查是否有明确的线路标识

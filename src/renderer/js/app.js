@@ -18,6 +18,10 @@ class QixingZhuijuApp {
         try {
             console.log('初始化七星追剧应用...');
 
+            // 清理旧的测试数据（用于开发测试）
+            localStorage.removeItem('play_history');
+            console.log('[APP] 已清理旧的播放历史数据');
+
             // 初始化服务
             await this.apiService.initialize();
             this.componentService.initialize(this.apiService, this.storageService);
@@ -95,6 +99,10 @@ class QixingZhuijuApp {
         // 设置页面事件
         const addSiteBtn = document.getElementById('add-site-btn');
         const clearHistoryBtn = document.getElementById('clear-history-btn');
+        const manageRoutesBtn = document.getElementById('manage-routes-btn');
+        const exportDataBtn = document.getElementById('export-data-btn');
+        const importDataBtn = document.getElementById('import-data-btn');
+        const importFileInput = document.getElementById('import-file-input');
 
         if (addSiteBtn) {
             addSiteBtn.addEventListener('click', () => {
@@ -105,6 +113,24 @@ class QixingZhuijuApp {
         if (clearHistoryBtn) {
             clearHistoryBtn.addEventListener('click', () => {
                 this.confirmClearHistory();
+            });
+        }
+
+        if (manageRoutesBtn) {
+            manageRoutesBtn.addEventListener('click', () => {
+                this.componentService.showRouteAliasModal();
+            });
+        }
+
+        if (exportDataBtn) {
+            exportDataBtn.addEventListener('click', () => {
+                this.componentService.showExportDataModal();
+            });
+        }
+
+        if (importDataBtn) {
+            importDataBtn.addEventListener('click', () => {
+                this.componentService.showImportDataModal();
             });
         }
 
@@ -499,26 +525,50 @@ class QixingZhuijuApp {
 
     // 加载设置页面
     loadSettings() {
+        // 加载站点列表
         const siteList = document.getElementById('site-list');
-        if (!siteList) return;
+        if (siteList) {
+            const sites = this.apiService.getSites();
+            siteList.innerHTML = '';
 
-        const sites = this.apiService.getSites();
+            if (sites.length > 0) {
+                sites.forEach(site => {
+                    const siteElement = this.componentService.createSiteItem(site);
+                    siteList.appendChild(siteElement);
+                });
+            } else {
+                siteList.innerHTML = `
+                    <div class="empty-state">
+                        <i>⚙️</i>
+                        <h3>暂无站点</h3>
+                        <p>添加视频源站点开始使用</p>
+                    </div>
+                `;
+            }
+        }
 
-        siteList.innerHTML = '';
+        // 加载线路别名列表
+        const routeAliasesList = document.getElementById('route-aliases-list');
+        if (routeAliasesList) {
+            const aliases = this.storageService.getAllRouteAliases();
+            const aliasEntries = Object.entries(aliases);
 
-        if (sites.length > 0) {
-            sites.forEach(site => {
-                const siteElement = this.componentService.createSiteItem(site);
-                siteList.appendChild(siteElement);
-            });
-        } else {
-            siteList.innerHTML = `
-                <div class="empty-state">
-                    <i>⚙️</i>
-                    <h3>暂无站点</h3>
-                    <p>添加视频源站点开始使用</p>
-                </div>
-            `;
+            routeAliasesList.innerHTML = '';
+
+            if (aliasEntries.length > 0) {
+                aliasEntries.forEach(([routeName, alias]) => {
+                    const aliasElement = this.componentService.createRouteAliasItem(routeName, alias);
+                    routeAliasesList.appendChild(aliasElement);
+                });
+            } else {
+                routeAliasesList.innerHTML = `
+                    <div class="empty-state">
+                        <i>🔧</i>
+                        <h3>暂无线路别名</h3>
+                        <p>播放视频时会自动为播放线路创建别名设置</p>
+                    </div>
+                `;
+            }
         }
     }
 
@@ -597,6 +647,7 @@ class QixingZhuijuApp {
 
     // 临时方法：添加测试播放历史
     addTestHistory() {
+        const now = Date.now();
         const testHistory = [
             {
                 vod_id: 'test1',
@@ -605,7 +656,10 @@ class QixingZhuijuApp {
                 type_name: '电影',
                 current_episode: 1,
                 episode_name: '正片',
-                site_name: '测试站点'
+                watch_time: now - 3600000, // 1小时前
+                site_name: '测试站点',
+                progress: 75,
+                play_duration: 4500 // 75分钟播放时长
             },
             {
                 vod_id: 'test2',
@@ -614,13 +668,30 @@ class QixingZhuijuApp {
                 type_name: '电视剧',
                 current_episode: 5,
                 episode_name: '第5集',
-                site_name: '测试站点'
+                watch_time: now - 7200000, // 2小时前
+                site_name: '测试站点',
+                progress: 45,
+                play_duration: 1800 // 30分钟播放时长
+            },
+            {
+                vod_id: 'test3',
+                vod_name: '测试动画3',
+                vod_pic: 'https://via.placeholder.com/200x280/404040/ffffff?text=测试3',
+                type_name: '动漫',
+                current_episode: 12,
+                episode_name: '第12集',
+                watch_time: now - 86400000, // 1天前
+                site_name: '动漫站点',
+                progress: 90,
+                play_duration: 1320 // 22分钟播放时长
             }
         ];
 
         testHistory.forEach(item => {
             this.storageService.addPlayHistory(item);
         });
+
+        console.log('[APP] 已添加测试播放历史，数量:', testHistory.length);
     }
 }
 
