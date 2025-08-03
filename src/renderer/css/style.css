@@ -87,9 +87,17 @@ body {
 }
 
 /* 图标样式 */
-.icon-home::before { content: '🏠'; }
-.icon-history::before { content: '📺'; }
-.icon-settings::before { content: '⚙️'; }
+.icon-home::before {
+    content: '🏠';
+}
+
+.icon-history::before {
+    content: '📺';
+}
+
+.icon-settings::before {
+    content: '⚙️';
+}
 
 /* 主内容区域 */
 .main-content {
@@ -269,21 +277,49 @@ body {
     background: linear-gradient(135deg, #2d2d2d 0%, #1f1f1f 100%);
     border-radius: 12px;
     overflow: hidden;
-    transition: all 0.3s ease;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     cursor: pointer;
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 310px;
+    /* 进一步减少总高度 */
+}
+
+/* 添加悬停光效 */
+.video-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    transition: left 0.6s ease;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.video-card:hover::before {
+    left: 100%;
 }
 
 .video-card:hover {
-    transform: translateY(-8px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
-    border-color: rgba(0, 120, 212, 0.3);
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 12px 30px rgba(0, 120, 212, 0.15), 0 8px 25px rgba(0, 0, 0, 0.4);
+    border-color: rgba(0, 120, 212, 0.4);
+}
+
+.video-card:hover .video-poster img {
+    transform: scale(1.05);
 }
 
 .video-poster {
     width: 100%;
-    height: 280px;
+    height: 260px;
+    /* 稍微减少海报高度 */
     position: relative;
     background: #404040;
     border-radius: 12px 12px 0 0;
@@ -295,6 +331,7 @@ body {
     height: 100%;
     object-fit: cover;
     display: block;
+    transition: transform 0.4s ease-in-out;
 }
 
 .poster-placeholder {
@@ -320,11 +357,11 @@ body {
     width: 100%;
     height: 100%;
     pointer-events: none;
-    background: linear-gradient(to bottom, 
-        rgba(0,0,0,0.7) 0%, 
-        rgba(0,0,0,0) 30%, 
-        rgba(0,0,0,0) 70%, 
-        rgba(0,0,0,0.8) 100%);
+    background: linear-gradient(to bottom,
+            rgba(0, 0, 0, 0.7) 0%,
+            rgba(0, 0, 0, 0) 30%,
+            rgba(0, 0, 0, 0) 70%,
+            rgba(0, 0, 0, 0.8) 100%);
     z-index: 2;
 }
 
@@ -389,30 +426,124 @@ body {
     border-radius: 8px 8px 0 0;
 }
 
-.video-info {
-    padding: 12px 15px;
+.video-card .video-info {
+    padding: 8px 15px;
+    /* 进一步减少垂直内边距 */
     text-align: center;
-    background: linear-gradient(135deg, #2d2d2d 0%, #333333 100%);
-    min-height: auto;
+    background: linear-gradient(135deg, #505050 0%, #606060 50%, #555555 100%) !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    flex: 1;
+    /* 自动填充剩余空间，确保卡片高度一致 */
+    position: relative;
+    z-index: 2;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        0 1px 3px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 40px;
+    /* 减少最小高度 */
 }
 
-/* 修复line-clamp兼容性 */
+/* 片名样式 - 单行显示，悬停走马灯效果 */
 .video-title {
     font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 0;
-    line-height: 1.5;
-    min-height: 1.5em;
-    max-height: 3em;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
+    font-weight: 700;
+    margin: 0;
+    /* 完全去除上下边距 */
+    line-height: 1.2;
+    /* 减少行高 */
+    height: 1.2em;
+    /* 减少固定高度 */
     color: #ffffff;
     text-align: center;
-    word-break: break-word;
-    hyphens: auto;
+    text-shadow:
+        0 1px 3px rgba(0, 0, 0, 0.8),
+        0 0 5px rgba(0, 0, 0, 0.6);
+    transition: all 0.3s ease;
+    position: relative;
+    cursor: default;
+    overflow: hidden;
+}
+
+/* 正常显示的文字 */
+.video-title-normal {
+    display: block;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    width: 100%;
+}
+
+/* 走马灯效果容器 */
+.video-title-marquee {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: none;
+    align-items: center;
+    justify-content: flex-start;
+    overflow: hidden;
+}
+
+/* 走马灯文字 */
+.video-title-text {
+    white-space: nowrap;
+    animation: marquee-scroll 8s linear infinite;
+    display: inline-block;
+    padding-left: 100%;
+}
+
+/* 走马灯动画 */
+@keyframes marquee-scroll {
+    0% {
+        transform: translateX(0);
+    }
+
+    100% {
+        transform: translateX(-100%);
+    }
+}
+
+/* 悬停时的效果增强 */
+.video-card:hover .video-title {
+    color: #ffffff;
+    text-shadow:
+        0 2px 6px rgba(0, 0, 0, 0.5),
+        0 0 15px rgba(0, 120, 212, 0.3);
+    transform: translateY(-1px);
+    font-weight: 800;
+}
+
+/* 添加视频元信息样式 */
+.video-meta {
+    font-size: 12px;
+    color: #a0a0a0;
+    margin-top: 6px;
+    line-height: 1.3;
+    opacity: 0.9;
+    transition: all 0.3s ease;
+}
+
+.video-card:hover .video-meta {
+    color: #d0d0d0;
+    opacity: 1;
+    transform: translateY(-1px);
+}
+
+/* 为视频信息区域添加悬停效果 */
+.video-card:hover .video-info {
+    background: linear-gradient(135deg, #656565 0%, #757575 50%, #6a6a6a 100%) !important;
+    border-top: 1px solid rgba(0, 120, 212, 0.5);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
+        0 2px 8px rgba(0, 120, 212, 0.15),
+        0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 /* 分页 */
@@ -518,41 +649,41 @@ body {
     #app {
         flex-direction: column;
     }
-    
+
     .sidebar {
         width: 100%;
         height: auto;
     }
-    
+
     .nav-menu {
         display: flex;
         padding: 10px;
     }
-    
+
     .nav-item {
         flex: 1;
         margin-bottom: 0;
     }
-    
+
     .video-grid {
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
         gap: 15px;
     }
-    
+
     .fixed-search-header {
         padding: 15px;
     }
-    
+
     .search-section {
         flex-direction: column;
         gap: 10px;
     }
-    
+
     .search-box {
         min-width: auto;
         width: 100%;
     }
-    
+
     .site-selector select,
     .category-filter select {
         min-width: auto;

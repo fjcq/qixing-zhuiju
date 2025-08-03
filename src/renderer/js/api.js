@@ -3,16 +3,16 @@ class ApiService {
     constructor() {
         this.defaultSites = [
             {
-                id: 'okzy',
-                name: 'OK资源',
-                url: 'http://cj.okzy.tv/inc/apijson_vod.php',
+                id: 'qxyys',
+                name: '七星追剧',
+                url: 'https://zj.qxyys.com/api.php/provide/vod/',
                 type: 'json',
                 active: true
             },
             {
-                id: 'qxyys',
-                name: '七星追剧',
-                url: 'https://api.1080zyku.com/inc/apijson_vod.php',
+                id: 'okzy',
+                name: 'OK资源',
+                url: 'http://cj.okzy.tv/inc/apijson_vod.php',
                 type: 'json',
                 active: false
             }
@@ -24,10 +24,19 @@ class ApiService {
 
     // 初始化API服务
     async initialize() {
-        const sites = this.getSites();
-        if (sites.length === 0) {
+        let sites = this.getSites();
+
+        // 如果没有站点或者现有站点不包含正确的默认站点，重新设置
+        const hasCorrectDefault = sites.some(site =>
+            site.id === 'qxyys' && site.url === 'https://zj.qxyys.com/api.php/provide/vod/'
+        );
+
+        if (sites.length === 0 || !hasCorrectDefault) {
+            console.log('[API] 重新初始化默认站点配置');
             this.saveSites(this.defaultSites);
+            sites = this.defaultSites;
         }
+
         this.currentSite = this.getActiveSite();
         await this.loadCategories();
     }
@@ -71,6 +80,25 @@ class ApiService {
         sites.push(newSite);
         this.saveSites(sites);
         return newSite;
+    }
+
+    // 更新站点
+    updateSite(siteId, siteData) {
+        const sites = this.getSites();
+        const siteIndex = sites.findIndex(site => site.id === siteId);
+        if (siteIndex !== -1) {
+            sites[siteIndex] = { ...sites[siteIndex], ...siteData };
+            this.saveSites(sites);
+
+            // 如果更新的是当前活跃站点，重新加载
+            if (this.currentSite && this.currentSite.id === siteId) {
+                this.currentSite = sites[siteIndex];
+                this.loadCategories();
+            }
+
+            return sites[siteIndex];
+        }
+        return null;
     }
 
     // 删除站点
@@ -557,33 +585,155 @@ class ApiService {
         return episodes;
     }
 
-    // 测试站点连接
+    // 测试站点连接和数据格式
     async testSiteConnection(siteUrl, siteType) {
         try {
+            // 第一步：测试基本连接
             const testUrl = siteUrl + (siteUrl.includes('?') ? '&' : '?') + 'ac=list&pg=1';
+            console.log('[API] 测试站点连接:', testUrl);
+
             const response = await fetch(testUrl, {
                 method: 'GET',
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'application/json, text/plain, */*',
+                    'Referer': 'https://www.baidu.com/'
+                },
+                timeout: 10000 // 10秒超时
             });
 
             if (!response.ok) {
-                throw new Error(`HTTP错误: ${response.status}`);
+                throw new Error(`HTTP错误: ${response.status} - ${response.statusText}`);
             }
 
             const data = await response.text();
+            console.log('[API] 测试响应数据长度:', data.length);
+
+            // 第二步：测试数据格式
+            let parsedData;
+            let testResults = {
+                connection: true,
+                format: false,
+                structure: false,
+                videoCount: 0,
+                categories: 0,
+                message: []
+            };
 
             if (siteType === 'json') {
-                JSON.parse(data);
+                try {
+                    parsedData = JSON.parse(data);
+                    testResults.format = true;
+                    testResults.message.push('✓ JSON格式正确');
+
+                    // 第三步：测试数据结构
+                    if (parsedData.code !== undefined) {
+                        testResults.message.push('✓ 包含状态码');
+                    }
+
+                    if (parsedData.list && Array.isArray(parsedData.list)) {
+                        testResults.structure = true;
+                        testResults.videoCount = parsedData.list.length;
+                        testResults.message.push(`✓ 视频列表结构正确 (${parsedData.list.length}条)`);
+
+                        // 检查视频数据结构
+                        if (parsedData.list.length > 0) {
+                            const firstVideo = parsedData.list[0];
+                            if (firstVideo.vod_id && firstVideo.vod_name) {
+                                testResults.message.push('✓ 视频数据包含必要字段');
+                            } else {
+                                testResults.message.push('⚠ 视频数据缺少必要字段');
+                            }
+                        }
+                    } else {
+                        testResults.message.push('✗ 缺少视频列表或格式错误');
+                    }
+
+                    if (parsedData.class && Array.isArray(parsedData.class)) {
+                        testResults.categories = parsedData.class.length;
+                        testResults.message.push(`✓ 分类数据正确 (${parsedData.class.length}个分类)`);
+                    } else {
+                        testResults.message.push('⚠ 没有分类数据');
+                    }
+
+                } catch (parseError) {
+                    testResults.message.push('✗ JSON解析失败: ' + parseError.message);
+                    throw new Error('JSON格式错误: ' + parseError.message);
+                }
             } else {
-                const parser = new DOMParser();
-                parser.parseFromString(data, 'text/xml');
+                // XML格式测试
+                try {
+                    const parser = new DOMParser();
+                    const xmlDoc = parser.parseFromString(data, 'text/xml');
+
+                    if (xmlDoc.querySelector('parsererror')) {
+                        throw new Error('XML解析错误');
+                    }
+
+                    testResults.format = true;
+                    testResults.message.push('✓ XML格式正确');
+
+                    const videos = xmlDoc.querySelectorAll('video');
+                    if (videos.length > 0) {
+                        testResults.structure = true;
+                        testResults.videoCount = videos.length;
+                        testResults.message.push(`✓ 找到${videos.length}个视频数据`);
+                    } else {
+                        testResults.message.push('✗ 没有找到视频数据');
+                    }
+
+                } catch (parseError) {
+                    testResults.message.push('✗ XML解析失败: ' + parseError.message);
+                    throw new Error('XML格式错误: ' + parseError.message);
+                }
             }
 
-            return { success: true, message: '连接成功' };
+            // 第四步：测试详情接口
+            try {
+                if (parsedData && parsedData.list && parsedData.list.length > 0) {
+                    const firstVideoId = parsedData.list[0].vod_id;
+                    if (firstVideoId) {
+                        const detailUrl = siteUrl + (siteUrl.includes('?') ? '&' : '?') + `ac=detail&ids=${firstVideoId}`;
+                        const detailResponse = await fetch(detailUrl, {
+                            method: 'GET',
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                            }
+                        });
+
+                        if (detailResponse.ok) {
+                            testResults.message.push('✓ 详情接口可用');
+                        } else {
+                            testResults.message.push('⚠ 详情接口响应异常');
+                        }
+                    }
+                }
+            } catch (detailError) {
+                testResults.message.push('⚠ 详情接口测试失败');
+            }
+
+            const successMessage = testResults.message.join('\n');
+
+            if (testResults.format && testResults.structure) {
+                return {
+                    success: true,
+                    message: `连接测试完成\n${successMessage}`,
+                    details: testResults
+                };
+            } else {
+                return {
+                    success: false,
+                    message: `数据格式验证失败\n${successMessage}`,
+                    details: testResults
+                };
+            }
+
         } catch (error) {
-            return { success: false, message: error.message };
+            console.error('[API] 站点测试失败:', error);
+            return {
+                success: false,
+                message: `连接失败: ${error.message}`
+            };
         }
     }
 }

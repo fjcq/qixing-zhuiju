@@ -1,5 +1,5 @@
 // Electron preload 脚本
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, shell } = require('electron');
 
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electron', {
@@ -30,6 +30,14 @@ contextBridge.exposeInMainWorld('electron', {
             ];
             if (validChannels.includes(channel)) {
                 ipcRenderer.on(channel, (event, ...args) => func(...args));
+            }
+        }
+    },
+    shell: {
+        openExternal: (url) => {
+            // 验证URL是否安全
+            if (url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
+                return shell.openExternal(url);
             }
         }
     }
