@@ -318,7 +318,7 @@ class QixingZhuijuApp {
             }
 
             // 如果无法从主进程获取，使用默认版本号
-            const defaultVersion = 'v1.2.1';
+            const defaultVersion = 'v1.2.2';
             if (versionElement) {
                 versionElement.textContent = defaultVersion;
             }
@@ -328,7 +328,7 @@ class QixingZhuijuApp {
         } catch (error) {
             console.warn('获取版本号失败:', error);
             // 使用默认版本号
-            const defaultVersion = 'v1.2.1';
+            const defaultVersion = 'v1.2.2';
             const versionElement = document.getElementById('version-info');
             const aboutVersionElement = document.getElementById('about-version');
             if (versionElement) {
