@@ -895,7 +895,7 @@ class VideoPlayer {
                 // 查找当前剧集信息
                 const currentRoute = this.allRoutes[this.currentRouteIndex];
                 const currentEpisode = this.allEpisodes.find(ep => ep.index === episodeIndex);
-                
+
                 // 获取当前活跃站点信息
                 let siteName = '未知站点';
                 if (window.parent && window.parent.app && window.parent.app.apiService) {
