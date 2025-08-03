@@ -28,6 +28,7 @@
     "build": {
         "appId": "com.qxyys.zj",
         "productName": "七星追剧",
+        "asar": false,
         "directories": {
             "output": "dist"
         },
@@ -47,14 +48,12 @@
         ],
         "win": {
             "target": "dir",
-            "icon": "assets/icon.png",
-            "certificateFile": null,
-            "certificateSha1": null,
-            "sign": null
+            "icon": "assets/icon.png"
         },
         "nsis": {
             "oneClick": false,
             "allowToChangeInstallationDirectory": true
-        }
+        },
+        "forceCodeSigning": false
     }
 }

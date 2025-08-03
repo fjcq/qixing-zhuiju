@@ -1,7 +1,36 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { spawn, exec } = require('child_process');
 const os = require('os');
+
+// 创建日志文件记录错误
+function logToFile(message) {
+    try {
+        const logPath = path.join(os.tmpdir(), 'qixing-zhuiju.log');
+        const timestamp = new Date().toISOString();
+        const logMessage = `[${timestamp}] ${message}\n`;
+        fs.appendFileSync(logPath, logMessage, 'utf8');
+    } catch (err) {
+        // 如果无法写入日志文件，静默忽略
+    }
+}
+
+// 重写console.log和console.error以便在生产环境中也能记录
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+
+console.log = function (...args) {
+    const message = args.join(' ');
+    originalConsoleLog(...args);
+    logToFile(`LOG: ${message}`);
+};
+
+console.error = function (...args) {
+    const message = args.join(' ');
+    originalConsoleError(...args);
+    logToFile(`ERROR: ${message}`);
+};
 
 // 单实例检查和残余进程清理
 function setupSingleInstance() {
@@ -104,54 +133,65 @@ function cleanupWindowsProcesses() {
 
     console.log(`[MAIN] 当前进程: ${currentProcessName} (PID: ${currentPID})`);
 
-    // 查找并清理可能的残余Electron进程
-    const commands = [
-        // 查找七星追剧相关进程
-        'tasklist /FI "IMAGENAME eq 七星追剧.exe" /FO CSV /NH',
-        'tasklist /FI "IMAGENAME eq qixing-zhuiju.exe" /FO CSV /NH',
-    ];
+    // 延迟执行清理，避免在应用启动初期干扰渲染进程
+    setTimeout(() => {
+        // 查找并清理可能的残余Electron进程
+        const commands = [
+            // 查找七星追剧相关进程
+            'tasklist /FI "IMAGENAME eq 七星追剧.exe" /FO CSV /NH',
+            'tasklist /FI "IMAGENAME eq qixing-zhuiju.exe" /FO CSV /NH',
+        ];
 
-    commands.forEach(cmd => {
-        exec(cmd, { timeout: 5000 }, (error, stdout, stderr) => {
-            if (!error && stdout && stdout.trim()) {
-                console.log(`[MAIN] 进程查询结果: ${stdout.trim()}`);
+        commands.forEach(cmd => {
+            exec(cmd, { timeout: 5000 }, (error, stdout, stderr) => {
+                if (!error && stdout && stdout.trim()) {
+                    console.log(`[MAIN] 进程查询结果: ${stdout.trim()}`);
 
-                // 解析CSV输出
-                const lines = stdout.split('\n');
-                lines.forEach(line => {
-                    if (line.trim() && !line.includes('INFO:')) {
-                        // CSV格式: "进程名","PID","会话名","会话号","内存使用"
-                        const match = line.match(/"([^"]+)","(\d+)"/);
-                        if (match) {
-                            const processName = match[1];
-                            const pid = parseInt(match[2]);
+                    // 解析CSV输出
+                    const lines = stdout.split('\n');
+                    lines.forEach(line => {
+                        if (line.trim() && !line.includes('INFO:')) {
+                            // CSV格式: "进程名","PID","会话名","会话号","内存使用"
+                            const match = line.match(/"([^"]+)","(\d+)"/);
+                            if (match) {
+                                const processName = match[1];
+                                const pid = parseInt(match[2]);
 
-                            // 不要杀死当前进程
-                            if (pid !== currentPID) {
-                                console.log(`[MAIN] 发现残余进程: ${processName} (PID: ${pid})`);
+                                // 不要杀死当前进程和它的子进程
+                                if (pid !== currentPID) {
+                                    // 检查这个进程是否是当前应用的子进程
+                                    exec(`wmic process where processid=${pid} get parentprocessid /value`, { timeout: 2000 }, (ppidError, ppidStdout) => {
+                                        if (!ppidError && ppidStdout) {
+                                            const ppidMatch = ppidStdout.match(/ParentProcessId=(\d+)/);
+                                            const parentPid = ppidMatch ? parseInt(ppidMatch[1]) : null;
 
-                                // 尝试优雅地结束进程
-                                exec(`taskkill /PID ${pid} /T`, { timeout: 3000 }, (killError, killStdout) => {
-                                    if (!killError) {
-                                        console.log(`[MAIN] 成功清理残余进程 PID: ${pid}`);
-                                    } else {
-                                        // 如果优雅结束失败，强制结束
-                                        exec(`taskkill /PID ${pid} /F /T`, (forceKillError) => {
-                                            if (!forceKillError) {
-                                                console.log(`[MAIN] 强制清理残余进程 PID: ${pid}`);
+                                            // 如果父进程不是当前进程，才清理
+                                            if (parentPid !== currentPID) {
+                                                console.log(`[MAIN] 发现可清理的残余进程: ${processName} (PID: ${pid}, PPID: ${parentPid})`);
+
+                                                // 尝试优雅地结束进程
+                                                exec(`taskkill /PID ${pid} /T`, { timeout: 3000 }, (killError, killStdout) => {
+                                                    if (!killError) {
+                                                        console.log(`[MAIN] 成功清理残余进程 PID: ${pid}`);
+                                                    } else {
+                                                        console.log(`[MAIN] 跳过进程清理 PID: ${pid} (可能是当前应用的子进程)`);
+                                                    }
+                                                });
                                             } else {
-                                                console.warn(`[MAIN] 无法清理进程 PID: ${pid} - ${forceKillError.message}`);
+                                                console.log(`[MAIN] 跳过子进程 PID: ${pid} (父进程: ${parentPid})`);
                                             }
-                                        });
-                                    }
-                                });
+                                        } else {
+                                            console.log(`[MAIN] 无法确定进程 ${pid} 的父进程，跳过清理`);
+                                        }
+                                    });
+                                }
                             }
                         }
-                    }
-                });
-            }
+                    });
+                }
+            });
         });
-    });
+    }, 5000); // 延迟5秒执行清理，确保应用完全启动
 }
 
 // macOS平台进程清理
@@ -226,6 +266,9 @@ class QixingZhuiju {
                 contextIsolation: true,
                 webSecurity: false,
                 allowRunningInsecureContent: true,
+                experimentalFeatures: false,
+                enableRemoteModule: false,
+                backgroundThrottling: false,
                 preload: path.join(__dirname, 'src', 'preload.js')
             },
             icon: path.join(__dirname, 'assets', 'icon.png'),
@@ -240,7 +283,21 @@ class QixingZhuiju {
 
         // 加载主页面
         try {
-            await this.mainWindow.loadFile('src/renderer/index.html');
+            const htmlPath = path.join(__dirname, 'src', 'renderer', 'index.html');
+            console.log(`[MAIN] 尝试加载主页面: ${htmlPath}`);
+            console.log(`[MAIN] 当前工作目录: ${process.cwd()}`);
+            console.log(`[MAIN] __dirname: ${__dirname}`);
+
+            // 检查文件是否存在
+            const fs = require('fs');
+            if (fs.existsSync(htmlPath)) {
+                console.log('[MAIN] 主页面文件存在');
+            } else {
+                console.error('[MAIN] 主页面文件不存在:', htmlPath);
+                throw new Error(`主页面文件不存在: ${htmlPath}`);
+            }
+
+            await this.mainWindow.loadFile(htmlPath);
             console.log('[MAIN] 主页面加载成功');
         } catch (error) {
             console.error('[MAIN] 主页面加载失败:', error);
@@ -278,6 +335,18 @@ class QixingZhuiju {
         // 渲染进程崩溃监听
         this.mainWindow.webContents.on('crashed', () => {
             console.error('[MAIN] 渲染进程崩溃!');
+
+            // 尝试重新加载页面
+            setTimeout(() => {
+                if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+                    console.log('[MAIN] 尝试重新加载页面...');
+                    try {
+                        this.mainWindow.webContents.reload();
+                    } catch (error) {
+                        console.error('[MAIN] 重新加载失败:', error);
+                    }
+                }
+            }, 1000);
         });
 
         this.mainWindow.webContents.on('unresponsive', () => {
@@ -334,6 +403,20 @@ class QixingZhuiju {
         // 监听渲染进程崩溃
         this.mainWindow.webContents.on('render-process-gone', (event, details) => {
             console.error('[MAIN] 渲染进程崩溃:', details);
+            console.error('[MAIN] 崩溃原因:', details.reason);
+            console.error('[MAIN] 退出代码:', details.exitCode);
+
+            // 尝试重新加载页面
+            setTimeout(() => {
+                if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+                    console.log('[MAIN] 尝试重新加载页面...');
+                    try {
+                        this.mainWindow.webContents.reload();
+                    } catch (error) {
+                        console.error('[MAIN] 重新加载失败:', error);
+                    }
+                }
+            }, 1000);
         });
 
         // 设置菜单
@@ -372,7 +455,10 @@ class QixingZhuiju {
         this.playerWindow.setMenuBarVisibility(false);
 
         // 加载播放器页面
-        this.playerWindow.loadFile('src/renderer/player.html')
+        const playerHtmlPath = path.join(__dirname, 'src', 'renderer', 'player.html');
+        console.log(`[MAIN] 尝试加载播放器页面: ${playerHtmlPath}`);
+
+        this.playerWindow.loadFile(playerHtmlPath)
             .then(() => {
                 console.log('[MAIN] 播放器页面加载成功');
             })
@@ -600,3 +686,8 @@ app.commandLine.appendSwitch('--disable-renderer-backgrounding');
 app.commandLine.appendSwitch('--disable-features', 'TranslateUI');
 app.commandLine.appendSwitch('--disable-web-security');
 app.commandLine.appendSwitch('--no-sandbox');
+app.commandLine.appendSwitch('--disable-dev-shm-usage');
+app.commandLine.appendSwitch('--disable-extensions');
+app.commandLine.appendSwitch('--disable-plugins');
+app.commandLine.appendSwitch('--disable-background-networking');
+app.commandLine.appendSwitch('--disable-default-apps');
