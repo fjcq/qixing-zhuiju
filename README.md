@@ -7,7 +7,13 @@
 ### 开发环境
 
 ```bash
-npm install          # 安装依赖
+npm install ## 📦 编译输出
+
+编译完成后，可执行文件位于：
+
+```text
+dist/七星追剧-win32-x64/七星追剧.exe
+```  # 安装依赖
 npm start           # 启动开发服务器
 # 或者使用
 dev.bat             # Windows 批处理启动
@@ -16,7 +22,8 @@ dev.bat             # Windows 批处理启动
 ### 编译发布
 
 ```bash
-npm run dist        # 标准编译
+npm run pack        # 推荐：使用electron-packager编译
+npm run dist        # electron-builder编译（可能遇到代码签名问题）
 # 或者使用批处理工具
 build.bat          # 完整编译（推荐）
 quick-build.bat    # 快速编译
@@ -134,8 +141,8 @@ dist/win-unpacked/七星追剧.exe
 ### 编译步骤
 
 1. **环境准备**：确保已安装 Node.js 16+ 和项目依赖
-2. **执行编译**：运行 `build.bat` 进行完整编译
-3. **文件打包**：将 `dist/win-unpacked/` 整个文件夹打包
+2. **执行编译**：运行 `build.bat` 或 `npm run pack` 进行编译
+3. **文件打包**：将 `dist/七星追剧-win32-x64/` 整个文件夹打包
 4. **用户分发**：用户解压后即可直接运行
 
 > 📋 详细版本更新历史请参考 [CHANGELOG.md](CHANGELOG.md)

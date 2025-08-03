@@ -7,7 +7,8 @@
         "start": "electron .",
         "build": "electron-builder",
         "dev": "electron . --dev",
-        "dist": "electron-builder --win"
+        "dist": "electron-builder --win",
+        "pack": "electron-packager . 七星追剧 --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon.ico"
     },
     "keywords": [
         "electron",
@@ -19,7 +20,8 @@
     "license": "MIT",
     "devDependencies": {
         "electron": "^27.0.0",
-        "electron-builder": "^24.6.4"
+        "electron-builder": "^24.6.4",
+        "electron-packager": "^17.1.2"
     },
     "dependencies": {
         "axios": "^1.5.0",
@@ -49,12 +51,18 @@
         ],
         "win": {
             "target": "dir",
-            "icon": "assets/icon.png"
+            "icon": "assets/icon.ico"
         },
         "nsis": {
             "oneClick": false,
             "allowToChangeInstallationDirectory": true
         },
-        "forceCodeSigning": false
+        "forceCodeSigning": false,
+        "publish": null,
+        "compression": "store",
+        "beforePack": null,
+        "afterPack": null,
+        "beforeBuild": null,
+        "afterSign": null
     }
 }

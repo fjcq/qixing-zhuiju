@@ -33,7 +33,7 @@ echo ✅ 环境变量已设置（跳过代码签名）
 
 echo [4/4] 开始编译...
 echo.
-npx electron-builder --win --publish=never --config.win.certificateFile=null --config.win.certificateSha1=null
+npx electron-packager . 七星追剧 --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon.ico
 
 if %ERRORLEVEL% EQU 0 (
     echo.
@@ -41,10 +41,10 @@ if %ERRORLEVEL% EQU 0 (
     echo ✅ 编译成功完成！
     echo ========================================
     echo.
-    echo 输出位置: %CD%\dist\win-unpacked\
+    echo 输出位置: %CD%\dist\七星追剧-win32-x64\
     echo 主程序: 七星追剧.exe
     echo.
-    echo 现在可以打包发布 win-unpacked 文件夹
+    echo 现在可以打包发布 七星追剧-win32-x64 文件夹
     echo ========================================
 ) else (
     echo.
