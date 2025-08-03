@@ -557,41 +557,47 @@ body {
 /* 弹幕输入容器 */
 .danmaku-input-container {
     position: absolute;
-    bottom: 80px;
+    bottom: 120px;
+    /* 在播放进度条上方留出适当间距 */
     left: 50%;
     transform: translateX(-50%);
     z-index: 200;
     display: none;
-    background: rgba(0, 0, 0, 0.8);
-    border-radius: 8px;
-    padding: 15px;
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-    min-width: 400px;
+    background: rgba(0, 0, 0, 0.85);
+    border-radius: 10px;
+    padding: 20px;
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+    min-width: 420px;
+    max-width: 85%;
+    /* 确保在不同分辨率下都有合适的位置 */
 }
 
 .danmaku-input-panel {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
 }
 
 /* 弹幕输入框 */
 #danmaku-input {
-    padding: 10px 12px;
+    padding: 12px 16px;
     border: none;
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.12);
     color: #ffffff;
-    font-size: 14px;
+    font-size: 15px;
     outline: none;
     transition: all 0.3s ease;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    width: 100%;
+    box-sizing: border-box;
 }
 
 #danmaku-input::placeholder {
-    color: rgba(255, 255, 255, 0.6);
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 14px;
 }
 
 #danmaku-input:focus {
@@ -698,6 +704,25 @@ body {
 .player-container:-webkit-full-screen .danmaku-container,
 .player-container:-moz-full-screen .danmaku-container {
     z-index: 999999;
+}
+
+/* 全屏模式下的弹幕输入框 */
+.player-container:fullscreen .danmaku-input-container,
+.player-container:-webkit-full-screen .danmaku-input-container,
+.player-container:-moz-full-screen .danmaku-input-container {
+    bottom: 100px;
+    /* 全屏时调整位置 */
+    min-width: 500px;
+    max-width: 70%;
+}
+
+/* 大屏幕优化 */
+@media (min-width: 1200px) {
+    .danmaku-input-container {
+        min-width: 480px;
+        bottom: 140px;
+        /* 大屏幕时增加底部间距 */
+    }
 }
 
 .player-container:fullscreen .danmaku-input-container,

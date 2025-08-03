@@ -78,20 +78,102 @@ class DanmakuSystem {
             sendBtn.addEventListener('click', () => {
                 this.sendDanmaku();
             });
+
+            // 输入框获得焦点时保持显示
+            input.addEventListener('focus', () => {
+                this.keepInputVisible = true;
+            });
+
+            // 输入框失去焦点时允许隐藏
+            input.addEventListener('blur', () => {
+                this.keepInputVisible = false;
+                // 延迟隐藏，给用户点击发送按钮的时间
+                setTimeout(() => {
+                    if (!this.keepInputVisible) {
+                        this.hideDanmakuInput();
+                    }
+                }, 200);
+            });
         }
 
-        // 全局回车键打开弹幕输入框
-        document.addEventListener('keydown', (e) => {
-            // 只有在没有其他输入框聚焦且弹幕输入框未显示时才响应回车键
-            const inputContainer = document.getElementById('danmaku-input-container');
-            const isInputContainerVisible = inputContainer && inputContainer.style.display !== 'none';
+        // 播放器容器鼠标悬停显示弹幕输入框
+        const playerContainer = document.querySelector('.player-container');
+        if (playerContainer) {
+            let showTimer = null;
+            let hideTimer = null;
 
-            if (e.key === 'Enter' && !e.target.matches('input, textarea, select') &&
-                !isInputContainerVisible && this.enabled) {
-                e.preventDefault();
-                this.showDanmakuInput();
-            }
-        });
+            // 创建一个包含播放器和输入框的大容器来处理鼠标事件
+            const danmakuZone = document.createElement('div');
+            danmakuZone.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                pointer-events: none;
+                z-index: 100;
+            `;
+            danmakuZone.id = 'danmaku-hover-zone';
+            playerContainer.appendChild(danmakuZone);
+
+            // 播放器容器鼠标事件
+            playerContainer.addEventListener('mouseenter', () => {
+                if (this.enabled) {
+                    if (hideTimer) {
+                        clearTimeout(hideTimer);
+                        hideTimer = null;
+                    }
+
+                    showTimer = setTimeout(() => {
+                        this.showDanmakuInput();
+                    }, 500);
+                }
+            });
+
+            playerContainer.addEventListener('mouseleave', (e) => {
+                const inputContainer = document.getElementById('danmaku-input-container');
+
+                // 如果鼠标移动到输入框，不隐藏
+                if (inputContainer && inputContainer.contains(e.relatedTarget)) {
+                    if (showTimer) {
+                        clearTimeout(showTimer);
+                        showTimer = null;
+                    }
+                    return;
+                }
+
+                if (showTimer) {
+                    clearTimeout(showTimer);
+                    showTimer = null;
+                }
+
+                hideTimer = setTimeout(() => {
+                    this.hideDanmakuInput();
+                }, 300);
+            });
+        }
+
+        // 弹幕输入容器事件处理
+        const inputContainer = document.getElementById('danmaku-input-container');
+        if (inputContainer) {
+            inputContainer.addEventListener('mouseleave', (e) => {
+                const playerContainer = document.querySelector('.player-container');
+
+                // 如果鼠标移回播放器，不隐藏
+                if (playerContainer && playerContainer.contains(e.relatedTarget)) {
+                    return;
+                }
+
+                // 延迟隐藏，确保不是意外移动
+                setTimeout(() => {
+                    const input = document.getElementById('danmaku-input');
+                    // 只有在输入框没有焦点且没有内容时才隐藏
+                    if (!input || (document.activeElement !== input && !input.value.trim())) {
+                        this.hideDanmakuInput();
+                    }
+                }, 300);
+            });
+        }
 
         // 按ESC键隐藏弹幕输入框
         document.addEventListener('keydown', (e) => {
@@ -100,19 +182,31 @@ class DanmakuSystem {
             }
         });
 
-        // 点击空白处隐藏弹幕输入框
+        // 点击播放器外部隐藏弹幕输入框
         document.addEventListener('click', (e) => {
             const inputContainer = document.getElementById('danmaku-input-container');
+            const playerContainer = document.querySelector('.player-container');
 
-            if (inputContainer && !inputContainer.contains(e.target) &&
-                !e.target.closest('.danmaku-container') &&
+            if (inputContainer && playerContainer &&
+                !inputContainer.contains(e.target) &&
+                !playerContainer.contains(e.target) &&
                 !e.target.closest('#toggle-danmaku')) {
                 this.hideDanmakuInput();
             }
         });
-    }
 
-    // 连接弹幕服务器
+        // 跟踪鼠标位置，用于智能隐藏判断
+        document.addEventListener('mousemove', (e) => {
+            this.lastMouseX = e.clientX;
+            this.lastMouseY = e.clientY;
+        });
+
+        // 初始化状态变量
+        this.lastMouseX = 0;
+        this.lastMouseY = 0;
+        this.keepInputVisible = false;
+        this.keepInputVisible = false;
+    }    // 连接弹幕服务器
     connectWebSocket(videoId) {
         if (this.websocket) {
             this.disconnectWebSocket();

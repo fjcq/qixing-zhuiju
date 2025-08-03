@@ -18,10 +18,6 @@ class QixingZhuijuApp {
         try {
             console.log('初始化七星追剧应用...');
 
-            // 清理旧的测试数据（用于开发测试）
-            localStorage.removeItem('play_history');
-            console.log('[APP] 已清理旧的播放历史数据');
-
             // 初始化服务
             await this.apiService.initialize();
             this.componentService.initialize(this.apiService, this.storageService);
