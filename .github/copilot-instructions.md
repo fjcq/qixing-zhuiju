@@ -38,6 +38,7 @@
 │   │       └── enhanced-danmaku.js # 增强版弹幕
 │   └── preload.js        # 预加载脚本
 ├── assets/               # 资源文件
+│   ├── icon.ico         # 应用图标（256*256，Windows编译用）
 │   ├── icon.png         # 应用图标（256*256）
 │   └── logo.png         # 应用Logo（162*58）
 ├── main.js              # Electron主进程
@@ -59,6 +60,7 @@
 - **WebSocket** - 实时通信协议，支持弹幕互动功能
 - **LocalStorage** - 本地数据存储，支持配置持久化
 - **原生Web技术** - HTML5/CSS3/ES6+ JavaScript
+- **Electron-Packager** - 推荐的打包工具，避免代码签名问题
 
 ## 功能特性
 
@@ -138,14 +140,15 @@ dev.bat        # Windows批处理启动
 
 ### 编译发布
 ```bash
-npm run dist        # 标准编译
+npm run pack        # 推荐：使用electron-packager编译
+npm run dist        # electron-builder编译（可能遇到代码签名问题）
 build.bat          # 完整编译（推荐）
 quick-build.bat    # 快速编译
 ```
 
 ### 输出文件
-- 编译输出：`dist/win-unpacked/七星追剧.exe`
-- 发布方式：打包整个 `win-unpacked` 文件夹
+- 编译输出：`dist/七星追剧-win32-x64/七星追剧.exe`
+- 发布方式：打包整个 `七星追剧-win32-x64` 文件夹
 
 ## 技术特点
 
@@ -199,6 +202,7 @@ quick-build.bat    # 快速编译
 9. **弹幕交互优化** - 弹幕输入框使用悬停显示，避免与播放器操作冲突
 10. **文档整理** - 已合并所有弹幕相关文档到单一说明文件
 11. **WIN11界面设计** - 当前版本v1.2.1，包含现代化圆角窗口和关于页面
+12. **编译工具选择** - 推荐使用electron-packager避免代码签名问题，批处理工具已更新
 
 ## 版本更新历史
 
@@ -245,3 +249,4 @@ quick-build.bat    # 快速编译
 - **数据持久化** - LocalStorage + JSON格式配置
 - **错误处理** - 完善的异常捕获和用户反馈
 - **性能优化** - 避免GPU问题，优化播放体验
+- **构建优化** - 使用electron-packager避免代码签名问题
