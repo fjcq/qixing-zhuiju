@@ -1,6 +1,6 @@
 {
     "name": "qixing-zhuiju",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "七星追剧 - 播放苹果CMS资源站的影视节目",
     "main": "main.js",
     "scripts": {
@@ -23,7 +23,8 @@
     },
     "dependencies": {
         "axios": "^1.5.0",
-        "hls.js": "^1.4.12"
+        "hls.js": "^1.4.12",
+        "ws": "^8.14.2"
     },
     "build": {
         "appId": "com.qxyys.zj",

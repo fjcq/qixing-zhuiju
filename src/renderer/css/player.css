@@ -512,3 +512,196 @@ body {
     width: 100vw !important;
     height: 100vh !important;
 }
+
+/* =================== 弹幕系统样式 =================== */
+
+/* 弹幕容器 */
+.danmaku-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 99;
+    overflow: hidden;
+}
+
+/* 弹幕项 */
+.danmaku-item {
+    position: absolute;
+    white-space: nowrap;
+    font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+    font-weight: bold;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+    user-select: none;
+    line-height: 1.2;
+    padding: 2px 4px;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(2px);
+}
+
+/* 弹幕动画 */
+@keyframes danmaku-move {
+    from {
+        transform: translateX(0);
+    }
+
+    to {
+        transform: translateX(calc(-100vw - 200px));
+    }
+}
+
+/* 弹幕输入容器 */
+.danmaku-input-container {
+    position: absolute;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    display: none;
+    background: rgba(0, 0, 0, 0.8);
+    border-radius: 8px;
+    padding: 15px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    min-width: 400px;
+}
+
+.danmaku-input-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* 弹幕输入框 */
+#danmaku-input {
+    padding: 10px 12px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    font-size: 14px;
+    outline: none;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+#danmaku-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+#danmaku-input:focus {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: #00aaff;
+    box-shadow: 0 0 0 2px rgba(0, 170, 255, 0.3);
+}
+
+/* 弹幕控制区域 */
+.danmaku-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+#danmaku-color,
+#danmaku-size {
+    padding: 6px 8px;
+    border: none;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    font-size: 12px;
+    outline: none;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+#danmaku-color:hover,
+#danmaku-size:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+#danmaku-color option,
+#danmaku-size option {
+    background: #333;
+    color: #fff;
+}
+
+/* 发送按钮 */
+.btn-send {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #00aaff, #0088cc);
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    flex-shrink: 0;
+}
+
+.btn-send:hover {
+    background: linear-gradient(135deg, #0099ee, #0077bb);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 170, 255, 0.3);
+}
+
+.btn-send:active {
+    transform: translateY(0);
+}
+
+/* 弹幕开关按钮特殊样式 */
+#toggle-danmaku.active {
+    background: linear-gradient(135deg, #00aaff, #0088cc);
+    border-color: #00aaff;
+}
+
+#toggle-danmaku.disabled {
+    background: rgba(255, 0, 0, 0.7);
+    border-color: #ff0000;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .danmaku-input-container {
+        min-width: 300px;
+        left: 20px;
+        right: 20px;
+        transform: none;
+        bottom: 60px;
+    }
+
+    .danmaku-controls {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    #danmaku-input {
+        font-size: 16px;
+        /* 防止iOS缩放 */
+    }
+
+    .danmaku-item {
+        font-size: 16px !important;
+    }
+}
+
+/* 全屏模式下的弹幕样式 */
+.player-container:fullscreen .danmaku-container,
+.player-container:-webkit-full-screen .danmaku-container,
+.player-container:-moz-full-screen .danmaku-container {
+    z-index: 999999;
+}
+
+.player-container:fullscreen .danmaku-input-container,
+.player-container:-webkit-full-screen .danmaku-input-container,
+.player-container:-moz-full-screen .danmaku-input-container {
+    z-index: 1000000;
+}

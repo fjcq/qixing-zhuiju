@@ -25,6 +25,9 @@ class VideoPlayer {
         this.setupVideoEvents();
         this.setupControlEvents();
 
+        // 初始化弹幕系统
+        this.initializeDanmaku();
+
         // 初始化视频显示属性
         this.adjustVideoDisplay();
 
@@ -42,6 +45,27 @@ class VideoPlayer {
         }
 
         console.log('[PLAYER] 播放器初始化完成');
+    }
+
+    // 初始化弹幕系统
+    initializeDanmaku() {
+        // 等待增强版弹幕系统加载完成
+        const initDanmaku = () => {
+            if (typeof EnhancedDanmakuSystem !== 'undefined') {
+                // 使用增强版弹幕系统
+                if (!window.danmakuSystem) {
+                    window.danmakuSystem = new EnhancedDanmakuSystem();
+                }
+                console.log('[PLAYER] 增强版弹幕系统已就绪');
+            } else if (window.danmakuSystem) {
+                // 使用基础弹幕系统
+                console.log('[PLAYER] 基础弹幕系统已就绪');
+            } else {
+                console.log('[PLAYER] 等待弹幕系统加载...');
+                setTimeout(initDanmaku, 100);
+            }
+        };
+        initDanmaku();
     }
 
     // 加载视频数据
@@ -241,6 +265,9 @@ class VideoPlayer {
             this.updateVideoInfo();
             this.updateEpisodeList();
 
+            // 设置弹幕房间
+            this.setupDanmakuRoom(episodeUrl);
+
             // 开始播放视频
             await this.loadVideo(episodeUrl);
 
@@ -252,6 +279,37 @@ class VideoPlayer {
             console.error('播放失败:', error);
             this.showError('视频加载失败，请重试');
         }
+    }
+
+    // 设置弹幕房间
+    setupDanmakuRoom(videoUrl) {
+        if (window.danmakuSystem && videoUrl) {
+            // 创建唯一的视频标识符
+            const videoId = this.generateVideoId(videoUrl);
+            console.log(`[PLAYER] 设置弹幕房间: ${videoId}`);
+            window.danmakuSystem.setCurrentVideo(videoId);
+        }
+    }
+
+    // 生成视频唯一标识符
+    generateVideoId(videoUrl) {
+        // 结合视频名称、集数和URL生成唯一标识
+        const videoName = this.videoData?.vod_name || 'unknown';
+        const episode = this.currentEpisodeIndex || 1;
+        const urlHash = this.simpleHash(videoUrl);
+
+        return `${videoName}_ep${episode}_${urlHash}`;
+    }
+
+    // 简单哈希函数
+    simpleHash(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // 转换为32位整数
+        }
+        return Math.abs(hash).toString(36);
     }
 
     // 加载视频
@@ -1041,6 +1099,11 @@ class VideoPlayer {
             this.video.load();
         }
 
+        // 清理弹幕
+        if (window.danmakuSystem) {
+            window.danmakuSystem.clearDanmaku();
+        }
+
         // 清理网页播放器
         this.cleanupWebPage();
     }
@@ -1048,6 +1111,11 @@ class VideoPlayer {
     // 销毁播放器
     destroy() {
         this.cleanup();
+
+        // 销毁弹幕系统
+        if (window.danmakuSystem) {
+            window.danmakuSystem.destroy();
+        }
 
         // 移除事件监听器
         document.removeEventListener('keydown', this.handleKeyboard);

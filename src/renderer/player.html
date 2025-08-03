@@ -16,6 +16,9 @@
                 您的浏览器不支持视频播放。
             </video>
 
+            <!-- 弹幕层 -->
+            <div class="danmaku-container" id="danmaku-container"></div>
+
             <!-- 悬浮控制栏 -->
             <div class="player-overlay" id="player-overlay">
                 <div class="overlay-header">
@@ -24,6 +27,9 @@
                         <span id="video-episode">正片</span>
                     </div>
                     <div class="overlay-controls">
+                        <button id="toggle-danmaku" class="btn-control" title="开启/关闭弹幕">
+                            <span class="icon">💬</span>
+                        </button>
                         <button id="toggle-episodes" class="btn-control" title="显示/隐藏选集">
                             <span class="icon">📋</span>
                         </button>
@@ -36,6 +42,30 @@
                         <button id="close-player" class="btn-close" title="关闭播放器">
                             <span class="icon">❌</span>
                         </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 弹幕输入区域 -->
+            <div class="danmaku-input-container" id="danmaku-input-container">
+                <div class="danmaku-input-panel">
+                    <input type="text" id="danmaku-input" placeholder="在这里输入弹幕..." maxlength="100" />
+                    <div class="danmaku-controls">
+                        <select id="danmaku-color" title="弹幕颜色">
+                            <option value="#ffffff">白色</option>
+                            <option value="#ff0000">红色</option>
+                            <option value="#ffff00">黄色</option>
+                            <option value="#00ff00">绿色</option>
+                            <option value="#00ffff">青色</option>
+                            <option value="#0000ff">蓝色</option>
+                            <option value="#ff00ff">紫色</option>
+                        </select>
+                        <select id="danmaku-size" title="弹幕大小">
+                            <option value="small">小</option>
+                            <option value="medium" selected>中</option>
+                            <option value="large">大</option>
+                        </select>
+                        <button id="send-danmaku" class="btn-send" title="发送弹幕">发送</button>
                     </div>
                 </div>
             </div>
@@ -76,6 +106,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <script src="js/storage.js"></script>
+    <script src="js/danmaku.js"></script>
+    <script src="js/enhanced-danmaku.js"></script>
     <script src="js/player.js"></script>
 </body>
 
