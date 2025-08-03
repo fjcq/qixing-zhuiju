@@ -44,7 +44,7 @@
                 <div class="sidebar-header">
                     <div class="logo-container">
                         <img src="logo.png" alt="七星追剧" class="logo">
-                        <div class="version-info" id="version-info">v1.2.0</div>
+                        <div class="version-info" id="version-info">v1.2.1</div>
                     </div>
                 </div>
                 <ul class="nav-menu">
@@ -173,7 +173,7 @@
                                 <img src="logo.png" alt="七星追剧" class="about-logo">
                                 <div class="about-info">
                                     <h1>七星追剧</h1>
-                                    <p class="version">版本 <span id="about-version">v1.2.0</span></p>
+                                    <p class="version">版本 <span id="about-version">v1.2.1</span></p>
                                     <p class="description">基于 Electron 的桌面影视播放应用</p>
                                 </div>
                             </div>
@@ -206,6 +206,20 @@
                             <div class="about-section">
                                 <h3>更新日志</h3>
                                 <div class="changelog">
+                                    <div class="changelog-item">
+                                        <div class="version-tag">v1.2.1</div>
+                                        <div class="changelog-content">
+                                            <h4>2025-08-03</h4>
+                                            <ul>
+                                                <li>🎨 新增WIN11风格圆角窗口设计</li>
+                                                <li>🆕 新增关于页面，展示软件详细信息</li>
+                                                <li>🔗 新增GitHub仓库链接，支持外部浏览器打开</li>
+                                                <li>🔧 优化自定义标题栏和窗口控制功能</li>
+                                                <li>✨ 增强亚克力透明效果和视觉层次</li>
+                                                <li>🛡️ 改进外部链接安全处理机制</li>
+                                            </ul>
+                                        </div>
+                                    </div>
                                     <div class="changelog-item">
                                         <div class="version-tag">v1.2.0</div>
                                         <div class="changelog-content">
@@ -241,7 +255,7 @@
                                 <div class="author-info">
                                     <div class="author-item">
                                         <span class="label">开发者：</span>
-                                        <span class="value">止水制造</span>
+                                        <span class="value">止水</span>
                                     </div>
                                     <div class="author-item">
                                         <span class="label">许可证：</span>
@@ -257,8 +271,7 @@
                             <div class="about-section">
                                 <h3>仓库链接</h3>
                                 <div class="repo-links">
-                                    <button class="repo-link"
-                                        onclick="window.electronAPI.openExternal('https://github.com/fjcq/qixing-zhuiju')">
+                                    <button class="repo-link" id="github-repo-btn">
                                         <span class="repo-icon">📁</span>
                                         <div class="repo-info">
                                             <div class="repo-name">GitHub 仓库</div>

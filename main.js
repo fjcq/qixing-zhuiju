@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn, exec } = require('child_process');
@@ -574,6 +574,26 @@ class QixingZhuiju {
         // 获取应用版本
         ipcMain.handle('get-app-version', () => {
             return app.getVersion();
+        });
+
+        // 打开外部链接
+        ipcMain.handle('open-external-url', async (event, url) => {
+            try {
+                console.log('[MAIN] 收到打开外部链接请求:', url);
+
+                // 验证URL是否安全
+                if (!url || typeof url !== 'string' || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+                    console.error('[MAIN] 无效的URL:', url);
+                    return { success: false, error: 'Invalid URL' };
+                }
+
+                await shell.openExternal(url);
+                console.log('[MAIN] 外部链接打开成功:', url);
+                return { success: true };
+            } catch (error) {
+                console.error('[MAIN] 打开外部链接失败:', error);
+                return { success: false, error: error.message };
+            }
         });
 
         // 窗口控制处理器

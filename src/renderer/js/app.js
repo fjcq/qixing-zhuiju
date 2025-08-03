@@ -194,6 +194,41 @@ class QixingZhuijuApp {
             this.addTestHistory();
         }
 
+        // GitHub链接点击事件
+        const githubRepoBtn = document.getElementById('github-repo-btn');
+        if (githubRepoBtn) {
+            githubRepoBtn.addEventListener('click', async () => {
+                const url = 'https://github.com/fjcq/qixing-zhuiju';
+                console.log('[APP] GitHub按钮被点击，准备打开链接:', url);
+
+                if (window.electronAPI && window.electronAPI.openExternal) {
+                    console.log('[APP] electronAPI可用，尝试打开外部链接');
+                    try {
+                        const result = await window.electronAPI.openExternal(url);
+                        console.log('[APP] 外部链接打开结果:', result);
+
+                        if (result && result.success) {
+                            console.log('[APP] 外部链接打开成功');
+                            this.componentService.showNotification('已打开GitHub仓库链接', 'success');
+                        } else {
+                            console.error('[APP] 外部链接打开失败:', result?.error);
+                            this.componentService.showNotification('打开链接失败: ' + (result?.error || '未知错误'), 'error');
+                        }
+                    } catch (error) {
+                        console.error('[APP] 打开外部链接异常:', error);
+                        this.componentService.showNotification('打开链接异常: ' + error.message, 'error');
+                    }
+                } else {
+                    console.warn('[APP] electronAPI不可用');
+                    console.log('[APP] window.electronAPI:', window.electronAPI);
+                    console.log('[APP] window对象键:', Object.keys(window));
+                    this.componentService.showNotification('electronAPI不可用，请检查preload脚本', 'warning');
+                }
+            });
+        } else {
+            console.warn('[APP] 未找到GitHub按钮元素');
+        }
+
         // 键盘快捷键
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey) {
@@ -283,7 +318,7 @@ class QixingZhuijuApp {
             }
 
             // 如果无法从主进程获取，使用默认版本号
-            const defaultVersion = 'v1.2.0';
+            const defaultVersion = 'v1.2.1';
             if (versionElement) {
                 versionElement.textContent = defaultVersion;
             }
@@ -293,7 +328,7 @@ class QixingZhuijuApp {
         } catch (error) {
             console.warn('获取版本号失败:', error);
             // 使用默认版本号
-            const defaultVersion = 'v1.2.0';
+            const defaultVersion = 'v1.2.1';
             const versionElement = document.getElementById('version-info');
             const aboutVersionElement = document.getElementById('about-version');
             if (versionElement) {
