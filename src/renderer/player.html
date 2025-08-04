@@ -57,6 +57,12 @@
                         <button id="toggle-episodes" class="btn-control" title="显示/隐藏选集">
                             <span class="icon">📋</span>
                         </button>
+                        <button id="toggle-always-on-top" class="btn-control" title="窗口置顶">
+                            <span class="icon">📌</span>
+                        </button>
+                        <button id="cast-video" class="btn-control" title="投屏到电视">
+                            <span class="icon">📺</span>
+                        </button>
                         <button id="prev-episode" class="btn-control" disabled title="上一集">
                             <span class="icon">⏮️</span>
                         </button>
@@ -101,6 +107,53 @@
             <div id="player-error" class="player-error hidden">
                 <p>视频加载失败，请重试</p>
                 <button id="retry-btn" class="btn-retry">重试</button>
+            </div>
+
+            <!-- 投屏设备选择对话框 -->
+            <div class="cast-device-modal" id="cast-device-modal">
+                <div class="cast-modal-backdrop"></div>
+                <div class="cast-modal-content">
+                    <div class="cast-modal-header">
+                        <h3>选择投屏设备</h3>
+                        <button class="cast-modal-close" id="cast-modal-close">
+                            <span class="icon">❌</span>
+                        </button>
+                    </div>
+
+                    <div class="cast-modal-body">
+                        <div class="cast-scanning" id="cast-scanning">
+                            <div class="cast-spinner"></div>
+                            <p>正在搜索可用设备...</p>
+                        </div>
+
+                        <div class="cast-device-list" id="cast-device-list">
+                            <!-- 设备列表将在这里动态生成 -->
+                        </div>
+
+                        <div class="cast-no-devices" id="cast-no-devices" style="display: none;">
+                            <div class="cast-no-devices-icon">📺</div>
+                            <p>未找到可用的投屏设备</p>
+                            <div class="cast-tips">
+                                <p>请确保：</p>
+                                <ul>
+                                    <li>设备和电脑在同一网络下</li>
+                                    <li>投屏设备已开启投屏功能</li>
+                                    <li>防火墙允许相关端口通信</li>
+                                </ul>
+                            </div>
+                            <button class="btn-refresh-devices" id="btn-refresh-devices">
+                                <span class="icon">🔄</span> 重新搜索
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="cast-modal-footer">
+                        <button class="btn-cancel" id="cast-cancel-btn">取消</button>
+                        <button class="btn-manual-cast" id="btn-manual-cast" title="手动投屏到系统默认设备">
+                            <span class="icon">🖥️</span> 手动投屏
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 

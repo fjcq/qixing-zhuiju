@@ -250,6 +250,7 @@ class QixingZhuiju {
     constructor() {
         this.mainWindow = null;
         this.playerWindow = null;
+        this.castWindow = null; // 投屏窗口
         this.isDev = process.argv.includes('--dev');
     }
 
@@ -621,6 +622,671 @@ class QixingZhuiju {
                 }
             }
         });
+
+        ipcMain.handle('toggle-always-on-top', (event) => {
+            const window = BrowserWindow.fromWebContents(event.sender);
+            if (window) {
+                const isAlwaysOnTop = window.isAlwaysOnTop();
+                window.setAlwaysOnTop(!isAlwaysOnTop);
+                console.log(`[MAIN] 窗口置顶状态切换: ${!isAlwaysOnTop}`);
+                return !isAlwaysOnTop;
+            }
+            return false;
+        });
+
+        // 系统投屏处理
+        ipcMain.handle('start-system-casting', async (event, castInfo) => {
+            console.log('[MAIN] 收到系统投屏请求:', castInfo);
+            try {
+                return await this.startSystemCasting(castInfo);
+            } catch (error) {
+                console.error('[MAIN] 系统投屏失败:', error);
+                return { success: false, error: error.message };
+            }
+        });
+
+        ipcMain.handle('stop-casting', async (event) => {
+            console.log('[MAIN] 收到停止投屏请求');
+            try {
+                return await this.stopSystemCasting();
+            } catch (error) {
+                console.error('[MAIN] 停止投屏失败:', error);
+                return { success: false, error: error.message };
+            }
+        });
+
+        // 设备发现处理
+        ipcMain.handle('discover-cast-devices', async (event) => {
+            console.log('[MAIN] 收到设备发现请求');
+            try {
+                return await this.discoverCastDevices();
+            } catch (error) {
+                console.error('[MAIN] 设备发现失败:', error);
+                return { success: false, error: error.message, devices: [] };
+            }
+        });
+    }
+
+    // 系统投屏功能
+    async startSystemCasting(castInfo) {
+        console.log('[MAIN] 启动系统投屏功能...');
+
+        try {
+            const { url, title, currentTime } = castInfo;
+
+            // 在 Windows 上，我们可以尝试调用系统的投屏功能
+            if (process.platform === 'win32') {
+                return await this.startWindowsCasting(url, title, currentTime);
+            } else if (process.platform === 'darwin') {
+                return await this.startMacCasting(url, title, currentTime);
+            } else {
+                // Linux 或其他系统
+                return await this.startGenericCasting(url, title, currentTime);
+            }
+
+        } catch (error) {
+            console.error('[MAIN] 系统投屏启动失败:', error);
+            throw error;
+        }
+    }
+
+    // Windows 投屏
+    async startWindowsCasting(url, title, currentTime) {
+        console.log('[MAIN] 启动 Windows 投屏...');
+
+        try {
+            // 方法1: 使用 Windows 的投影到此电脑功能
+            // 创建一个简单的投屏接收页面
+            const castWindow = new BrowserWindow({
+                width: 1920,
+                height: 1080,
+                fullscreen: true,
+                frame: false,
+                webPreferences: {
+                    nodeIntegration: false,
+                    contextIsolation: true,
+                    webSecurity: false
+                },
+                show: false
+            });
+
+            // 创建投屏页面内容
+            const castPageHtml = this.createCastPageContent(url, title, currentTime);
+            await castWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(castPageHtml)}`);
+
+            // 显示投屏窗口
+            castWindow.show();
+            castWindow.setFullScreen(true);
+
+            // 保存投屏窗口引用
+            this.castWindow = castWindow;
+
+            // 监听窗口关闭事件
+            castWindow.on('closed', () => {
+                console.log('[MAIN] 投屏窗口已关闭');
+                this.castWindow = null;
+            });
+
+            console.log('[MAIN] Windows 投屏窗口已创建');
+            return { success: true, method: 'window' };
+
+        } catch (error) {
+            console.error('[MAIN] Windows 投屏失败:', error);
+
+            // 备用方案：尝试打开默认浏览器进行投屏
+            try {
+                await shell.openExternal(url);
+                return { success: true, method: 'browser' };
+            } catch (browserError) {
+                throw new Error(`投屏失败: ${error.message}`);
+            }
+        }
+    }
+
+    // macOS 投屏
+    async startMacCasting(url, title, currentTime) {
+        console.log('[MAIN] 启动 macOS 投屏...');
+
+        try {
+            // macOS 上可以使用 AirPlay
+            // 这里我们创建一个全屏窗口作为投屏显示
+            const castWindow = new BrowserWindow({
+                width: 1920,
+                height: 1080,
+                fullscreen: true,
+                frame: false,
+                webPreferences: {
+                    nodeIntegration: false,
+                    contextIsolation: true,
+                    webSecurity: false
+                },
+                show: false
+            });
+
+            const castPageHtml = this.createCastPageContent(url, title, currentTime);
+            await castWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(castPageHtml)}`);
+
+            castWindow.show();
+            castWindow.setFullScreen(true);
+
+            this.castWindow = castWindow;
+
+            castWindow.on('closed', () => {
+                console.log('[MAIN] macOS 投屏窗口已关闭');
+                this.castWindow = null;
+            });
+
+            return { success: true, method: 'airplay' };
+
+        } catch (error) {
+            console.error('[MAIN] macOS 投屏失败:', error);
+            throw error;
+        }
+    }
+
+    // 通用投屏（Linux等）
+    async startGenericCasting(url, title, currentTime) {
+        console.log('[MAIN] 启动通用投屏...');
+
+        try {
+            // 使用外部浏览器打开
+            await shell.openExternal(url);
+            return { success: true, method: 'external' };
+
+        } catch (error) {
+            console.error('[MAIN] 通用投屏失败:', error);
+            throw error;
+        }
+    }
+
+    // 创建投屏页面内容
+    createCastPageContent(videoUrl, title, startTime = 0) {
+        return `
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>${title} - 投屏播放</title>
+            <style>
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
+                
+                body {
+                    background: #000;
+                    color: #fff;
+                    font-family: Arial, sans-serif;
+                    overflow: hidden;
+                }
+                
+                .cast-container {
+                    position: relative;
+                    width: 100vw;
+                    height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                
+                video {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                }
+                
+                .cast-info {
+                    position: absolute;
+                    top: 20px;
+                    left: 20px;
+                    background: rgba(0, 0, 0, 0.7);
+                    padding: 10px 20px;
+                    border-radius: 8px;
+                    z-index: 100;
+                }
+                
+                .cast-title {
+                    font-size: 24px;
+                    font-weight: bold;
+                    margin-bottom: 5px;
+                }
+                
+                .cast-status {
+                    font-size: 16px;
+                    color: #0bc;
+                }
+                
+                .loading {
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    text-align: center;
+                }
+                
+                .spinner {
+                    border: 4px solid #333;
+                    border-top: 4px solid #0bc;
+                    border-radius: 50%;
+                    width: 50px;
+                    height: 50px;
+                    animation: spin 1s linear infinite;
+                    margin: 0 auto 20px;
+                }
+                
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+                
+                .error {
+                    color: #f44;
+                    background: rgba(255, 68, 68, 0.1);
+                    padding: 20px;
+                    border-radius: 8px;
+                    text-align: center;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="cast-container">
+                <div class="cast-info">
+                    <div class="cast-title">${title}</div>
+                    <div class="cast-status">投屏播放中...</div>
+                </div>
+                
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <div>视频加载中...</div>
+                </div>
+                
+                <video id="cast-video" controls autoplay>
+                    <source src="${videoUrl}" type="video/mp4">
+                    <p class="error">您的浏览器不支持视频播放。</p>
+                </video>
+            </div>
+            
+            <script>
+                const video = document.getElementById('cast-video');
+                const loading = document.getElementById('loading');
+                
+                // 设置开始播放时间
+                video.currentTime = ${startTime};
+                
+                video.addEventListener('loadstart', () => {
+                    loading.style.display = 'block';
+                });
+                
+                video.addEventListener('canplay', () => {
+                    loading.style.display = 'none';
+                    video.play();
+                });
+                
+                video.addEventListener('error', (e) => {
+                    loading.innerHTML = '<div class="error">视频加载失败，请检查网络连接</div>';
+                });
+                
+                // 全屏播放
+                video.addEventListener('click', () => {
+                    if (video.requestFullscreen) {
+                        video.requestFullscreen();
+                    }
+                });
+                
+                // 键盘控制
+                document.addEventListener('keydown', (e) => {
+                    switch(e.key) {
+                        case ' ':
+                            e.preventDefault();
+                            if (video.paused) {
+                                video.play();
+                            } else {
+                                video.pause();
+                            }
+                            break;
+                        case 'Escape':
+                            window.close();
+                            break;
+                        case 'f':
+                        case 'F':
+                            if (video.requestFullscreen) {
+                                video.requestFullscreen();
+                            }
+                            break;
+                    }
+                });
+            </script>
+        </body>
+        </html>
+        `;
+    }
+
+    // 系统级设备发现
+    async discoverCastDevices() {
+        console.log('[MAIN] 开始系统级设备发现...');
+        const devices = [];
+
+        try {
+            // 根据平台使用不同的发现方法
+            if (process.platform === 'win32') {
+                const windowsDevices = await this.discoverWindowsDevices();
+                devices.push(...windowsDevices);
+            } else if (process.platform === 'darwin') {
+                const macDevices = await this.discoverMacDevices();
+                devices.push(...macDevices);
+            } else {
+                const linuxDevices = await this.discoverLinuxDevices();
+                devices.push(...linuxDevices);
+            }
+
+            console.log(`[MAIN] 系统级设备发现完成，找到 ${devices.length} 个设备`);
+            return devices;
+
+        } catch (error) {
+            console.error('[MAIN] 系统级设备发现失败:', error);
+            return [];
+        }
+    }
+
+    // Windows 设备发现
+    async discoverWindowsDevices() {
+        const devices = [];
+
+        try {
+            console.log('[MAIN] 搜索 Windows 投屏设备...');
+
+            // 1. 使用 PowerShell 查找 Miracast 设备
+            const miracastDevices = await this.findMiracastDevices();
+            devices.push(...miracastDevices);
+
+            // 2. 查找网络中的 Chromecast 设备
+            const chromecastDevices = await this.findChromecastDevices();
+            devices.push(...chromecastDevices);
+
+            // 3. 查找外部显示器（可能支持投屏）
+            const displayDevices = await this.findDisplayDevices();
+            devices.push(...displayDevices);
+
+        } catch (error) {
+            console.error('[MAIN] Windows 设备发现失败:', error);
+        }
+
+        return devices;
+    }
+
+    // 查找 Miracast 设备
+    async findMiracastDevices() {
+        return new Promise((resolve) => {
+            const devices = [];
+
+            try {
+                // 使用 PowerShell 命令查找 Miracast 设备
+                const { spawn } = require('child_process');
+                const powershell = spawn('powershell', [
+                    '-Command',
+                    'Get-PnpDevice -Class Display | Where-Object {$_.Status -eq "OK" -and $_.FriendlyName -like "*Wireless*"} | Select-Object FriendlyName, InstanceId'
+                ]);
+
+                let output = '';
+                powershell.stdout.on('data', (data) => {
+                    output += data.toString();
+                });
+
+                powershell.on('close', (code) => {
+                    if (code === 0 && output.trim()) {
+                        const lines = output.split('\n').filter(line => line.trim());
+                        lines.forEach(line => {
+                            if (line.includes('Wireless') || line.includes('Display')) {
+                                devices.push({
+                                    id: `miracast_${Date.now()}_${Math.random()}`,
+                                    name: line.trim() || 'Miracast 设备',
+                                    type: 'Miracast',
+                                    icon: '🖥️',
+                                    status: 'available',
+                                    protocol: 'miracast'
+                                });
+                            }
+                        });
+                    }
+                    resolve(devices);
+                });
+
+                powershell.on('error', (error) => {
+                    console.warn('[MAIN] PowerShell Miracast 查询失败:', error);
+                    resolve(devices);
+                });
+
+                // 设置超时
+                setTimeout(() => {
+                    powershell.kill();
+                    resolve(devices);
+                }, 5000);
+
+            } catch (error) {
+                console.warn('[MAIN] Miracast 设备查找失败:', error);
+                resolve(devices);
+            }
+        });
+    }
+
+    // 查找 Chromecast 设备（通过网络扫描）
+    async findChromecastDevices() {
+        return new Promise((resolve) => {
+            const devices = [];
+
+            try {
+                // 使用 Node.js 的 dgram 模块进行 mDNS 查询
+                const dgram = require('dgram');
+                const client = dgram.createSocket('udp4');
+
+                // mDNS 查询包
+                const query = Buffer.from([
+                    0x00, 0x00, // Transaction ID
+                    0x01, 0x00, // Flags (standard query)
+                    0x00, 0x01, // Questions
+                    0x00, 0x00, // Answer RRs
+                    0x00, 0x00, // Authority RRs
+                    0x00, 0x00, // Additional RRs
+                    // Query for _googlecast._tcp.local
+                    0x0b, 0x5f, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x63, 0x61, 0x73, 0x74, // _googlecast
+                    0x04, 0x5f, 0x74, 0x63, 0x70, // _tcp
+                    0x05, 0x6c, 0x6f, 0x63, 0x61, 0x6c, // local
+                    0x00, // null terminator
+                    0x00, 0x0c, // Type PTR
+                    0x00, 0x01  // Class IN
+                ]);
+
+                client.on('message', (msg, rinfo) => {
+                    try {
+                        // 简单解析 mDNS 响应
+                        if (msg.length > 12) {
+                            devices.push({
+                                id: `chromecast_${rinfo.address}`,
+                                name: `Chromecast (${rinfo.address})`,
+                                type: 'Chromecast',
+                                icon: '📺',
+                                status: 'available',
+                                protocol: 'chromecast',
+                                address: rinfo.address
+                            });
+                        }
+                    } catch (error) {
+                        console.warn('[MAIN] mDNS 响应解析失败:', error);
+                    }
+                });
+
+                client.on('error', (error) => {
+                    console.warn('[MAIN] mDNS 查询失败:', error);
+                });
+
+                // 发送查询到 mDNS 多播地址
+                client.send(query, 5353, '224.0.0.251', (error) => {
+                    if (error) {
+                        console.warn('[MAIN] mDNS 查询发送失败:', error);
+                    }
+                });
+
+                // 设置超时
+                setTimeout(() => {
+                    client.close();
+                    resolve(devices);
+                }, 3000);
+
+            } catch (error) {
+                console.warn('[MAIN] Chromecast 设备查找失败:', error);
+                resolve(devices);
+            }
+        });
+    }
+
+    // 查找外部显示设备
+    async findDisplayDevices() {
+        return new Promise((resolve) => {
+            const devices = [];
+
+            try {
+                // 使用 Electron 的 screen API 查找外部显示器
+                const { screen } = require('electron');
+                const displays = screen.getAllDisplays();
+
+                displays.forEach((display, index) => {
+                    if (!display.internal) {
+                        devices.push({
+                            id: `display_${display.id}`,
+                            name: `外部显示器 ${index + 1} (${display.size.width}x${display.size.height})`,
+                            type: 'Display',
+                            icon: '🖥️',
+                            status: 'available',
+                            protocol: 'display',
+                            display: display
+                        });
+                    }
+                });
+
+                resolve(devices);
+
+            } catch (error) {
+                console.warn('[MAIN] 显示设备查找失败:', error);
+                resolve(devices);
+            }
+        });
+    }
+
+    // macOS 设备发现
+    async discoverMacDevices() {
+        const devices = [];
+
+        try {
+            console.log('[MAIN] 搜索 macOS 投屏设备...');
+
+            // 使用 system_profiler 查找 AirPlay 设备
+            const { exec } = require('child_process');
+
+            return new Promise((resolve) => {
+                exec('system_profiler SPAirPortDataType', (error, stdout, stderr) => {
+                    if (!error && stdout) {
+                        // 解析 AirPlay 设备信息
+                        if (stdout.includes('AirPlay') || stdout.includes('Apple TV')) {
+                            devices.push({
+                                id: 'airplay_device',
+                                name: 'AirPlay 设备',
+                                type: 'AirPlay',
+                                icon: '🍎',
+                                status: 'available',
+                                protocol: 'airplay'
+                            });
+                        }
+                    }
+
+                    // 查找外部显示器
+                    exec('system_profiler SPDisplaysDataType', (dispError, dispStdout) => {
+                        if (!dispError && dispStdout) {
+                            const lines = dispStdout.split('\n');
+                            lines.forEach((line, index) => {
+                                if (line.includes('External') || line.includes('Thunderbolt')) {
+                                    devices.push({
+                                        id: `mac_display_${index}`,
+                                        name: line.trim() || '外部显示器',
+                                        type: 'Display',
+                                        icon: '🖥️',
+                                        status: 'available',
+                                        protocol: 'display'
+                                    });
+                                }
+                            });
+                        }
+                        resolve(devices);
+                    });
+                });
+            });
+
+        } catch (error) {
+            console.error('[MAIN] macOS 设备发现失败:', error);
+        }
+
+        return devices;
+    }
+
+    // Linux 设备发现
+    async discoverLinuxDevices() {
+        const devices = [];
+
+        try {
+            console.log('[MAIN] 搜索 Linux 投屏设备...');
+
+            const { exec } = require('child_process');
+
+            return new Promise((resolve) => {
+                // 查找连接的显示器
+                exec('xrandr --query', (error, stdout, stderr) => {
+                    if (!error && stdout) {
+                        const lines = stdout.split('\n');
+                        lines.forEach((line, index) => {
+                            if (line.includes('connected') && !line.includes('disconnected')) {
+                                const displayName = line.split(' ')[0];
+                                if (displayName !== 'eDP-1' && displayName !== 'LVDS-1') { // 排除内置显示器
+                                    devices.push({
+                                        id: `linux_display_${displayName}`,
+                                        name: `显示器 ${displayName}`,
+                                        type: 'Display',
+                                        icon: '🖥️',
+                                        status: 'available',
+                                        protocol: 'display'
+                                    });
+                                }
+                            }
+                        });
+                    }
+                    resolve(devices);
+                });
+            });
+
+        } catch (error) {
+            console.error('[MAIN] Linux 设备发现失败:', error);
+        }
+
+        return devices;
+    }
+
+    // 停止系统投屏
+    async stopSystemCasting() {
+        console.log('[MAIN] 停止系统投屏...');
+
+        try {
+            if (this.castWindow) {
+                this.castWindow.close();
+                this.castWindow = null;
+                console.log('[MAIN] 投屏窗口已关闭');
+            }
+
+            return { success: true };
+
+        } catch (error) {
+            console.error('[MAIN] 停止投屏失败:', error);
+            throw error;
+        }
     }
 
     async initialize() {

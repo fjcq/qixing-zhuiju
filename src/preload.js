@@ -6,7 +6,7 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer: {
         send: (channel, data) => {
             // 白名单安全的频道
-            const validChannels = ['open-player', 'close-player', 'player-progress', 'window-close', 'window-minimize', 'window-maximize'];
+            const validChannels = ['open-player', 'close-player', 'player-progress', 'window-close', 'window-minimize', 'window-maximize', 'toggle-always-on-top', 'start-system-casting', 'stop-casting'];
             if (validChannels.includes(channel)) {
                 ipcRenderer.send(channel, data);
             }
@@ -20,7 +20,11 @@ contextBridge.exposeInMainWorld('electron', {
                 'window-close',
                 'window-minimize',
                 'window-maximize',
-                'open-external-url'
+                'toggle-always-on-top',
+                'open-external-url',
+                'start-system-casting',
+                'stop-casting',
+                'discover-cast-devices'
             ];
             if (validChannels.includes(channel)) {
                 return ipcRenderer.invoke(channel, data);
@@ -49,7 +53,8 @@ contextBridge.exposeInMainWorld('electron', {
     window: {
         close: () => ipcRenderer.invoke('window-close'),
         minimize: () => ipcRenderer.invoke('window-minimize'),
-        maximize: () => ipcRenderer.invoke('window-maximize')
+        maximize: () => ipcRenderer.invoke('window-maximize'),
+        toggleAlwaysOnTop: () => ipcRenderer.invoke('toggle-always-on-top')
     }
 });
 

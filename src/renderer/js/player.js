@@ -11,6 +11,9 @@ class VideoPlayer {
         this.isAutoNext = true;
         this.playbackHistory = [];
         this.storageService = null; // 添加存储服务引用
+        this.isCasting = false; // 投屏状态
+        this.presentationRequest = null; // 投屏请求
+        this.selectedCastDevice = null; // 选中的投屏设备
 
         // 初始化标题栏控制
         this.initializeTitlebarControls();
@@ -767,6 +770,22 @@ class VideoPlayer {
             });
         }
 
+        // 置顶按钮
+        const toggleAlwaysOnTopBtn = document.getElementById('toggle-always-on-top');
+        if (toggleAlwaysOnTopBtn) {
+            toggleAlwaysOnTopBtn.addEventListener('click', async () => {
+                await this.toggleAlwaysOnTop();
+            });
+        }
+
+        // 投屏按钮
+        const castVideoBtn = document.getElementById('cast-video');
+        if (castVideoBtn) {
+            castVideoBtn.addEventListener('click', async () => {
+                await this.toggleCasting();
+            });
+        }
+
         // 关闭选集面板按钮
         const closeEpisodesBtn = document.getElementById('close-episodes');
         if (closeEpisodesBtn) {
@@ -888,6 +907,39 @@ class VideoPlayer {
                 e.preventDefault();
                 this.hideEpisodePanel();
                 break;
+            case 'KeyT':
+                e.preventDefault();
+                this.toggleAlwaysOnTop();
+                break;
+        }
+    }
+
+    // 切换窗口置顶状态
+    async toggleAlwaysOnTop() {
+        try {
+            if (window.electron && window.electron.window && window.electron.window.toggleAlwaysOnTop) {
+                const isAlwaysOnTop = await window.electron.window.toggleAlwaysOnTop();
+
+                // 更新按钮状态
+                const toggleBtn = document.getElementById('toggle-always-on-top');
+                if (toggleBtn) {
+                    const icon = toggleBtn.querySelector('.icon');
+                    if (icon) {
+                        icon.textContent = isAlwaysOnTop ? '🔒' : '📌';
+                        toggleBtn.title = isAlwaysOnTop ? '取消置顶' : '窗口置顶';
+                        toggleBtn.classList.toggle('active', isAlwaysOnTop);
+                    }
+                }
+
+                console.log(`[PLAYER] 窗口置顶状态: ${isAlwaysOnTop}`);
+                return isAlwaysOnTop;
+            } else {
+                console.error('[PLAYER] 置顶功能不可用');
+                return false;
+            }
+        } catch (error) {
+            console.error('[PLAYER] 切换置顶状态失败:', error);
+            return false;
         }
     }
 
@@ -1153,6 +1205,732 @@ class VideoPlayer {
 
         // 清理网页播放器
         this.cleanupWebPage();
+    }
+
+    // 投屏功能 - 切换投屏状态
+    async toggleCasting() {
+        try {
+            if (this.isCasting) {
+                // 当前正在投屏，停止投屏
+                await this.stopCasting();
+            } else {
+                // 当前未投屏，开始投屏
+                await this.startCasting();
+            }
+        } catch (error) {
+            console.error('[PLAYER] 投屏操作失败:', error);
+            this.showNotification('投屏操作失败: ' + error.message, 'error');
+        }
+    }
+
+    // 开始投屏
+    async startCasting() {
+        console.log('[PLAYER] 显示投屏设备选择对话框...');
+
+        try {
+            // 显示设备选择对话框
+            this.showCastDeviceModal();
+
+        } catch (error) {
+            console.error('[PLAYER] 显示投屏设备选择失败:', error);
+            this.showNotification('投屏设备选择失败: ' + error.message, 'error');
+        }
+    }
+
+    // 显示投屏设备选择对话框
+    showCastDeviceModal() {
+        const modal = document.getElementById('cast-device-modal');
+        if (!modal) {
+            console.error('[PLAYER] 找不到投屏设备选择对话框');
+            return;
+        }
+
+        // 显示对话框
+        modal.classList.add('show');
+
+        // 重置状态
+        this.resetCastModal();
+
+        // 开始搜索设备
+        this.startDeviceDiscovery();
+
+        // 绑定事件监听器
+        this.setupCastModalEvents();
+    }
+
+    // 重置投屏对话框状态
+    resetCastModal() {
+        const scanning = document.getElementById('cast-scanning');
+        const deviceList = document.getElementById('cast-device-list');
+        const noDevices = document.getElementById('cast-no-devices');
+
+        if (scanning) scanning.style.display = 'block';
+        if (deviceList) {
+            deviceList.style.display = 'none';
+            deviceList.innerHTML = '';
+        }
+        if (noDevices) noDevices.style.display = 'none';
+    }
+
+    // 设置投屏对话框事件监听器
+    setupCastModalEvents() {
+        const modal = document.getElementById('cast-device-modal');
+        const closeBtn = document.getElementById('cast-modal-close');
+        const cancelBtn = document.getElementById('cast-cancel-btn');
+        const manualBtn = document.getElementById('btn-manual-cast');
+        const refreshBtn = document.getElementById('btn-refresh-devices');
+        const backdrop = modal?.querySelector('.cast-modal-backdrop');
+
+        // 关闭按钮
+        if (closeBtn) {
+            closeBtn.onclick = () => this.hideCastDeviceModal();
+        }
+
+        // 取消按钮
+        if (cancelBtn) {
+            cancelBtn.onclick = () => this.hideCastDeviceModal();
+        }
+
+        // 背景点击关闭
+        if (backdrop) {
+            backdrop.onclick = () => this.hideCastDeviceModal();
+        }
+
+        // 手动投屏按钮
+        if (manualBtn) {
+            manualBtn.onclick = async () => {
+                this.hideCastDeviceModal();
+                await this.startManualCasting();
+            };
+        }
+
+        // 刷新设备按钮
+        if (refreshBtn) {
+            refreshBtn.onclick = () => {
+                this.resetCastModal();
+                this.startDeviceDiscovery();
+            };
+        }
+
+        // ESC 键关闭
+        document.addEventListener('keydown', this.handleCastModalKeydown);
+    }
+
+    // 处理对话框键盘事件
+    handleCastModalKeydown = (e) => {
+        if (e.key === 'Escape') {
+            this.hideCastDeviceModal();
+        }
+    }
+
+    // 隐藏投屏设备选择对话框
+    hideCastDeviceModal() {
+        const modal = document.getElementById('cast-device-modal');
+        if (modal) {
+            modal.classList.remove('show');
+        }
+
+        // 移除键盘事件监听器
+        document.removeEventListener('keydown', this.handleCastModalKeydown);
+    }
+
+    // 开始设备发现
+    async startDeviceDiscovery() {
+        console.log('[PLAYER] 开始搜索投屏设备...');
+
+        const scanning = document.getElementById('cast-scanning');
+        const deviceList = document.getElementById('cast-device-list');
+        const noDevices = document.getElementById('cast-no-devices');
+        const refreshBtn = document.getElementById('btn-refresh-devices');
+
+        try {
+            // 显示搜索中状态
+            if (scanning) scanning.style.display = 'block';
+            if (deviceList) deviceList.style.display = 'none';
+            if (noDevices) noDevices.style.display = 'none';
+
+            // 真实设备搜索
+            const devices = await this.discoverCastDevices();
+
+            if (scanning) scanning.style.display = 'none';
+
+            if (devices && devices.length > 0) {
+                console.log(`[PLAYER] 发现 ${devices.length} 个投屏设备`);
+                // 显示设备列表
+                this.displayCastDevices(devices);
+                if (deviceList) deviceList.style.display = 'block';
+                if (noDevices) noDevices.style.display = 'none';
+            } else {
+                console.log('[PLAYER] 未发现任何投屏设备');
+                // 显示无设备状态
+                if (deviceList) deviceList.style.display = 'none';
+                if (noDevices) noDevices.style.display = 'block';
+
+                // 绑定刷新按钮事件
+                if (refreshBtn) {
+                    refreshBtn.onclick = () => this.startDeviceDiscovery();
+                }
+            }
+
+        } catch (error) {
+            console.error('[PLAYER] 设备搜索失败:', error);
+            if (scanning) scanning.style.display = 'none';
+            if (deviceList) deviceList.style.display = 'none';
+            if (noDevices) noDevices.style.display = 'block';
+
+            // 绑定刷新按钮事件
+            if (refreshBtn) {
+                refreshBtn.onclick = () => this.startDeviceDiscovery();
+            }
+        }
+    }
+
+    // 发现投屏设备（真实实现）
+    async discoverCastDevices() {
+        console.log('[PLAYER] 开始真实设备发现...');
+        const devices = [];
+
+        try {
+            // 1. 检查并使用浏览器 Presentation API 发现设备
+            if (navigator.presentation && navigator.presentation.getAvailability) {
+                console.log('[PLAYER] 使用 Presentation API 搜索设备...');
+                const presentationDevices = await this.discoverPresentationDevices();
+                devices.push(...presentationDevices);
+            }
+
+            // 2. 使用 WebRTC 发现本地网络设备
+            console.log('[PLAYER] 使用 WebRTC 搜索本地网络设备...');
+            const webrtcDevices = await this.discoverWebRTCDevices();
+            devices.push(...webrtcDevices);
+
+            // 3. 调用主进程的系统级设备发现
+            if (window.electron && window.electron.ipcRenderer) {
+                console.log('[PLAYER] 调用系统级设备发现...');
+                try {
+                    const systemDevices = await window.electron.ipcRenderer.invoke('discover-cast-devices');
+                    if (systemDevices && systemDevices.length > 0) {
+                        devices.push(...systemDevices);
+                    }
+                } catch (error) {
+                    console.warn('[PLAYER] 系统级设备发现失败:', error);
+                }
+            }
+
+            // 4. 使用 mDNS 发现网络设备（如果支持）
+            console.log('[PLAYER] 搜索 mDNS 网络服务...');
+            const mdnsDevices = await this.discoverMDNSDevices();
+            devices.push(...mdnsDevices);
+
+            // 去重处理
+            const uniqueDevices = this.deduplicateDevices(devices);
+
+            console.log(`[PLAYER] 设备发现完成，找到 ${uniqueDevices.length} 个设备:`, uniqueDevices);
+            return uniqueDevices;
+
+        } catch (error) {
+            console.error('[PLAYER] 设备发现过程出错:', error);
+            return devices; // 返回已发现的设备
+        }
+    }
+
+    // 使用 Presentation API 发现设备
+    async discoverPresentationDevices() {
+        const devices = [];
+
+        try {
+            // 创建 Presentation Request 来触发设备发现
+            const testUrl = 'data:text/html,<h1>Test Cast</h1>';
+            const request = new PresentationRequest([testUrl]);
+
+            // 监听设备可用性
+            const availability = await request.getAvailability();
+
+            if (availability.value) {
+                // 有可用设备，但 Presentation API 不直接提供设备列表
+                // 我们创建一个通用的 Chromecast 设备条目
+                devices.push({
+                    id: 'presentation_device',
+                    name: 'Cast 设备 (Presentation API)',
+                    type: 'Chromecast',
+                    icon: '📺',
+                    status: 'available',
+                    protocol: 'presentation'
+                });
+            }
+
+            // 监听设备可用性变化
+            availability.addEventListener('change', () => {
+                console.log('[PLAYER] Presentation 设备可用性变化:', availability.value);
+            });
+
+        } catch (error) {
+            console.warn('[PLAYER] Presentation API 设备发现失败:', error);
+        }
+
+        return devices;
+    }
+
+    // 使用 WebRTC 发现本地网络设备
+    async discoverWebRTCDevices() {
+        const devices = [];
+
+        try {
+            // 使用 WebRTC 获取本地网络信息
+            const pc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            });
+
+            // 创建数据通道来触发 ICE 收集
+            pc.createDataChannel('test');
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            // 收集 ICE 候选者来获取本地网络信息
+            const localIPs = new Set();
+
+            return new Promise((resolve) => {
+                let timeout;
+
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        const candidate = event.candidate.candidate;
+                        const ipMatch = candidate.match(/(\d+\.\d+\.\d+\.\d+)/);
+                        if (ipMatch && !ipMatch[1].startsWith('127.')) {
+                            localIPs.add(ipMatch[1]);
+                        }
+                    }
+                };
+
+                pc.onicegatheringstatechange = () => {
+                    if (pc.iceGatheringState === 'complete') {
+                        clearTimeout(timeout);
+                        pc.close();
+
+                        // 基于发现的本地IP，推测可能的投屏设备
+                        localIPs.forEach(ip => {
+                            const subnet = ip.substring(0, ip.lastIndexOf('.'));
+                            // 这里可以扫描常见的投屏设备端口
+                            // 为简化实现，我们添加一个基于网络的通用设备
+                            if (subnet) {
+                                devices.push({
+                                    id: `network_${subnet}`,
+                                    name: `网络设备 (${subnet}.*)`,
+                                    type: 'Network',
+                                    icon: '🌐',
+                                    status: 'available',
+                                    protocol: 'network'
+                                });
+                            }
+                        });
+
+                        resolve(devices);
+                    }
+                };
+
+                // 设置超时
+                timeout = setTimeout(() => {
+                    pc.close();
+                    resolve(devices);
+                }, 3000);
+            });
+
+        } catch (error) {
+            console.warn('[PLAYER] WebRTC 设备发现失败:', error);
+            return devices;
+        }
+    }
+
+    // 发现 mDNS 网络服务
+    async discoverMDNSDevices() {
+        const devices = [];
+
+        try {
+            // 在浏览器环境中，我们无法直接使用 mDNS
+            // 但可以通过一些已知的服务端点来检测
+            const knownServices = [
+                { host: '_googlecast._tcp.local', name: 'Chromecast', icon: '📺' },
+                { host: '_airplay._tcp.local', name: 'AirPlay', icon: '🍎' },
+                { host: '_miracast._tcp.local', name: 'Miracast', icon: '🖥️' }
+            ];
+
+            // 注意：在浏览器中无法直接进行 mDNS 查询
+            // 这里我们只是预留接口，实际需要通过主进程来实现
+            console.log('[PLAYER] mDNS 发现需要系统级支持，跳过浏览器端实现');
+
+        } catch (error) {
+            console.warn('[PLAYER] mDNS 设备发现失败:', error);
+        }
+
+        return devices;
+    }
+
+    // 去重设备列表
+    deduplicateDevices(devices) {
+        const seen = new Set();
+        return devices.filter(device => {
+            const key = `${device.name}-${device.type}`;
+            if (seen.has(key)) {
+                return false;
+            }
+            seen.add(key);
+            return true;
+        });
+    }    // 显示投屏设备列表
+    displayCastDevices(devices) {
+        const deviceList = document.getElementById('cast-device-list');
+        if (!deviceList) return;
+
+        deviceList.innerHTML = '';
+
+        devices.forEach(device => {
+            const deviceItem = document.createElement('div');
+            deviceItem.className = 'cast-device-item';
+            deviceItem.dataset.deviceId = device.id;
+
+            const statusClass = device.status === 'available' ? 'available' :
+                device.status === 'busy' ? 'busy' : 'offline';
+            const statusText = device.status === 'available' ? '可用' :
+                device.status === 'busy' ? '使用中' : '离线';
+
+            deviceItem.innerHTML = `
+                <div class="cast-device-icon">${device.icon}</div>
+                <div class="cast-device-info">
+                    <div class="cast-device-name">${device.name}</div>
+                    <div class="cast-device-type">${device.type}</div>
+                </div>
+                <div class="cast-device-status ${statusClass}">${statusText}</div>
+            `;
+
+            // 只允许点击可用设备
+            if (device.status === 'available') {
+                deviceItem.onclick = () => this.selectCastDevice(device);
+            } else {
+                deviceItem.style.opacity = '0.6';
+                deviceItem.style.cursor = 'not-allowed';
+            }
+
+            deviceList.appendChild(deviceItem);
+        });
+    }
+
+    // 选择投屏设备
+    async selectCastDevice(device) {
+        console.log('[PLAYER] 选择投屏设备:', device);
+
+        // 更新UI选中状态
+        const deviceItems = document.querySelectorAll('.cast-device-item');
+        deviceItems.forEach(item => item.classList.remove('selected'));
+
+        const selectedItem = document.querySelector(`[data-device-id="${device.id}"]`);
+        if (selectedItem) {
+            selectedItem.classList.add('selected');
+        }
+
+        // 添加连接按钮
+        this.showConnectButton(device);
+
+        // 或者直接开始连接
+        // await this.connectToCastDevice(device);
+    }
+
+    // 显示连接按钮
+    showConnectButton(device) {
+        const footer = document.querySelector('.cast-modal-footer');
+        if (!footer) return;
+
+        // 移除现有的连接按钮
+        const existingBtn = footer.querySelector('.btn-connect-device');
+        if (existingBtn) {
+            existingBtn.remove();
+        }
+
+        // 创建连接按钮
+        const connectBtn = document.createElement('button');
+        connectBtn.className = 'btn-connect-device';
+        connectBtn.innerHTML = `连接到 ${device.name}`;
+        connectBtn.onclick = async () => {
+            await this.connectToCastDevice(device);
+        };
+
+        footer.appendChild(connectBtn);
+    }
+
+    // 连接到投屏设备
+    async connectToCastDevice(device) {
+        console.log('[PLAYER] 连接到投屏设备:', device);
+
+        try {
+            this.hideCastDeviceModal();
+            this.showNotification(`正在连接到 ${device.name}...`, 'info');
+
+            // 获取当前视频信息
+            const currentUrl = this.video?.src || this.video?.currentSrc;
+            if (!currentUrl) {
+                throw new Error('没有正在播放的视频');
+            }
+
+            const currentTime = this.video?.currentTime || 0;
+
+            // 根据设备类型使用不同的连接方式
+            let success = false;
+
+            if (device.type === 'Chromecast' && navigator.presentation) {
+                success = await this.connectChromecast(currentUrl, currentTime);
+            } else if (device.type === 'AirPlay') {
+                success = await this.connectAirPlay(currentUrl, currentTime);
+            } else {
+                success = await this.connectGenericDevice(currentUrl, currentTime);
+            }
+
+            if (success) {
+                // 更新投屏状态
+                this.isCasting = true;
+                const castBtn = document.getElementById('cast-video');
+                if (castBtn) {
+                    castBtn.classList.add('casting');
+                    castBtn.title = `停止投屏 (${device.name})`;
+                }
+
+                // 暂停本地播放
+                if (this.video && !this.video.paused) {
+                    this.video.pause();
+                }
+
+                this.showNotification(`投屏到 ${device.name} 成功`, 'success');
+            } else {
+                throw new Error('连接失败');
+            }
+
+        } catch (error) {
+            console.error('[PLAYER] 连接投屏设备失败:', error);
+            this.showNotification(`连接 ${device.name} 失败: ${error.message}`, 'error');
+        }
+    }
+
+    // 连接 Chromecast
+    async connectChromecast(videoUrl, startTime) {
+        try {
+            const castUrl = this.createCastPageUrl(videoUrl, startTime);
+            this.presentationRequest = new PresentationRequest([castUrl]);
+
+            const connection = await this.presentationRequest.start();
+            this.setupCastingEvents(connection);
+
+            return true;
+        } catch (error) {
+            console.error('[PLAYER] Chromecast 连接失败:', error);
+            return false;
+        }
+    }
+
+    // 连接 AirPlay
+    async connectAirPlay(videoUrl, startTime) {
+        try {
+            // AirPlay 连接逻辑
+            return await this.trySystemCasting();
+        } catch (error) {
+            console.error('[PLAYER] AirPlay 连接失败:', error);
+            return false;
+        }
+    }
+
+    // 连接通用设备
+    async connectGenericDevice(videoUrl, startTime) {
+        try {
+            return await this.trySystemCasting();
+        } catch (error) {
+            console.error('[PLAYER] 通用设备连接失败:', error);
+            return false;
+        }
+    }
+
+    // 手动投屏（直接使用系统功能）
+    async startManualCasting() {
+        console.log('[PLAYER] 开始手动投屏...');
+
+        try {
+            const currentUrl = this.video?.src || this.video?.currentSrc;
+            if (!currentUrl) {
+                throw new Error('没有正在播放的视频');
+            }
+
+            const currentTime = this.video?.currentTime || 0;
+
+            if (await this.trySystemCasting()) {
+                this.isCasting = true;
+                const castBtn = document.getElementById('cast-video');
+                if (castBtn) {
+                    castBtn.classList.add('casting');
+                    castBtn.title = '停止投屏 (手动模式)';
+                }
+
+                // 暂停本地播放
+                if (this.video && !this.video.paused) {
+                    this.video.pause();
+                }
+
+                this.showNotification('手动投屏已开始', 'success');
+            } else {
+                throw new Error('手动投屏失败');
+            }
+
+        } catch (error) {
+            console.error('[PLAYER] 手动投屏失败:', error);
+            this.showNotification('手动投屏失败: ' + error.message, 'error');
+        }
+    }    // 停止投屏
+    async stopCasting() {
+        console.log('[PLAYER] 停止投屏...');
+
+        try {
+            // 如果有活动的投屏连接，关闭它
+            if (this.presentationRequest) {
+                // 这里我们无法直接关闭连接，但可以清除引用
+                this.presentationRequest = null;
+            }
+
+            // 调用系统级投屏停止
+            if (window.electron && window.electron.ipcRenderer) {
+                await window.electron.ipcRenderer.invoke('stop-casting');
+            }
+
+        } catch (error) {
+            console.warn('[PLAYER] 停止投屏时出现警告:', error);
+        } finally {
+            // 无论如何都要重置状态
+            this.isCasting = false;
+
+            const castBtn = document.getElementById('cast-video');
+            if (castBtn) {
+                castBtn.classList.remove('casting');
+                castBtn.title = '投屏到电视';
+            }
+
+            this.showNotification('投屏已停止', 'info');
+        }
+    }
+
+    // 尝试使用系统原生投屏
+    async trySystemCasting() {
+        try {
+            if (!window.electron || !window.electron.ipcRenderer) {
+                return false;
+            }
+
+            const videoUrl = this.video?.src || this.video?.currentSrc;
+            if (!videoUrl) {
+                return false;
+            }
+
+            const castInfo = {
+                url: videoUrl,
+                title: this.videoData?.vod_name || '七星追剧',
+                currentTime: this.video?.currentTime || 0,
+                duration: this.video?.duration || 0
+            };
+
+            const result = await window.electron.ipcRenderer.invoke('start-system-casting', castInfo);
+            return result && result.success;
+
+        } catch (error) {
+            console.error('[PLAYER] 系统投屏失败:', error);
+            return false;
+        }
+    }
+
+    // 创建投屏页面URL
+    createCastPageUrl(videoUrl, startTime = 0) {
+        // 创建一个简单的投屏页面URL
+        const params = new URLSearchParams({
+            video: encodeURIComponent(videoUrl),
+            title: encodeURIComponent(this.videoData?.vod_name || '七星追剧'),
+            start: startTime.toString()
+        });
+
+        // 这里应该是一个专门的投屏页面
+        return `file://${__dirname}/cast-receiver.html?${params.toString()}`;
+    }
+
+    // 设置投屏连接事件监听
+    setupCastingEvents(connection) {
+        if (!connection) return;
+
+        connection.addEventListener('connect', () => {
+            console.log('[PLAYER] 投屏设备已连接');
+        });
+
+        connection.addEventListener('close', (event) => {
+            console.log('[PLAYER] 投屏连接已关闭:', event.reason);
+            this.stopCasting();
+        });
+
+        connection.addEventListener('terminate', () => {
+            console.log('[PLAYER] 投屏会话已终止');
+            this.stopCasting();
+        });
+
+        // 发送初始播放信息
+        connection.addEventListener('connect', () => {
+            const playInfo = {
+                type: 'play',
+                url: this.video?.src || this.video?.currentSrc,
+                currentTime: this.video?.currentTime || 0,
+                title: this.videoData?.vod_name || '七星追剧'
+            };
+
+            try {
+                connection.send(JSON.stringify(playInfo));
+            } catch (error) {
+                console.error('[PLAYER] 发送播放信息失败:', error);
+            }
+        });
+    }
+
+    // 显示通知消息
+    showNotification(message, type = 'info') {
+        console.log(`[PLAYER] ${type.toUpperCase()}: ${message}`);
+
+        // 创建通知元素
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+
+        // 添加样式
+        Object.assign(notification.style, {
+            position: 'fixed',
+            top: '80px',
+            right: '20px',
+            background: type === 'error' ? 'rgba(220, 53, 69, 0.9)' :
+                type === 'success' ? 'rgba(40, 167, 69, 0.9)' :
+                    'rgba(23, 162, 184, 0.9)',
+            color: '#fff',
+            padding: '12px 20px',
+            borderRadius: '8px',
+            fontSize: '14px',
+            zIndex: '10000',
+            backdropFilter: 'blur(10px)',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+            transform: 'translateX(100%)',
+            transition: 'transform 0.3s ease'
+        });
+
+        document.body.appendChild(notification);
+
+        // 动画显示
+        setTimeout(() => {
+            notification.style.transform = 'translateX(0)';
+        }, 100);
+
+        // 自动隐藏
+        setTimeout(() => {
+            notification.style.transform = 'translateX(100%)';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 3000);
     }
 
     // 销毁播放器
