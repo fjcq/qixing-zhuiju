@@ -86,6 +86,9 @@ class QixingZhuijuApp {
             // 加载并显示版本号
             await this.loadVersionInfo();
 
+            // 初始化更新日志
+            this.initializeChangelog();
+
             // 清理过期数据
             this.storageService.cleanupOldData();
 
@@ -320,8 +323,8 @@ class QixingZhuijuApp {
                 }
             }
 
-            // 如果无法从主进程获取，使用默认版本号
-            const defaultVersion = 'v1.2.4';
+            // 如果无法从主进程获取，使用全局版本号
+            const defaultVersion = window.APP_VERSION || 'v1.2.4';
             if (versionElement) {
                 versionElement.textContent = defaultVersion;
             }
@@ -330,8 +333,8 @@ class QixingZhuijuApp {
             }
         } catch (error) {
             console.warn('获取版本号失败:', error);
-            // 使用默认版本号
-            const defaultVersion = 'v1.2.4';
+            // 使用全局版本号
+            const defaultVersion = window.APP_VERSION || 'v1.2.4';
             const versionElement = document.getElementById('version-info');
             const aboutVersionElement = document.getElementById('about-version');
             if (versionElement) {
@@ -340,6 +343,21 @@ class QixingZhuijuApp {
             if (aboutVersionElement) {
                 aboutVersionElement.textContent = defaultVersion;
             }
+        }
+    }
+
+    // 初始化更新日志
+    initializeChangelog() {
+        try {
+            const changelogContainer = document.getElementById('changelog-container');
+            if (changelogContainer && window.generateChangelogHTML) {
+                changelogContainer.innerHTML = window.generateChangelogHTML(6); // 显示最近6个版本
+                console.log('更新日志初始化完成');
+            } else {
+                console.warn('更新日志容器或生成函数不存在');
+            }
+        } catch (error) {
+            console.error('初始化更新日志失败:', error);
         }
     }
 

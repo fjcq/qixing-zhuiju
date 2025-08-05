@@ -8,7 +8,9 @@
         "build": "electron-builder",
         "dev": "electron . --dev",
         "dist": "electron-builder --win",
-        "pack": "electron-packager . 七星追剧 --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon.ico"
+        "pack": "electron-packager . 七星追剧 --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon.ico",
+        "sync-version": "node src/config/sync-version.js",
+        "version": "npm run sync-version && git add -A"
     },
     "keywords": [
         "electron",
