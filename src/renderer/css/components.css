@@ -618,9 +618,24 @@
     flex: 1;
 }
 
+/* 标题行样式 - 包含标题和分享按钮 */
+.detail-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    gap: 15px;
+}
+
 .detail-title {
     font-size: 24px;
-    margin-bottom: 10px;
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+    /* 允许标题缩减 */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .detail-meta {
@@ -1057,8 +1072,24 @@
 }
 
 @media (max-width: 480px) {
+    .detail-title-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
     .detail-title {
         font-size: 20px;
+        white-space: normal;
+        /* 允许换行 */
+        overflow: visible;
+        text-overflow: unset;
+    }
+
+    .share-btn-compact {
+        align-self: flex-end;
+        font-size: 12px;
+        padding: 6px 12px;
     }
 
     .meta-grid {
@@ -1953,4 +1984,190 @@
     background: rgba(244, 67, 54, 0.1);
     border-radius: 6px;
     margin: 15px 0;
+}
+
+/* 分享功能样式 */
+.share-section {
+    margin: 20px 0;
+    padding: 15px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.share-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: linear-gradient(135deg, #4a90e2, #357abd);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(74, 144, 226, 0.2);
+}
+
+.share-btn:hover {
+    background: linear-gradient(135deg, #357abd, #2e6a9e);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(74, 144, 226, 0.3);
+}
+
+.share-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(74, 144, 226, 0.2);
+}
+
+.share-btn i {
+    font-size: 16px;
+    font-style: normal;
+}
+
+/* 紧凑型分享按钮样式 - 用于标题行右侧 */
+.share-btn-compact {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #4a90e2, #357abd);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 6px rgba(74, 144, 226, 0.2);
+    flex-shrink: 0;
+    /* 防止按钮被压缩 */
+    white-space: nowrap;
+}
+
+.share-btn-compact:hover {
+    background: linear-gradient(135deg, #357abd, #2e6a9e);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px rgba(74, 144, 226, 0.3);
+}
+
+.share-btn-compact:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba(74, 144, 226, 0.2);
+}
+
+.share-btn-compact i {
+    font-size: 14px;
+    font-style: normal;
+}
+
+/* 分享模态框样式 */
+.share-modal {
+    max-width: 500px;
+    width: 100%;
+}
+
+.share-instruction {
+    color: #ccc;
+    margin-bottom: 15px;
+    font-size: 14px;
+}
+
+.share-content {
+    margin: 20px 0;
+}
+
+.share-content textarea {
+    width: 100%;
+    height: 200px;
+    background: #2d2d2d;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    padding: 15px;
+    color: #fff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    resize: vertical;
+    cursor: text;
+}
+
+.share-content textarea:focus {
+    outline: none;
+    border-color: #0078d4;
+    box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.2);
+}
+
+.share-content textarea::selection {
+    background: rgba(0, 120, 212, 0.3);
+}
+
+/* 分享确认对话框样式 */
+.share-confirm-dialog {
+    max-width: 450px;
+    width: 100%;
+}
+
+.share-info {
+    margin: 20px 0;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.share-video-info {
+    display: flex;
+    gap: 15px;
+    align-items: flex-start;
+}
+
+.share-poster {
+    width: 80px;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 6px;
+    flex-shrink: 0;
+    background: #404040;
+}
+
+.share-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.share-details h4 {
+    margin: 0 0 8px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+    line-height: 1.3;
+}
+
+.share-source {
+    color: #4a90e2;
+    font-size: 13px;
+    margin: 4px 0;
+    font-weight: 500;
+}
+
+.share-remarks {
+    color: #ffa500;
+    font-size: 13px;
+    margin: 4px 0;
+    font-weight: 500;
+}
+
+.share-time {
+    color: #888;
+    font-size: 12px;
+    margin: 4px 0;
+}
+
+.confirm-message {
+    text-align: center;
+    color: #ccc;
+    font-size: 14px;
+    margin: 20px 0;
+    font-weight: 500;
 }

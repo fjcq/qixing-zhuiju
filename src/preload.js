@@ -1,5 +1,5 @@
 // Electron preload 脚本
-const { contextBridge, ipcRenderer, shell } = require('electron');
+const { contextBridge, ipcRenderer, shell, clipboard } = require('electron');
 
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electron', {
@@ -24,7 +24,9 @@ contextBridge.exposeInMainWorld('electron', {
                 'open-external-url',
                 'start-system-casting',
                 'stop-casting',
-                'discover-cast-devices'
+                'discover-cast-devices',
+                'read-clipboard',
+                'write-clipboard'
             ];
             if (validChannels.includes(channel)) {
                 return ipcRenderer.invoke(channel, data);
@@ -55,6 +57,11 @@ contextBridge.exposeInMainWorld('electron', {
         minimize: () => ipcRenderer.invoke('window-minimize'),
         maximize: () => ipcRenderer.invoke('window-maximize'),
         toggleAlwaysOnTop: () => ipcRenderer.invoke('toggle-always-on-top')
+    },
+    // 剪切板API
+    clipboard: {
+        readText: () => ipcRenderer.invoke('read-clipboard'),
+        writeText: (text) => ipcRenderer.invoke('write-clipboard', text)
     }
 });
 

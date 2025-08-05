@@ -218,6 +218,16 @@ body {
     animation: pulse 2s infinite;
 }
 
+/* 分享按钮样式 */
+#share-video {
+    position: relative;
+}
+
+#share-video:hover {
+    background: rgba(74, 144, 226, 0.8) !important;
+    border-color: rgba(74, 144, 226, 0.5) !important;
+}
+
 @keyframes pulse {
     0% {
         opacity: 1;

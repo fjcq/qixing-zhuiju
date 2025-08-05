@@ -89,6 +89,9 @@ class QixingZhuijuApp {
             // 清理过期数据
             this.storageService.cleanupOldData();
 
+            // 初始化剪切板检测
+            this.initializeClipboardDetection();
+
             console.log('应用初始化完成');
         } catch (error) {
             console.error('应用初始化失败:', error);
@@ -825,6 +828,278 @@ class QixingZhuijuApp {
         });
 
         console.log('[APP] 已添加测试播放历史，数量:', testHistory.length);
+    }
+
+    // 初始化剪切板检测
+    initializeClipboardDetection() {
+        console.log('[APP] 初始化剪切板检测...');
+        // 记录上次剪切板内容，避免重复检测
+        this.lastClipboardContent = '';
+        // 监听Ctrl+V键盘事件
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.code === 'KeyV')) {
+                console.log('[APP] 检测到Ctrl+V按键，开始检测剪切板...');
+                setTimeout(() => {
+                    // 用户主动按Ctrl+V，强制检测，不管内容是否变化
+                    this.checkClipboardForShare(true);
+                }, 120);
+            }
+        });
+        // 额外调试：页面加载后主动检测一次剪切板内容
+        setTimeout(() => {
+            console.log('[APP] 页面加载后主动检测一次剪切板内容...');
+            this.checkClipboardForShare(false);
+        }, 500);
+    }    // 检测剪切板中的分享内容
+    async checkClipboardForShare(forceCheck = false) {
+        try {
+            // 读取剪切板内容
+            let clipboardText = '';
+            // 优先使用Electron的剪切板API
+            if (window.electron && window.electron.clipboard) {
+                clipboardText = await window.electron.clipboard.readText();
+                console.log('[APP] Electron剪切板内容:', clipboardText);
+            } else {
+                clipboardText = await navigator.clipboard.readText();
+                console.log('[APP] Web剪切板内容:', clipboardText);
+            }
+
+            // 如果内容为空，直接返回
+            if (!clipboardText) {
+                console.log('[APP] 剪切板内容为空');
+                return;
+            }
+
+            // 如果不是强制检测且内容没有变化，跳过检测
+            if (!forceCheck && clipboardText === this.lastClipboardContent) {
+                console.log('[APP] 剪切板内容无变化，跳过检测');
+                return;
+            }
+
+            // 如果是强制检测（用户按Ctrl+V），即使内容相同也要处理
+            if (forceCheck && clipboardText === this.lastClipboardContent) {
+                console.log('[APP] 用户主动按Ctrl+V，强制检测相同内容');
+            }
+
+            this.lastClipboardContent = clipboardText;
+
+            // 检测是否是分享内容
+            const shareData = this.parseShareContent(clipboardText);
+            if (shareData) {
+                console.log('[APP] 检测到分享内容:', shareData);
+                this.handleSharedContent(shareData);
+            } else {
+                console.log('[APP] 剪切板内容不是分享码');
+                // 如果是用户主动按Ctrl+V但不是分享码，给出提示
+                if (forceCheck) {
+                    this.componentService.showNotification('剪切板中没有检测到有效的分享码', 'info');
+                }
+            }
+        } catch (error) {
+            console.debug('[APP] 剪切板读取失败:', error.message);
+            // 如果是用户主动按Ctrl+V但读取失败，给出提示
+            if (forceCheck) {
+                this.componentService.showNotification('无法读取剪切板内容，请检查权限设置', 'warning');
+            }
+        }
+    }
+
+    // 解析分享内容
+    parseShareContent(text) {
+        try {
+            // 检测分享内容的标识
+            if (!text.includes('【七星追剧】剧集分享') || !text.includes('🔐 分享码：')) {
+                return null;
+            }
+
+            // 提取分享码
+            const shareCodeMatch = text.match(/🔐 分享码：([^\n\r]+)/);
+            if (!shareCodeMatch) {
+                return null;
+            }
+
+            const encryptedData = shareCodeMatch[1].trim();
+
+            // 解密分享码
+            const shareData = this.componentService.decryptShareData(encryptedData);
+            if (!shareData) {
+                console.warn('[APP] 分享码解密失败');
+                return null;
+            }
+
+            // 验证数据完整性
+            if (!shareData.siteName || !shareData.videoName || !shareData.videoId || !shareData.detailUrl) {
+                console.warn('[APP] 分享数据不完整:', shareData);
+                return null;
+            }
+
+            return shareData;
+        } catch (error) {
+            console.error('[APP] 解析分享内容失败:', error);
+            return null;
+        }
+    }
+
+    // 处理分享内容
+    async handleSharedContent(shareData) {
+        try {
+            console.log('[APP] 处理分享内容:', shareData);
+            console.log('[APP] 当前页面:', this.currentPage);
+            console.log('[APP] 当前视频数据:', this.componentService.currentVideoData);
+
+            // 简化判断：只检查当前页面是否就是被分享的剧集
+            if (this.currentPage === 'detail' &&
+                this.componentService.currentVideoData &&
+                this.componentService.currentVideoData.vod_id === shareData.videoId) {
+
+                console.log('[APP] 当前已在查看此剧集，无需跳转');
+                this.componentService.showNotification('你已经在观看这个剧集了！', 'info');
+                return;
+            }
+
+            // 不是被分享的剧集页面，显示跳转确认对话框
+            console.log('[APP] 不在被分享的剧集页面，显示跳转确认对话框');
+            this.showShareConfirmDialog(shareData);
+        } catch (error) {
+            console.error('[APP] 处理分享内容失败:', error);
+        }
+    }
+
+    // 显示分享跳转确认对话框
+    showShareConfirmDialog(shareData) {
+        const content = `
+            <div class="share-confirm-dialog">
+                <h3>🎬 发现分享剧集</h3>
+                <div class="share-info">
+                    <div class="share-video-info">
+                        ${shareData.videoPic ? `<img src="${shareData.videoPic}" alt="${shareData.videoName}" class="share-poster">` : ''}
+                        <div class="share-details">
+                            <h4>${shareData.videoName}</h4>
+                            <p class="share-source">来源：${shareData.siteName}</p>
+                            ${shareData.videoRemarks ? `<p class="share-remarks">${shareData.videoRemarks}</p>` : ''}
+                            <p class="share-time">分享时间：${new Date(shareData.timestamp).toLocaleString()}</p>
+                        </div>
+                    </div>
+                </div>
+                <p class="confirm-message">是否跳转到此剧集页面？</p>
+                <div class="form-actions">
+                    <button type="button" class="btn-primary" id="goto-shared-btn">立即跳转</button>
+                    <button type="button" class="btn-secondary" id="ignore-shared-btn">忽略</button>
+                </div>
+            </div>
+        `;
+
+        this.componentService.showModal(content);
+
+        // 跳转按钮事件
+        document.getElementById('goto-shared-btn').addEventListener('click', async () => {
+            this.componentService.hideModal();
+            await this.navigateToSharedVideo(shareData);
+        });
+
+        // 忽略按钮事件
+        document.getElementById('ignore-shared-btn').addEventListener('click', () => {
+            this.componentService.hideModal();
+        });
+    }
+
+    // 跳转到分享的视频
+    async navigateToSharedVideo(shareData) {
+        try {
+            console.log('[APP] 开始跳转到分享视频:', shareData);
+            this.componentService.showNotification('正在加载分享的剧集...', 'info');
+
+            // 检查站点是否存在，如果不存在则添加
+            console.log('[APP] 步骤1: 确保站点存在');
+            await this.ensureShareSiteExists(shareData);
+
+            // 重新初始化API服务以加载新站点
+            console.log('[APP] 步骤2: 重新初始化API服务');
+            await this.apiService.initialize();
+
+            // 切换到对应站点
+            console.log('[APP] 步骤3: 查找目标站点');
+            const sites = this.apiService.getSites();
+            const targetSite = sites.find(site => site.url === shareData.siteUrl);
+            if (!targetSite) {
+                throw new Error('无法找到对应的站点');
+            }
+
+            console.log('[APP] 找到目标站点:', targetSite);
+
+            // 设置当前站点
+            console.log('[APP] 步骤4: 设置当前站点');
+            this.apiService.setActiveSite(targetSite.id);
+
+            // 验证当前站点是否设置成功
+            const currentSite = this.apiService.getActiveSite();
+            console.log('[APP] 当前激活站点验证:', currentSite);
+
+            if (!currentSite || currentSite.url !== shareData.siteUrl) {
+                throw new Error('站点切换失败');
+            }
+
+            // 重新加载站点选择器和分类选择器
+            console.log('[APP] 步骤5: 重新加载选择器');
+            await this.loadSiteSelector();
+            await this.loadCategorySelector();
+
+            // 确保先切换到详情页面
+            console.log('[APP] 步骤6: 切换到详情页');
+            this.componentService.switchPage('detail');
+
+            // 强制更新当前页面状态
+            this.currentPage = 'detail';
+
+            console.log('[APP] 步骤7: 获取视频详情，videoId:', shareData.videoId);
+
+            // 添加超时保护，防止无限等待
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('获取视频详情超时')), 10000);
+            });
+
+            const detailPromise = this.componentService.showVideoDetail(shareData.videoId);
+
+            // 使用Promise.race来避免无限等待
+            await Promise.race([detailPromise, timeoutPromise]);
+
+            // 等待一下确保页面渲染完成
+            setTimeout(() => {
+                this.componentService.showNotification(`已跳转到《${shareData.videoName}》`, 'success');
+            }, 500);
+
+        } catch (error) {
+            console.error('[APP] 跳转到分享视频失败:', error);
+            this.componentService.showNotification('跳转失败：' + error.message, 'error');
+        }
+    }
+
+    // 确保分享的站点存在
+    async ensureShareSiteExists(shareData) {
+        const sites = this.apiService.getSites();
+        const existingSite = sites.find(site => site.url === shareData.siteUrl);
+
+        if (!existingSite) {
+            // 站点不存在，添加新站点
+            const newSiteData = {
+                name: shareData.siteName,
+                url: shareData.siteUrl,
+                type: 'json', // 假设是JSON类型，实际可以通过测试确定
+                blockedRoutes: ''
+            };
+
+            try {
+                // 使用API服务添加站点，这样会正确处理ID生成和保存
+                const newSite = this.apiService.addSite(newSiteData);
+                console.log('[APP] 已添加分享的站点:', newSite);
+            } catch (error) {
+                console.error('[APP] 添加分享站点失败:', error);
+                // 如果API服务添加失败，抛出错误
+                throw new Error('添加分享站点失败: ' + error.message);
+            }
+        } else {
+            console.log('[APP] 分享的站点已存在:', existingSite);
+        }
     }
 }
 

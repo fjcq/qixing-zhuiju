@@ -591,19 +591,45 @@ class ComponentService {
         try {
             console.log('[COMPONENTS] 显示视频详情:', videoId);
 
+            // 首先验证API服务状态
+            const activeSite = this.apiService.getActiveSite();
+            if (!activeSite) {
+                throw new Error('没有可用的站点，请先配置站点');
+            }
+            console.log('[COMPONENTS] 当前站点:', activeSite.name, activeSite.url);
+
             const detailPage = document.getElementById('detail-page');
             const detailContent = document.getElementById('detail-content');
+
+            if (!detailContent) {
+                throw new Error('详情页面元素未找到');
+            }
 
             // 显示加载状态
             detailContent.innerHTML = '<div class="loading">加载详情中...</div>';
 
-            // 切换到详情页
-            this.switchPage('detail');
+            // 只有在当前页面不是详情页时才切换页面
+            if (this.getCurrentPage() !== 'detail') {
+                console.log('[COMPONENTS] 当前不在详情页，切换到详情页');
+                this.switchPage('detail');
+            } else {
+                console.log('[COMPONENTS] 已在详情页，无需切换');
+            }
 
             // 优先从缓存获取视频详情
-            console.log('[COMPONENTS] 尝试从缓存获取详情...');
-            let response = await this.apiService.getVideoDetail(videoId);
-            console.log('[COMPONENTS] 获取到视频详情:', response);
+            console.log('[COMPONENTS] 开始请求视频详情...');
+            const startTime = Date.now();
+
+            let response;
+            try {
+                response = await this.apiService.getVideoDetail(videoId);
+                const requestTime = Date.now() - startTime;
+                console.log('[COMPONENTS] 获取视频详情完成，耗时:', requestTime + 'ms');
+                console.log('[COMPONENTS] 响应数据:', response);
+            } catch (apiError) {
+                console.error('[COMPONENTS] API请求失败:', apiError);
+                throw new Error('网络请求失败: ' + apiError.message);
+            }
 
             if (response && response.list && response.list.length > 0) {
                 const video = response.list[0];
@@ -612,13 +638,40 @@ class ComponentService {
                 this.renderVideoDetail(video);
             } else {
                 console.warn('[COMPONENTS] 详情数据格式不正确或无数据:', response);
-                detailContent.innerHTML = '<div class="empty-state"><p>获取视频详情失败</p></div>';
+                detailContent.innerHTML = '<div class="empty-state"><p>未找到该视频的详情信息</p></div>';
             }
         } catch (error) {
             console.error('[COMPONENTS] 获取视频详情失败:', error);
             const detailContent = document.getElementById('detail-content');
-            detailContent.innerHTML = '<div class="empty-state"><p>获取视频详情失败，请重试</p></div>';
+            if (detailContent) {
+                detailContent.innerHTML = `<div class="empty-state">
+                    <p>获取视频详情失败</p>
+                    <p>错误信息: ${error.message}</p>
+                    <button onclick="location.reload()" class="btn-primary">重新加载</button>
+                </div>`;
+            }
+
+            // 重新抛出错误，让调用者知道失败了
+            throw error;
         }
+    }
+
+    // 获取当前页面
+    getCurrentPage() {
+        // 通过检查哪个页面有active类来判断当前页面
+        const activePages = document.querySelectorAll('.page.active');
+        if (activePages.length > 0) {
+            const activePage = activePages[0];
+            const pageId = activePage.id;
+            return pageId.replace('-page', '');
+        }
+
+        // 备用方案：从app.js获取
+        if (window.app && window.app.currentPage) {
+            return window.app.currentPage;
+        }
+
+        return 'home';
     }
 
     // 渲染视频详情
@@ -659,7 +712,14 @@ class ComponentService {
                     ${posterUrl ? `<img src="${posterUrl}" alt="${video.vod_name}" onerror="this.style.display='none';">` : '<div class="video-poster">暂无海报</div>'}
                 </div>
                 <div class="detail-info">
-                    <h2 class="detail-title">${video.vod_name}</h2>
+                    <!-- 标题行，包含标题和分享按钮 -->
+                    <div class="detail-title-row">
+                        <h2 class="detail-title">${video.vod_name}</h2>
+                        <button id="share-video-btn" class="share-btn-compact" title="分享此剧集给好友">
+                            <i>📤</i>
+                            <span>分享</span>
+                        </button>
+                    </div>
                     
                     <!-- 当前播放站点标识和标签在同一行 -->
                     <div class="site-and-tags-row">
@@ -786,6 +846,9 @@ class ComponentService {
             // 加载默认线路的剧集
             this.loadRouteEpisodes(0);
         }
+
+        // 设置分享按钮事件
+        this.setupShareEvent();
     }
 
     // 设置线路切换标签事件
@@ -940,6 +1003,12 @@ class ComponentService {
                 console.log('[COMPONENTS] 激活导航项:', pageName);
             }
         });
+
+        // 通知app.js更新currentPage状态
+        if (window.app) {
+            window.app.currentPage = pageName;
+            console.log('[COMPONENTS] 已更新app.currentPage为:', pageName);
+        }
 
         console.log('[COMPONENTS] 页面切换完成:', pageName);
     }
@@ -1872,6 +1941,283 @@ class ComponentService {
             reader.onload = (e) => resolve(e.target.result);
             reader.onerror = (e) => reject(new Error('文件读取失败'));
             reader.readAsText(file, 'utf-8');
+        });
+    }
+
+    // 设置分享按钮事件
+    setupShareEvent() {
+        const shareBtn = document.getElementById('share-video-btn');
+        if (shareBtn) {
+            shareBtn.addEventListener('click', () => {
+                this.shareCurrentVideo();
+            });
+        }
+    }
+
+    // 分享当前视频
+    async shareCurrentVideo() {
+        if (!this.currentVideoData) {
+            this.showNotification('无法获取当前视频信息', 'error');
+            return;
+        }
+
+        try {
+            // 获取当前站点信息
+            const activeSite = this.apiService.getActiveSite();
+            if (!activeSite) {
+                this.showNotification('无法获取站点信息', 'error');
+                return;
+            }
+
+            // 生成分享数据
+            const shareData = {
+                siteName: activeSite.name,
+                siteUrl: activeSite.url,
+                videoName: this.currentVideoData.vod_name,
+                videoId: this.currentVideoData.vod_id,
+                videoPic: this.currentVideoData.vod_pic || '',
+                videoRemarks: this.currentVideoData.vod_remarks || '',
+                videoContent: this.currentVideoData.vod_content || '', // 添加剧情介绍
+                detailUrl: `${activeSite.url}?ac=detail&ids=${this.currentVideoData.vod_id}`,
+                timestamp: Date.now()
+            };
+
+            // 加密数据
+            const encryptedData = this.encryptShareData(shareData);
+
+            // 生成图文并茂的分享字符串
+            const shareText = this.generateShareText(shareData, encryptedData);
+
+            // 复制到剪切板
+            try {
+                // 优先使用Electron的剪切板API
+                if (window.electron && window.electron.clipboard) {
+                    await window.electron.clipboard.writeText(shareText);
+                } else {
+                    // 备用方案：使用Web API
+                    await navigator.clipboard.writeText(shareText);
+                }
+                this.showNotification('分享内容已复制到剪切板，可发送给好友！', 'success');
+            } catch (error) {
+                console.error('复制到剪切板失败:', error);
+                // 显示分享内容供用户手动复制
+                this.showShareModal(shareText);
+            }
+        } catch (error) {
+            console.error('生成分享内容失败:', error);
+            this.showNotification('生成分享内容失败', 'error');
+        }
+    }
+
+    // 加密分享数据
+    encryptShareData(data) {
+        try {
+            console.log('[COMPONENTS] 开始加密分享数据:', data);
+
+            // 精简数据，只保留必要字段
+            const compactData = {
+                s: data.siteName,        // 站点名称
+                u: data.siteUrl.replace(/https:\/\//g, 'hs:').replace(/http:\/\//g, 'h:'), // 站点URL（简化协议）
+                n: data.videoName,       // 视频名称
+                i: data.videoId,         // 视频ID
+                t: data.timestamp        // 时间戳
+            };
+
+            console.log('[COMPONENTS] 精简后的数据:', compactData);
+
+            // 使用紧凑的JSON格式
+            const jsonStr = JSON.stringify(compactData);
+            console.log('[COMPONENTS] JSON字符串:', jsonStr);
+
+            // 简化处理，不做额外压缩
+            const compressed = this.simpleCompress(jsonStr);
+            console.log('[COMPONENTS] 压缩后:', compressed);
+
+            // Base64编码 - 正确处理中文字符
+            const base64 = btoa(unescape(encodeURIComponent(compressed)));
+            console.log('[COMPONENTS] Base64编码:', base64);
+
+            // 简单字符替换，减少长度
+            const result = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+            console.log('[COMPONENTS] 最终加密结果:', result);
+
+            return result;
+        } catch (error) {
+            console.error('[COMPONENTS] 加密失败:', error);
+            return '';
+        }
+    }    // 解密分享数据
+    decryptShareData(encryptedStr) {
+        try {
+            // 先尝试新格式解密
+            return this.decryptNewFormat(encryptedStr);
+        } catch (error) {
+            console.log('[COMPONENTS] 新格式解密失败，尝试旧格式:', error.message);
+            // 如果新格式失败，尝试旧格式解密
+            try {
+                return this.decryptOldFormat(encryptedStr);
+            } catch (oldError) {
+                console.error('[COMPONENTS] 旧格式解密也失败:', oldError);
+                return null;
+            }
+        }
+    }
+
+    // 新格式解密
+    decryptNewFormat(encryptedStr) {
+        // 恢复Base64格式
+        let base64 = encryptedStr.replace(/-/g, '+').replace(/_/g, '/');
+
+        // 添加必要的填充
+        while (base64.length % 4) {
+            base64 += '=';
+        }
+
+        // Base64解码 - 正确处理中文字符
+        const compressed = decodeURIComponent(escape(atob(base64)));
+
+        // 解压缩
+        const jsonStr = this.simpleDecompress(compressed);
+
+        // 解析JSON
+        const compactData = JSON.parse(jsonStr);
+
+        // 检查是否是新格式（有简化字段）
+        if (!compactData.s || !compactData.u || !compactData.n || (!compactData.i && compactData.i !== 0)) {
+            throw new Error('不是新格式数据');
+        }
+
+        // 重构站点URL（处理简化的协议）
+        let siteUrl = compactData.u;
+        if (siteUrl.startsWith('hs:')) {
+            siteUrl = siteUrl.replace('hs:', 'https://');
+        } else if (siteUrl.startsWith('h:')) {
+            siteUrl = siteUrl.replace('h:', 'http://');
+        }
+
+        // 重构完整数据
+        const fullData = {
+            siteName: compactData.s,
+            siteUrl: siteUrl,
+            videoName: compactData.n,
+            videoId: compactData.i,
+            timestamp: compactData.t,
+            // 重构其他字段
+            videoPic: '',
+            videoRemarks: '',
+            detailUrl: `${siteUrl}?ac=detail&ids=${compactData.i}`
+        };
+
+        return fullData;
+    }    // 旧格式解密（向后兼容）
+    decryptOldFormat(encryptedStr) {
+        // 反向混淆
+        let hexString = '';
+        for (let i = 0; i < encryptedStr.length; i++) {
+            const char = encryptedStr[i];
+            if (char >= 'a' && char <= 'j') {
+                hexString += (char.charCodeAt(0) - 97).toString(); // a-j转回0-9
+            } else if (char >= 'k' && char <= 'p') {
+                hexString += String.fromCharCode(97 + (char.charCodeAt(0) - 107)); // k-p转回a-f
+            } else {
+                hexString += char;
+            }
+        }
+
+        // 十六进制转回Base64
+        let base64 = '';
+        for (let i = 0; i < hexString.length; i += 2) {
+            const hex = hexString.substr(i, 2);
+            base64 += String.fromCharCode(parseInt(hex, 16));
+        }
+
+        // Base64解码
+        const jsonStr = decodeURIComponent(escape(atob(base64)));
+        return JSON.parse(jsonStr);
+    }
+
+    // 简单压缩算法
+    simpleCompress(str) {
+        // 简化：直接返回原字符串，不做压缩处理
+        // 因为JSON已经很紧凑了
+        return str;
+    }
+
+    // 简单解压缩算法
+    simpleDecompress(str) {
+        // 简化：直接返回原字符串，不做解压处理
+        return str;
+    }
+
+    // 生成图文并茂的分享字符串
+    generateShareText(data, encryptedData) {
+        // 处理剧情介绍：去除HTML标签，限制长度
+        let description = '';
+        if (data.videoContent) {
+            // 去除HTML标签
+            description = data.videoContent.replace(/<[^>]*>/g, '');
+            // 限制长度，避免分享内容过长
+            if (description.length > 80) {
+                description = description.substring(0, 80) + '...';
+            }
+        }
+
+        const shareText = `🎬 【七星追剧】剧集分享 🎬
+
+📺 剧名：${data.videoName}
+🌐 来源：${data.siteName}
+📝 状态：${data.videoRemarks}
+${description ? `� 简介：${description}` : ''}
+
+✨ 这是一部不错的影视作品，推荐给你观看！
+💡 复制此消息到"七星追剧"应用，即可直接跳转观看
+
+🔐 分享码：${encryptedData}
+
+📱 下载七星追剧：github.com/fjcq/qixing-zhuiju`;
+
+        return shareText;
+    }
+
+    // 显示分享模态框
+    showShareModal(shareText) {
+        const content = `
+            <div class="share-modal">
+                <h3>📤 分享剧集</h3>
+                <p class="share-instruction">复制下方内容发送给好友：</p>
+                <div class="share-content">
+                    <textarea readonly onclick="this.select()">${shareText}</textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-primary" id="copy-share-btn">复制内容</button>
+                    <button type="button" class="btn-secondary" id="close-share-btn">关闭</button>
+                </div>
+            </div>
+        `;
+
+        this.showModal(content);
+
+        // 复制按钮事件
+        document.getElementById('copy-share-btn').addEventListener('click', async () => {
+            try {
+                // 优先使用Electron的剪切板API
+                if (window.electron && window.electron.clipboard) {
+                    await window.electron.clipboard.writeText(shareText);
+                } else {
+                    // 备用方案：使用Web API
+                    await navigator.clipboard.writeText(shareText);
+                }
+                this.showNotification('已复制到剪切板', 'success');
+                this.hideModal();
+            } catch (error) {
+                console.error('复制失败:', error);
+                this.showNotification('复制失败，请手动选择内容复制', 'error');
+            }
+        });
+
+        // 关闭按钮事件
+        document.getElementById('close-share-btn').addEventListener('click', () => {
+            this.hideModal();
         });
     }
 }

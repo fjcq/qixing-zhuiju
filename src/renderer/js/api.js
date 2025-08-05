@@ -132,56 +132,92 @@ class ApiService {
     // 发送API请求
     async fetchData(params = {}) {
         try {
-            const url = this.buildApiUrl(params);
-            console.log('[API] 请求URL:', url);
-
-            // 在Electron环境中使用更安全的请求方式
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'application/json, text/plain, */*',
-                    'Referer': 'https://www.baidu.com/'
-                }
-            });
-
-            console.log('[API] 响应状态:', response.status, response.statusText);
-
-            if (!response.ok) {
-                throw new Error(`HTTP错误: ${response.status} - ${response.statusText}`);
+            if (!this.currentSite) {
+                throw new Error('当前没有选择任何站点');
             }
 
-            const data = await response.text();
-            console.log('[API] 响应数据长度:', data.length);
-            console.log('[API] 响应数据前200字符:', data.substring(0, 200));
+            const url = this.buildApiUrl(params);
+            if (!url) {
+                throw new Error('无法构建API请求URL');
+            }
 
-            if (this.currentSite.type === 'json') {
-                try {
-                    const jsonData = JSON.parse(data);
-                    console.log('[API] JSON解析成功，数据类型:', typeof jsonData);
-                    console.log('[API] JSON数据键:', Object.keys(jsonData));
+            console.log('[API] 请求URL:', url);
 
-                    if (jsonData.list) {
-                        console.log('[API] 视频列表长度:', jsonData.list.length);
-                        if (jsonData.list.length > 0) {
-                            console.log('[API] 第一个视频数据:', jsonData.list[0]);
-                        }
-                    }
+            // 创建控制器用于超时取消
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000); // 8秒超时
 
-                    return jsonData;
-                } catch (parseError) {
-                    console.error('[API] JSON解析失败:', parseError);
-                    console.error('[API] 原始数据:', data.substring(0, 500));
-                    throw new Error('服务器返回的数据格式不正确');
+            try {
+                // 在Electron环境中使用更安全的请求方式
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'application/json, text/plain, */*',
+                        'Referer': 'https://www.baidu.com/'
+                    },
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+                console.log('[API] 响应状态:', response.status, response.statusText);
+
+                if (!response.ok) {
+                    throw new Error(`服务器响应错误: ${response.status} - ${response.statusText}`);
                 }
-            } else {
-                // 处理XML格式
-                return this.parseXMLResponse(data);
+
+                const data = await response.text();
+                console.log('[API] 响应数据长度:', data.length);
+                console.log('[API] 响应数据前200字符:', data.substring(0, 200));
+
+                if (this.currentSite.type === 'json') {
+                    try {
+                        const jsonData = JSON.parse(data);
+                        console.log('[API] JSON解析成功，数据类型:', typeof jsonData);
+                        console.log('[API] JSON数据键:', Object.keys(jsonData));
+
+                        if (jsonData.list) {
+                            console.log('[API] 视频列表长度:', jsonData.list.length);
+                            if (jsonData.list.length > 0 && jsonData.list[0]) {
+                                console.log('[API] 第一个视频数据键:', Object.keys(jsonData.list[0]));
+                            }
+                        }
+
+                        return jsonData;
+                    } catch (parseError) {
+                        console.error('[API] JSON解析失败:', parseError);
+                        console.error('[API] 原始数据:', data.substring(0, 500));
+                        throw new Error('服务器返回的数据格式不正确，可能不是有效的JSON');
+                    }
+                } else {
+                    // 处理XML格式
+                    return this.parseXMLResponse(data);
+                }
+            } catch (fetchError) {
+                clearTimeout(timeoutId);
+
+                if (fetchError.name === 'AbortError') {
+                    throw new Error('请求超时，请检查网络连接或站点状态');
+                }
+
+                // 重新抛出其他类型的错误
+                throw fetchError;
             }
         } catch (error) {
             console.error('[API] 请求失败:', error);
             console.error('[API] 错误详情:', error.message);
-            throw new Error(`请求失败: ${error.message}`);
+
+            // 为不同类型的错误提供更友好的错误信息
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                throw new Error('网络连接失败，请检查网络状态');
+            } else if (error.message.includes('timeout') || error.message.includes('超时')) {
+                throw new Error('请求超时，服务器响应缓慢');
+            } else if (error.message.includes('DNS')) {
+                throw new Error('无法解析服务器地址，请检查站点URL');
+            }
+
+            // 如果是我们已经处理过的错误，直接抛出
+            throw error;
         }
     }
 

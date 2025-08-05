@@ -786,6 +786,14 @@ class VideoPlayer {
             });
         }
 
+        // 分享按钮
+        const shareVideoBtn = document.getElementById('share-video');
+        if (shareVideoBtn) {
+            shareVideoBtn.addEventListener('click', () => {
+                this.shareCurrentVideo();
+            });
+        }
+
         // 关闭选集面板按钮
         const closeEpisodesBtn = document.getElementById('close-episodes');
         if (closeEpisodesBtn) {
@@ -1885,6 +1893,125 @@ class VideoPlayer {
                 console.error('[PLAYER] 发送播放信息失败:', error);
             }
         });
+    }
+
+    // ==================== 分享功能 ====================
+
+    // 分享当前视频
+    async shareCurrentVideo() {
+        if (!this.videoData) {
+            this.showNotification('无法获取当前视频信息', 'error');
+            return;
+        }
+
+        try {
+            console.log('[PLAYER] 开始分享当前视频:', this.videoData);
+
+            // 生成分享数据
+            const shareData = {
+                siteName: '当前站点', // 播放器中无法获取站点信息，使用默认值
+                siteUrl: 'unknown', // 播放器中无法获取站点URL
+                videoName: this.videoData.vod_name,
+                videoId: this.videoData.vod_id,
+                videoPic: this.videoData.vod_pic || '',
+                videoRemarks: this.videoData.vod_remarks || '',
+                videoContent: this.videoData.vod_content || '',
+                timestamp: Date.now()
+            };
+
+            // 加密数据
+            const encryptedData = this.encryptShareData(shareData);
+            if (!encryptedData) {
+                this.showNotification('分享码生成失败', 'error');
+                return;
+            }
+
+            // 生成图文并茂的分享字符串
+            const shareText = this.generateShareText(shareData, encryptedData);
+
+            // 复制到剪切板
+            try {
+                // 优先使用Electron的剪切板API
+                if (window.electron && window.electron.clipboard) {
+                    await window.electron.clipboard.writeText(shareText);
+                } else {
+                    // 备用方案：使用Web API
+                    await navigator.clipboard.writeText(shareText);
+                }
+                this.showNotification('分享内容已复制到剪切板，可发送给好友！', 'success');
+            } catch (error) {
+                console.error('[PLAYER] 复制到剪切板失败:', error);
+                this.showNotification('复制失败，请手动复制分享内容', 'error');
+            }
+        } catch (error) {
+            console.error('[PLAYER] 生成分享内容失败:', error);
+            this.showNotification('生成分享内容失败', 'error');
+        }
+    }
+
+    // 加密分享数据
+    encryptShareData(data) {
+        try {
+            console.log('[PLAYER] 开始加密分享数据:', data);
+
+            // 精简数据，只保留必要字段
+            const compactData = {
+                s: data.siteName,        // 站点名称
+                u: data.siteUrl.replace(/https:\/\//g, 'hs:').replace(/http:\/\//g, 'h:'), // 站点URL（简化协议）
+                n: data.videoName,       // 视频名称
+                i: data.videoId,         // 视频ID
+                t: data.timestamp        // 时间戳
+            };
+
+            console.log('[PLAYER] 精简后的数据:', compactData);
+
+            // 使用紧凑的JSON格式
+            const jsonStr = JSON.stringify(compactData);
+            console.log('[PLAYER] JSON字符串:', jsonStr);
+
+            // Base64编码 - 正确处理中文字符
+            const base64 = btoa(unescape(encodeURIComponent(jsonStr)));
+            console.log('[PLAYER] Base64编码:', base64);
+
+            // 简单字符替换，减少长度
+            const result = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+            console.log('[PLAYER] 最终加密结果:', result);
+
+            return result;
+        } catch (error) {
+            console.error('[PLAYER] 加密失败:', error);
+            return '';
+        }
+    }
+
+    // 生成图文并茂的分享字符串
+    generateShareText(data, encryptedData) {
+        // 处理剧情介绍：去除HTML标签，限制长度
+        let description = '';
+        if (data.videoContent) {
+            // 去除HTML标签
+            description = data.videoContent.replace(/<[^>]*>/g, '');
+            // 限制长度，避免分享内容过长
+            if (description.length > 80) {
+                description = description.substring(0, 80) + '...';
+            }
+        }
+
+        const shareText = `🎬 【七星追剧】剧集分享 🎬
+
+📺 剧名：${data.videoName}
+🌐 来源：${data.siteName}
+📝 状态：${data.videoRemarks}
+${description ? `💡 简介：${description}` : ''}
+
+✨ 这是一部不错的影视作品，推荐给你观看！
+💡 复制此消息到"七星追剧"应用，即可直接跳转观看
+
+🔐 分享码：${encryptedData}
+
+📱 下载七星追剧：github.com/fjcq/qixing-zhuiju`;
+
+        return shareText;
     }
 
     // 显示通知消息

@@ -665,6 +665,29 @@ class QixingZhuiju {
                 return { success: false, error: error.message, devices: [] };
             }
         });
+
+        // 剪切板读取处理
+        ipcMain.handle('read-clipboard', async (event) => {
+            try {
+                const { clipboard } = require('electron');
+                return clipboard.readText();
+            } catch (error) {
+                console.error('[MAIN] 读取剪切板失败:', error);
+                return '';
+            }
+        });
+
+        // 剪切板写入处理
+        ipcMain.handle('write-clipboard', async (event, text) => {
+            try {
+                const { clipboard } = require('electron');
+                clipboard.writeText(text);
+                return true;
+            } catch (error) {
+                console.error('[MAIN] 写入剪切板失败:', error);
+                return false;
+            }
+        });
     }
 
     // 系统投屏功能
