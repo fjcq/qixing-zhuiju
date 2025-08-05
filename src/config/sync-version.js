@@ -19,7 +19,7 @@ function getCurrentVersion() {
 function updateVersionConfig(version) {
     const versionPath = path.join(__dirname, 'version.js');
     const versionWithV = `v${version}`;
-    
+
     const content = `// 版本配置文件 - 统一管理应用版本号
 // 修改这里的版本号会自动同步到所有使用的地方
 
@@ -58,15 +58,15 @@ function main() {
     try {
         const version = getCurrentVersion();
         console.log(`📦 当前版本: ${version}`);
-        
+
         updateVersionConfig(version);
-        
+
         console.log('🎉 版本同步完成！');
         console.log('📝 请记得：');
         console.log('   1. 更新 CHANGELOG.md 中的版本信息');
         console.log('   2. 更新 src/config/changelog.js 中的更新内容');
         console.log('   3. 提交所有更改到Git');
-        
+
     } catch (error) {
         console.error('❌ 版本同步失败:', error.message);
         process.exit(1);

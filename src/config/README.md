@@ -47,6 +47,7 @@ const CHANGELOG_DATA = [
 ### 3. 自动同步
 
 版本号会自动同步到以下位置：
+
 - ✅ 侧边栏版本显示
 - ✅ 关于页面版本显示
 - ✅ JavaScript默认版本号
@@ -55,16 +56,19 @@ const CHANGELOG_DATA = [
 ## 🔧 配置文件说明
 
 ### version.js
+
 - 存储全局版本号和版本信息
 - 支持Node.js和浏览器环境
 - 提供统一的版本号访问接口
 
 ### changelog.js
+
 - 存储结构化的更新日志数据
 - 提供HTML生成函数
 - 支持自定义显示版本数量
 
 ### sync-version.js
+
 - 从package.json读取版本号
 - 自动更新version.js文件
 - 生成带有发布日期的版本信息
