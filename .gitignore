@@ -94,3 +94,6 @@ coverage/
 
 # 用户特定文件
 *.user
+
+# Copilot 指令文件（不推送到远程仓库）
+.github/copilot-instructions.md
