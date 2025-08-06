@@ -36,7 +36,7 @@
     <div id="player-app">
         <!-- 播放器容器 - 全屏布局 -->
         <div class="player-container">
-            <video id="video-player" autoplay>
+            <video id="video-player" autoplay controlsList="nodownload nofullscreen noremoteplayback">
                 您的浏览器不支持视频播放。
             </video>
 
@@ -45,39 +45,68 @@
 
             <!-- 悬浮控制栏 -->
             <div class="player-overlay" id="player-overlay">
+                <!-- 右上角控制按钮 -->
+                <div class="top-right-controls">
+                    <button id="toggle-always-on-top" title="窗口置顶"
+                        style="width: 32px; height: 32px; background: rgba(0, 0, 0, 0.7); border: none; border-radius: 6px; color: white; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 4px; backdrop-filter: blur(10px); transition: all 0.2s ease;">
+                        📌
+                    </button>
+                    <button id="cast-video" title="投屏到电视"
+                        style="width: 32px; height: 32px; background: rgba(0, 0, 0, 0.7); border: none; border-radius: 6px; color: white; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 4px; backdrop-filter: blur(10px); transition: all 0.2s ease;">
+                        📺
+                    </button>
+                    <button id="share-video" title="分享视频"
+                        style="width: 32px; height: 32px; background: rgba(0, 0, 0, 0.7); border: none; border-radius: 6px; color: white; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 4px; backdrop-filter: blur(10px); transition: all 0.2s ease;">
+                        📤
+                    </button>
+                </div>
+
+                <!-- 顶部控制栏已隐藏 - 仅在全屏时通过JS控制显示
                 <div class="overlay-header">
                     <div class="video-info">
                         <h3 id="video-title">视频标题</h3>
                         <span id="video-episode">正片</span>
                     </div>
                     <div class="overlay-controls">
-                        <button id="toggle-danmaku" class="btn-control" title="显示弹幕设置面板">
+                        <button id="toggle-danmaku-header" class="btn-control" title="显示弹幕设置面板">
                             <span class="icon">⚙️</span>
                         </button>
-                        <button id="toggle-always-on-top" class="btn-control" title="窗口置顶">
+                        <button id="toggle-always-on-top-header" class="btn-control" title="窗口置顶">
                             <span class="icon">📌</span>
                         </button>
-                        <button id="cast-video" class="btn-control" title="投屏到电视">
+                        <button id="cast-video-header" class="btn-control" title="投屏到电视">
                             <span class="icon">📺</span>
                         </button>
-                        <button id="share-video" class="btn-control" title="分享此剧集给好友">
+                        <button id="share-video-header" class="btn-control" title="分享此剧集给好友">
                             <span class="icon">📤</span>
                         </button>
                     </div>
                 </div>
+                -->
 
                 <!-- 底部播放控制栏 -->
                 <div class="overlay-footer">
                     <div class="playback-controls">
-                        <button id="play-pause-btn" class="btn-playback" title="播放/暂停">
-                            <span class="icon">▶️</span>
-                        </button>
-                        <div class="progress-container">
+                        <!-- 左侧播放控制 -->
+                        <div class="playback-left">
+                            <button id="play-pause-btn" class="btn-playback" title="播放/暂停">
+                                <span class="icon">▶️</span>
+                            </button>
+                            <button id="prev-episode" class="btn-episode" disabled title="上一集">
+                                <span class="icon">⏮️</span>
+                            </button>
+                            <button id="next-episode" class="btn-episode" title="下一集">
+                                <span class="icon">⏭️</span>
+                            </button>
                             <div class="time-info">
                                 <span id="current-time">00:00</span>
                                 <span class="time-separator">/</span>
                                 <span id="total-time">00:00</span>
                             </div>
+                        </div>
+
+                        <!-- 中间进度条 -->
+                        <div class="progress-container">
                             <div class="progress-bar-container">
                                 <div class="progress-bar" id="progress-bar">
                                     <div class="progress-fill" id="progress-fill"></div>
@@ -85,20 +114,33 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="volume-control">
-                            <button id="volume-btn" class="btn-volume" title="静音/恢复">
-                                <span class="icon">🔊</span>
+
+                        <!-- 右侧控制 -->
+                        <div class="playback-right">
+                            <button id="toggle-episodes" class="btn-episode" title="显示/隐藏选集">
+                                <span class="icon">📋</span>
                             </button>
-                            <div class="volume-bar-container">
-                                <div class="volume-bar" id="volume-bar">
-                                    <div class="volume-fill" id="volume-fill"></div>
-                                    <div class="volume-handle" id="volume-handle"></div>
+                            <button id="toggle-danmaku" class="btn-episode" title="切换弹幕">
+                                <span class="icon">💬</span>
+                            </button>
+                            <button id="playback-speed" class="btn-episode" title="播放速度">
+                                <span class="icon">1.0x</span>
+                            </button>
+                            <div class="volume-control">
+                                <button id="volume-btn" class="btn-volume" title="静音/恢复">
+                                    <span class="icon">🔊</span>
+                                </button>
+                                <div class="volume-bar-container">
+                                    <div class="volume-bar" id="volume-bar">
+                                        <div class="volume-fill" id="volume-fill"></div>
+                                        <div class="volume-handle" id="volume-handle"></div>
+                                    </div>
                                 </div>
                             </div>
+                            <button id="fullscreen-btn" class="btn-fullscreen" title="全屏/退出全屏">
+                                <span class="icon">⛶</span>
+                            </button>
                         </div>
-                        <button id="fullscreen-btn" class="btn-fullscreen" title="全屏/退出全屏">
-                            <span class="icon">⛶</span>
-                        </button>
                     </div>
                 </div>
             </div>
@@ -206,27 +248,111 @@
                     </div>
                 </div>
             </div>
+
+            <!-- 可收纳的选集列表 -->
+            <div class="episode-panel" id="episode-panel">
+                <div class="episode-panel-header">
+                    <h4>播放列表</h4>
+                    <button id="close-episodes" class="btn-panel-close" title="关闭选集面板">
+                        <span class="icon">❌</span>
+                    </button>
+                </div>
+
+                <!-- 线路选择区域 -->
+                <div class="route-selection" id="route-selection">
+                    <div class="route-tabs" id="route-tabs"></div>
+                </div>
+
+                <!-- 剧集列表区域 -->
+                <div class="episode-list">
+                    <div id="episodes" class="episodes"></div>
+                </div>
+            </div>
         </div>
 
-        <!-- 可收纳的选集列表 -->
-        <div class="episode-panel" id="episode-panel">
-            <div class="episode-panel-header">
-                <h4>播放列表</h4>
-                <button id="close-episodes" class="btn-panel-close" title="关闭选集面板">
-                    <span class="icon">❌</span>
-                </button>
-            </div>
-
-            <!-- 线路选择区域 -->
-            <div class="route-selection" id="route-selection">
-                <div class="route-tabs" id="route-tabs"></div>
-            </div>
-
-            <!-- 剧集列表区域 -->
-            <div class="episode-list">
-                <div id="episodes" class="episodes"></div>
+        <!-- 调试信息面板 (按Ctrl+D显示) -->
+        <div class="debug-panel" id="debug-panel"
+            style="position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.9); color: white; padding: 15px; border-radius: 8px; font-size: 12px; font-family: 'Courier New', monospace; z-index: 10000; max-width: 400px; display: none; border: 1px solid #444; max-height: 300px; overflow-y: auto;">
+            <div style="margin-bottom: 10px; font-weight: bold; color: #4caf50;">📊 调试信息</div>
+            <div id="debug-content" style="line-height: 1.4;"></div>
+            <div style="margin-top: 10px; display: flex; gap: 5px;">
+                <button onclick="updateDebugInfo()"
+                    style="padding: 4px 8px; font-size: 11px; background: #007acc; color: white; border: none; border-radius: 3px; cursor: pointer;">刷新</button>
+                <button onclick="document.getElementById('debug-panel').style.display='none'"
+                    style="padding: 4px 8px; font-size: 11px; background: #666; color: white; border: none; border-radius: 3px; cursor: pointer;">关闭</button>
             </div>
         </div>
+
+        <script>
+            // 调试面板控制
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 'd') {
+                    e.preventDefault();
+                    const debugPanel = document.getElementById('debug-panel');
+                    debugPanel.style.display = debugPanel.style.display === 'none' ? 'block' : 'none';
+                    if (debugPanel.style.display === 'block') {
+                        updateDebugInfo();
+                    }
+                }
+            });
+
+            function updateDebugInfo() {
+                const debugContent = document.getElementById('debug-content');
+                if (!debugContent) return;
+
+                const info = [];
+
+                // 检查Electron API
+                info.push('🔧 <strong>Electron API 状态:</strong>');
+                info.push(`window.electron: ${window.electron ? '✅ 可用' : '❌ 不可用'}`);
+                if (window.electron) {
+                    info.push(`window.electron.window: ${window.electron.window ? '✅ 可用' : '❌ 不可用'}`);
+                    info.push(`toggleAlwaysOnTop: ${window.electron.window?.toggleAlwaysOnTop ? '✅ 可用' : '❌ 不可用'}`);
+                    info.push(`clipboard: ${window.electron.clipboard ? '✅ 可用' : '❌ 不可用'}`);
+                }
+
+                info.push('');
+                info.push('📹 <strong>播放器状态:</strong>');
+                const player = window.videoPlayer;
+                if (player) {
+                    info.push(`videoData: ${player.videoData ? '✅ 已加载' : '❌ 未加载'}`);
+                    if (player.videoData) {
+                        info.push(`- 影片: ${player.videoData.vod_name || '未知'}`);
+                        info.push(`- ID: ${player.videoData.vod_id || '未知'}`);
+                        info.push(`- 站点: ${player.videoData.siteName || player.videoData.site_name || '未知'}`);
+                        info.push(`- URL: ${player.videoData.siteUrl || player.videoData.site_url || '未知'}`);
+                    }
+                    info.push(`isCasting: ${player.isCasting ? '✅ 正在投屏' : '❌ 未投屏'}`);
+                } else {
+                    info.push('播放器实例: ❌ 未创建');
+                }
+
+                info.push('');
+                info.push('🌐 <strong>浏览器 API:</strong>');
+                info.push(`navigator.clipboard: ${navigator.clipboard ? '✅ 支持' : '❌ 不支持'}`);
+                info.push(`navigator.presentation: ${navigator.presentation ? '✅ 支持投屏' : '❌ 不支持投屏'}`);
+
+                info.push('');
+                info.push('🎛️ <strong>按钮元素状态:</strong>');
+                const buttons = [
+                    { id: 'toggle-always-on-top', name: '置顶按钮' },
+                    { id: 'share-video', name: '分享按钮' },
+                    { id: 'cast-video', name: '投屏按钮' }
+                ];
+                buttons.forEach(btn => {
+                    const element = document.getElementById(btn.id);
+                    info.push(`${btn.name}: ${element ? '✅ 存在' : '❌ 不存在'}`);
+                    if (element) {
+                        const style = window.getComputedStyle(element);
+                        info.push(`- 可见性: ${style.visibility !== 'hidden' && style.opacity !== '0' ? '✅' : '❌'}`);
+                        info.push(`- 点击事件: ${element.onclick || element.onmousedown ? '✅' : '❓'}`);
+                    }
+                });
+
+                debugContent.innerHTML = info.join('<br>');
+            }
+        </script>
+
     </div> <!-- 关闭 player-app -->
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
@@ -234,6 +360,21 @@
     <script src="js/danmaku.js"></script>
     <script src="js/enhanced-danmaku.js"></script>
     <script src="js/player.js"></script>
+
+    <!-- 初始化播放器 -->
+    <script>
+        // 确保DOM完全加载后初始化播放器
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('[PLAYER] DOM加载完成，开始初始化播放器');
+            try {
+                window.videoPlayer = new VideoPlayer();
+                window.videoPlayer.initialize();
+                console.log('[PLAYER] 播放器实例创建成功');
+            } catch (error) {
+                console.error('[PLAYER] 播放器初始化失败:', error);
+            }
+        });
+    </script>
 </body>
 
 </html>

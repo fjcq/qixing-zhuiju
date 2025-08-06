@@ -80,6 +80,18 @@ class VideoPlayer {
         console.log('[PLAYER] 存储服务初始化完成');
 
         this.video = document.getElementById('video-player');
+
+        // 强制移除原生控制栏
+        if (this.video) {
+            this.video.removeAttribute('controls');
+            this.video.controls = false;
+        }
+
+        // 隐藏其他顶部控制元素（但不影响悬浮控制栏内的按钮）
+        setTimeout(() => {
+            this.hideTopControls();
+        }, 50);
+
         this.setupVideoEvents();
         this.setupControlEvents();
 
@@ -106,6 +118,17 @@ class VideoPlayer {
         }
 
         console.log('[PLAYER] 播放器初始化完成');
+
+        // 初始化时隐藏右上角按钮，与底部控制栏行为一致
+        setTimeout(() => {
+            const topRightControls = document.querySelector('.top-right-controls');
+            if (topRightControls) {
+                topRightControls.style.opacity = '0';
+                topRightControls.style.visibility = 'hidden';
+                topRightControls.style.pointerEvents = 'none';
+                console.log('[PLAYER] 初始化时隐藏右上角按钮');
+            }
+        }, 100);
     }
 
     // 初始化弹幕系统
@@ -127,6 +150,37 @@ class VideoPlayer {
             }
         };
         initDanmaku();
+    }
+
+    // 强制隐藏顶部控制元素
+    hideTopControls() {
+        // 查找并隐藏所有可能的顶部控制元素，但保留右上角按钮
+        const selectors = [
+            '.overlay-header',
+            '#overlay-header',
+            '[class*="header"]:not(.top-right-controls)',
+            '[class*="overlay-control"]'
+        ];
+
+        selectors.forEach(selector => {
+            try {
+                const elements = document.querySelectorAll(selector);
+                elements.forEach(el => {
+                    // 确保不隐藏右上角控制按钮区域
+                    if (el && el.style && !el.classList.contains('top-right-controls') && !el.classList.contains('btn-top-control')) {
+                        el.style.display = 'none !important';
+                        el.style.visibility = 'hidden !important';
+                        el.style.opacity = '0 !important';
+                        el.style.pointerEvents = 'none !important';
+                        el.setAttribute('hidden', 'true');
+                    }
+                });
+            } catch (e) {
+                console.log('隐藏控件时出错:', e);
+            }
+        });
+
+        console.log('[PLAYER] 隐藏顶部控制元素，但保留右上角按钮');
     }
 
     // 加载视频数据
@@ -706,9 +760,9 @@ class VideoPlayer {
         });
 
         // 键盘快捷键
-        document.addEventListener('keydown', (e) => {
+        document.addEventListener('keydown', async (e) => {
             if (e.target.tagName.toLowerCase() !== 'input') {
-                this.handleKeyboard(e);
+                await this.handleKeyboard(e);
             }
         });
 
@@ -729,6 +783,29 @@ class VideoPlayer {
             e.preventDefault();
             this.toggleFullscreen();
             console.log('[PLAYER] 双击切换全屏');
+        });
+
+        // 单击切换播放/暂停
+        this.video.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.togglePlayPause();
+            console.log('[PLAYER] 单击切换播放/暂停');
+        });
+
+        // 监听播放状态变化
+        this.video.addEventListener('play', () => {
+            this.updatePlayPauseButton(true);
+            console.log('[PLAYER] 视频开始播放');
+        });
+
+        this.video.addEventListener('pause', () => {
+            this.updatePlayPauseButton(false);
+            console.log('[PLAYER] 视频暂停');
+        });
+
+        // 监听音量变化
+        this.video.addEventListener('volumechange', () => {
+            this.updateVolumeButton();
         });
     }
 
@@ -754,10 +831,16 @@ class VideoPlayer {
 
     // 设置控制按钮事件
     setupControlEvents() {
+        console.log('[PLAYER] 开始设置控制按钮事件');
+
         // 上一集按钮
         const prevBtn = document.getElementById('prev-episode');
         if (prevBtn) {
-            prevBtn.addEventListener('click', () => {
+            // 移除可能已存在的监听器，防止重复绑定
+            const newPrevBtn = prevBtn.cloneNode(true);
+            prevBtn.parentNode.replaceChild(newPrevBtn, prevBtn);
+
+            newPrevBtn.addEventListener('click', () => {
                 this.playPrevEpisode();
             });
         }
@@ -765,7 +848,11 @@ class VideoPlayer {
         // 下一集按钮
         const nextBtn = document.getElementById('next-episode');
         if (nextBtn) {
-            nextBtn.addEventListener('click', () => {
+            // 移除可能已存在的监听器，防止重复绑定
+            const newNextBtn = nextBtn.cloneNode(true);
+            nextBtn.parentNode.replaceChild(newNextBtn, nextBtn);
+
+            newNextBtn.addEventListener('click', () => {
                 this.playNextEpisode();
             });
         }
@@ -773,7 +860,11 @@ class VideoPlayer {
         // 重试按钮
         const retryBtn = document.getElementById('retry-btn');
         if (retryBtn) {
-            retryBtn.addEventListener('click', () => {
+            // 移除可能已存在的监听器，防止重复绑定
+            const newRetryBtn = retryBtn.cloneNode(true);
+            retryBtn.parentNode.replaceChild(newRetryBtn, retryBtn);
+
+            newRetryBtn.addEventListener('click', () => {
                 this.retryCurrentEpisode();
             });
         }
@@ -781,23 +872,45 @@ class VideoPlayer {
         // 显示/隐藏选集面板按钮
         const toggleEpisodesBtn = document.getElementById('toggle-episodes');
         if (toggleEpisodesBtn) {
-            toggleEpisodesBtn.addEventListener('click', () => {
+            // 移除可能已存在的监听器，防止重复绑定
+            const newToggleEpisodesBtn = toggleEpisodesBtn.cloneNode(true);
+            toggleEpisodesBtn.parentNode.replaceChild(newToggleEpisodesBtn, toggleEpisodesBtn);
+
+            newToggleEpisodesBtn.addEventListener('click', () => {
                 this.toggleEpisodePanel();
             });
         }
 
-        // 置顶按钮
+        // 置顶按钮 - 关键修复点
         const toggleAlwaysOnTopBtn = document.getElementById('toggle-always-on-top');
         if (toggleAlwaysOnTopBtn) {
-            toggleAlwaysOnTopBtn.addEventListener('click', async () => {
+            console.log('[PLAYER] 找到置顶按钮，准备设置事件监听');
+
+            // 使用cloneNode方法彻底移除所有已存在的事件监听器
+            const newToggleBtn = toggleAlwaysOnTopBtn.cloneNode(true);
+            toggleAlwaysOnTopBtn.parentNode.replaceChild(newToggleBtn, toggleAlwaysOnTopBtn);
+
+            // 为新按钮添加单一的事件监听器
+            newToggleBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[PLAYER] 置顶按钮被点击 - 开始处理');
                 await this.toggleAlwaysOnTop();
             });
+
+            console.log('[PLAYER] 置顶按钮事件监听设置完成');
+        } else {
+            console.error('[PLAYER] 未找到置顶按钮元素');
         }
 
         // 投屏按钮
         const castVideoBtn = document.getElementById('cast-video');
         if (castVideoBtn) {
-            castVideoBtn.addEventListener('click', async () => {
+            console.log('[PLAYER] 设置投屏按钮事件监听');
+            castVideoBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[PLAYER] 投屏按钮被点击');
                 await this.toggleCasting();
             });
         }
@@ -805,9 +918,15 @@ class VideoPlayer {
         // 分享按钮
         const shareVideoBtn = document.getElementById('share-video');
         if (shareVideoBtn) {
-            shareVideoBtn.addEventListener('click', () => {
+            console.log('[PLAYER] 设置分享按钮事件监听');
+            shareVideoBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[PLAYER] 分享按钮被点击');
                 this.shareCurrentVideo();
             });
+        } else {
+            console.error('[PLAYER] 未找到分享按钮元素');
         }
 
         // 弹幕按钮
@@ -815,6 +934,14 @@ class VideoPlayer {
         if (toggleDanmakuBtn) {
             toggleDanmakuBtn.addEventListener('click', () => {
                 this.toggleDanmakuPanel();
+            });
+        }
+
+        // 播放速度按钮
+        const playbackSpeedBtn = document.getElementById('playback-speed');
+        if (playbackSpeedBtn) {
+            playbackSpeedBtn.addEventListener('click', () => {
+                this.cyclePlaybackSpeed();
             });
         }
 
@@ -956,17 +1083,21 @@ class VideoPlayer {
     }
 
     // 处理键盘快捷键
-    handleKeyboard(e) {
+    async handleKeyboard(e) {
         if (!this.video) return;
 
         switch (e.code) {
             case 'Space':
                 e.preventDefault();
-                if (this.video.paused) {
-                    this.video.play();
-                } else {
-                    this.video.pause();
-                }
+                this.togglePlayPause();
+                break;
+            case 'F5':
+                e.preventDefault();
+                this.refreshVideo();
+                break;
+            case 'Enter':
+                e.preventDefault();
+                this.toggleDanmakuPanel();
                 break;
             case 'ArrowLeft':
                 e.preventDefault();
@@ -1000,10 +1131,11 @@ class VideoPlayer {
             case 'Escape':
                 e.preventDefault();
                 this.hideEpisodePanel();
+                this.hideDanmakuPanel();
                 break;
             case 'KeyT':
                 e.preventDefault();
-                this.toggleAlwaysOnTop();
+                await this.toggleAlwaysOnTop();
                 break;
         }
     }
@@ -1039,31 +1171,136 @@ class VideoPlayer {
         }
     }    // 切换窗口置顶状态
     async toggleAlwaysOnTop() {
+        // 防止重复调用 - 如果正在切换中，直接返回
+        if (this._isTogglingAlwaysOnTop) {
+            console.log('[PLAYER] 置顶功能正在切换中，忽略重复调用');
+            return;
+        }
+
+        this._isTogglingAlwaysOnTop = true;
+
+        console.log('[PLAYER] ========== 开始置顶状态切换 ==========');
+
         try {
             if (window.electron && window.electron.window && window.electron.window.toggleAlwaysOnTop) {
+                console.log('[PLAYER] 调用主进程置顶API...');
+
                 const isAlwaysOnTop = await window.electron.window.toggleAlwaysOnTop();
+                console.log(`[PLAYER] 主进程返回的置顶状态: ${isAlwaysOnTop}`);
 
                 // 更新按钮状态
                 const toggleBtn = document.getElementById('toggle-always-on-top');
+                console.log(`[PLAYER] 找到置顶按钮元素: ${toggleBtn ? '是' : '否'}`);
+
                 if (toggleBtn) {
-                    const icon = toggleBtn.querySelector('.icon');
-                    if (icon) {
-                        icon.textContent = isAlwaysOnTop ? '🔒' : '📌';
-                        toggleBtn.title = isAlwaysOnTop ? '取消置顶' : '窗口置顶';
-                        toggleBtn.classList.toggle('active', isAlwaysOnTop);
+                    // 清除旧样式
+                    toggleBtn.classList.remove('active');
+                    toggleBtn.style.background = '';
+                    toggleBtn.style.transform = '';
+
+                    // 直接更新按钮文本和标题，因为按钮结构是直接包含emoji的
+                    toggleBtn.textContent = isAlwaysOnTop ? '🔒' : '📌';
+                    toggleBtn.title = isAlwaysOnTop ? '取消置顶 (按T键快捷切换)' : '窗口置顶 (按T键快捷切换)';
+
+                    if (isAlwaysOnTop) {
+                        toggleBtn.classList.add('active');
+                        // 更醒目的置顶状态显示
+                        toggleBtn.style.background = 'rgba(76, 175, 80, 0.9)'; // 更鲜艳的绿色
+                        toggleBtn.style.boxShadow = '0 0 12px rgba(76, 175, 80, 0.6)'; // 发光效果
+                        toggleBtn.style.color = '#fff';
+                        toggleBtn.style.transform = 'scale(1.15)';
+                    } else {
+                        toggleBtn.style.background = 'rgba(0, 0, 0, 0.7)';
+                        toggleBtn.style.boxShadow = 'none';
+                        toggleBtn.style.color = '#fff';
+                        toggleBtn.style.transform = 'scale(1)';
                     }
+
+                    console.log(`[PLAYER] 按钮状态已更新 - 图标: ${toggleBtn.textContent}, 标题: ${toggleBtn.title}`);
                 }
 
-                console.log(`[PLAYER] 窗口置顶状态: ${isAlwaysOnTop}`);
+                // 显示更明显的通知
+                const message = isAlwaysOnTop ?
+                    '🔝 窗口已置顶！' :
+                    '📌 置顶已取消';
+
+                this.showNotification(message, isAlwaysOnTop ? 'success' : 'info');
+
+                // 额外的视觉反馈 - 在播放器界面上临时显示大字提示
+                this.showLargeStatusMessage(
+                    isAlwaysOnTop ? '🔒 已置顶' : '📌 已取消',
+                    isAlwaysOnTop ? '#4caf50' : '#2196f3',
+                    1500
+                ); console.log(`[PLAYER] ========== 置顶状态切换完成: ${isAlwaysOnTop ? '已置顶' : '已取消'} ==========`);
                 return isAlwaysOnTop;
             } else {
-                console.error('[PLAYER] 置顶功能不可用');
+                console.error('[PLAYER] 置顶功能不可用 - Electron API未找到');
+                this.showNotification('置顶功能不可用', 'error');
                 return false;
             }
         } catch (error) {
             console.error('[PLAYER] 切换置顶状态失败:', error);
+            this.showNotification(`置顶功能异常: ${error.message}`, 'error');
             return false;
+        } finally {
+            // 立即释放锁，让下次调用可以正常进行
+            this._isTogglingAlwaysOnTop = false;
         }
+    }
+
+    // 在播放器界面显示大字状态消息
+    showLargeStatusMessage(message, color, duration = 2000) {
+        console.log(`[PLAYER] 显示大字状态消息: ${message}`);
+
+        // 移除已存在的状态消息
+        const existingMessage = document.querySelector('.large-status-message');
+        if (existingMessage) {
+            existingMessage.remove();
+        }
+
+        // 创建大字状态消息元素
+        const statusMessage = document.createElement('div');
+        statusMessage.className = 'large-status-message';
+        statusMessage.textContent = message;
+
+        Object.assign(statusMessage.style, {
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: color,
+            color: '#fff',
+            padding: '20px 40px',
+            borderRadius: '12px',
+            fontSize: '24px',
+            fontWeight: 'bold',
+            zIndex: '99999',
+            backdropFilter: 'blur(10px)',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+            opacity: '0',
+            transition: 'opacity 0.3s ease, transform 0.3s ease',
+            textAlign: 'center',
+            minWidth: '200px'
+        });
+
+        document.body.appendChild(statusMessage);
+
+        // 动画显示
+        requestAnimationFrame(() => {
+            statusMessage.style.opacity = '1';
+            statusMessage.style.transform = 'translate(-50%, -50%) scale(1.05)';
+        });
+
+        // 自动隐藏
+        setTimeout(() => {
+            statusMessage.style.opacity = '0';
+            statusMessage.style.transform = 'translate(-50%, -50%) scale(0.95)';
+            setTimeout(() => {
+                if (statusMessage.parentNode) {
+                    statusMessage.parentNode.removeChild(statusMessage);
+                }
+            }, 300);
+        }, duration);
     }
 
     // 切换全屏
@@ -1363,14 +1600,27 @@ class VideoPlayer {
         // 设置默认音量
         if (this.video) {
             this.video.volume = 0.8; // 设置为80%音量
+            this.video.playbackRate = 1.0; // 设置默认播放速度
+        }
+
+        // 确保右上角按钮始终显示
+        const topRightControls = document.querySelector('.top-right-controls');
+        if (topRightControls) {
+            topRightControls.style.display = 'flex';
+            topRightControls.style.visibility = 'visible';
+            topRightControls.style.opacity = '1';
+            topRightControls.style.zIndex = '1000';
+            console.log('[PLAYER] 初始化右上角按钮显示');
         }
 
         // 初始化显示状态
         setTimeout(() => {
             this.updatePlayPauseButton(false); // 初始为暂停状态
             this.updateVolumeDisplay();
+            this.updateVolumeButton();
             this.updateFullscreenButton(false);
             this.updateDurationDisplay();
+            this.updatePlaybackSpeedButton(1.0); // 初始化播放速度显示
         }, 100);
     }
 
@@ -1388,6 +1638,58 @@ class VideoPlayer {
         this.video.muted = !this.video.muted;
     }
 
+    // 播放速度控制
+    cyclePlaybackSpeed() {
+        if (!this.video) return;
+
+        const speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+        const currentSpeed = this.video.playbackRate;
+        let nextIndex = speeds.indexOf(currentSpeed) + 1;
+
+        if (nextIndex >= speeds.length) {
+            nextIndex = 0;
+        }
+
+        const newSpeed = speeds[nextIndex];
+        this.video.playbackRate = newSpeed;
+
+        // 更新按钮显示
+        this.updatePlaybackSpeedButton(newSpeed);
+
+        console.log('[PLAYER] 播放速度设置为:', newSpeed + 'x');
+    }
+
+    // 更新播放速度按钮显示
+    updatePlaybackSpeedButton(speed) {
+        const speedBtn = document.getElementById('playback-speed');
+        if (speedBtn) {
+            const icon = speedBtn.querySelector('.icon');
+            if (icon) {
+                icon.textContent = speed + 'x';
+            }
+            speedBtn.title = '播放速度: ' + speed + 'x';
+        }
+    }
+
+    // 刷新视频
+    refreshVideo() {
+        if (!this.video || !this.currentRouteUrl) return;
+
+        const currentTime = this.video.currentTime;
+        console.log('[PLAYER] 刷新视频，当前时间:', currentTime);
+
+        // 重新加载视频
+        this.loadVideo(this.currentRouteUrl, this.currentEpisodeIndex);
+
+        // 延迟恢复播放位置
+        setTimeout(() => {
+            if (this.video && currentTime > 0) {
+                this.video.currentTime = currentTime;
+                console.log('[PLAYER] 恢复播放位置:', currentTime);
+            }
+        }, 1000);
+    }
+
     // 更新播放/暂停按钮
     updatePlayPauseButton(isPlaying) {
         const playPauseBtn = document.getElementById('play-pause-btn');
@@ -1398,6 +1700,28 @@ class VideoPlayer {
             }
             playPauseBtn.title = isPlaying ? '暂停' : '播放';
         }
+    }
+
+    // 更新音量按钮
+    updateVolumeButton() {
+        const volumeBtn = document.getElementById('volume-btn');
+        if (volumeBtn) {
+            const icon = volumeBtn.querySelector('.icon');
+            if (icon) {
+                if (this.video.muted || this.video.volume === 0) {
+                    icon.textContent = '🔇';
+                    volumeBtn.title = '取消静音';
+                } else if (this.video.volume < 0.5) {
+                    icon.textContent = '🔉';
+                    volumeBtn.title = '静音';
+                } else {
+                    icon.textContent = '🔊';
+                    volumeBtn.title = '静音';
+                }
+            }
+        }
+        // 更新音量条显示
+        this.updateVolumeDisplay();
     }
 
     // 更新时间显示和进度条
@@ -1464,11 +1788,68 @@ class VideoPlayer {
         const progressBar = document.getElementById('progress-bar');
         const progressHandle = document.getElementById('progress-handle');
 
-        if (!progressBar || !progressHandle) return;
+        console.log('[PLAYER] 查找进度条元素...');
+        console.log('[PLAYER] 进度条元素:', progressBar);
+        console.log('[PLAYER] 进度条手柄元素:', progressHandle);
+
+        if (!progressBar || !progressHandle) {
+            console.error('[PLAYER] 进度条元素未找到 - progressBar:', progressBar, 'progressHandle:', progressHandle);
+            return;
+        }
 
         let isDragging = false;
+        console.log('[PLAYER] 进度条控制初始化成功');
 
-        const updateProgress = (e) => {
+        // 创建时间预览元素
+        let timePreview = progressBar.querySelector('.progress-preview');
+        if (!timePreview) {
+            timePreview = document.createElement('div');
+            timePreview.className = 'progress-preview';
+            timePreview.textContent = '00:00'; // 默认文本用于调试
+            progressBar.appendChild(timePreview);
+            console.log('[PLAYER] 创建时间预览元素:', timePreview);
+        } else {
+            console.log('[PLAYER] 时间预览元素已存在:', timePreview);
+        }
+
+        // 检查进度条的位置和大小
+        const progressBarRect = progressBar.getBoundingClientRect();
+        console.log('[PLAYER] 进度条位置和大小:', progressBarRect);
+
+        // 立即测试显示时间预览（调试用）- 已移除调试代码
+        /*
+        setTimeout(() => {
+            if (timePreview) {
+                timePreview.style.cssText = `
+                    position: absolute !important;
+                    bottom: 100% !important;
+                    left: 50% !important;
+                    transform: translateX(-50%) !important;
+                    background: red !important;
+                    color: white !important;
+                    padding: 4px 8px !important;
+                    border-radius: 4px !important;
+                    font-size: 12px !important;
+                    white-space: nowrap !important;
+                    z-index: 99999 !important;
+                    pointer-events: none !important;
+                    margin-bottom: 8px !important;
+                    display: block !important;
+                    opacity: 1 !important;
+                    visibility: visible !important;
+                `;
+                console.log('[PLAYER] 强制显示时间预览元素（红色调试版本）');
+                console.log('[PLAYER] 时间预览父元素:', timePreview.parentElement);
+                console.log('[PLAYER] 时间预览样式:', timePreview.style.cssText);
+                
+                // 检查时间预览的位置
+                const previewRect = timePreview.getBoundingClientRect();
+                console.log('[PLAYER] 时间预览位置和大小:', previewRect);
+            }
+        }, 2000); // 延长到2秒，确保其他样式加载完成
+        */        const updateProgress = (e) => {
+            if (!this.video || !this.video.duration) return;
+
             const rect = progressBar.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
             const percentage = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
@@ -1476,29 +1857,117 @@ class VideoPlayer {
 
             if (!isNaN(newTime)) {
                 this.video.currentTime = newTime;
+                console.log('[PLAYER] 进度条拖动到:', newTime.toFixed(2), '秒');
             }
         };
 
-        progressBar.addEventListener('click', updateProgress);
+        const showTimePreview = (e) => {
+            if (!this.video || !this.video.duration) {
+                console.log('[PLAYER] 无法显示时间预览：视频未加载或无时长');
+                return;
+            }
 
+            const rect = progressBar.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const percentage = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
+            const previewTime = (percentage / 100) * this.video.duration;
+
+            if (!isNaN(previewTime)) {
+                const minutes = Math.floor(previewTime / 60);
+                const seconds = Math.floor(previewTime % 60);
+                timePreview.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                timePreview.style.cssText = `
+                    position: absolute !important;
+                    bottom: 100% !important;
+                    left: ${percentage}% !important;
+                    transform: translateX(-50%) !important;
+                    background: rgba(0, 0, 0, 0.9) !important;
+                    color: white !important;
+                    padding: 4px 8px !important;
+                    border-radius: 4px !important;
+                    font-size: 12px !important;
+                    white-space: nowrap !important;
+                    z-index: 10000 !important;
+                    pointer-events: none !important;
+                    margin-bottom: 8px !important;
+                    display: block !important;
+                    opacity: 1 !important;
+                    visibility: visible !important;
+                `;
+                console.log('[PLAYER] 显示时间预览:', timePreview.textContent, '位置:', percentage + '%', '元素:', timePreview);
+            }
+        };
+
+        const hideTimePreview = () => {
+            timePreview.style.cssText = `
+                position: absolute !important;
+                bottom: 100% !important;
+                left: 50% !important;
+                transform: translateX(-50%) !important;
+                background: rgba(0, 0, 0, 0.9) !important;
+                color: white !important;
+                padding: 4px 8px !important;
+                border-radius: 4px !important;
+                font-size: 12px !important;
+                white-space: nowrap !important;
+                z-index: 10000 !important;
+                pointer-events: none !important;
+                margin-bottom: 8px !important;
+                display: none !important;
+                opacity: 0 !important;
+                visibility: hidden !important;
+            `;
+            console.log('[PLAYER] 隐藏时间预览');
+        };
+
+        // 鼠标悬停显示时间预览 - 阻止事件冒泡避免与悬浮控制栏冲突
+        progressBar.addEventListener('mousemove', (e) => {
+            e.stopPropagation(); // 阻止冒泡到播放器容器
+            showTimePreview(e);
+        });
+        progressBar.addEventListener('mouseenter', (e) => {
+            e.stopPropagation();
+            showTimePreview(e);
+        });
+        progressBar.addEventListener('mouseleave', (e) => {
+            e.stopPropagation();
+            hideTimePreview();
+        });
+
+        // 点击进度条跳转
+        progressBar.addEventListener('click', (e) => {
+            console.log('[PLAYER] 进度条被点击');
+            updateProgress(e);
+        });
+
+        // 拖拽开始
         progressHandle.addEventListener('mousedown', (e) => {
+            console.log('[PLAYER] 开始拖拽进度条');
             isDragging = true;
             progressBar.classList.add('dragging');
             e.preventDefault();
+            e.stopPropagation();
         });
 
+        // 拖拽过程
         document.addEventListener('mousemove', (e) => {
             if (isDragging) {
                 updateProgress(e);
             }
         });
 
+        // 拖拽结束
         document.addEventListener('mouseup', () => {
             if (isDragging) {
+                console.log('[PLAYER] 结束拖拽进度条');
                 isDragging = false;
                 progressBar.classList.remove('dragging');
             }
         });
+
+        // 确保进度条可以接收鼠标事件
+        progressBar.style.pointerEvents = 'auto';
+        progressHandle.style.pointerEvents = 'auto';
     }
 
     // 设置音量条控制
@@ -1604,14 +2073,44 @@ class VideoPlayer {
                 overlay.classList.remove('show');
             }, 3000);
         });
-    }
 
-    // 设置全屏状态监听器
+        // 调试：检查右上角按钮状态 - 已移除强制显示调试代码
+        const topRightControls = document.querySelector('.top-right-controls');
+        console.log('[PLAYER] 悬浮控制栏初始化完成');
+        console.log('[PLAYER] 右上角按钮元素:', topRightControls);
+        if (topRightControls) {
+            const style = window.getComputedStyle(topRightControls);
+            console.log('[PLAYER] 右上角按钮计算样式:');
+            console.log('- display:', style.display);
+            console.log('- opacity:', style.opacity);
+            console.log('- visibility:', style.visibility);
+            console.log('- z-index:', style.zIndex);
+            console.log('- position:', style.position);
+            console.log('- top:', style.top);
+            console.log('- right:', style.right);
+
+            // 测试：立即显示右上角按钮（无红色背景）
+            setTimeout(() => {
+                overlay.classList.add('show');
+                console.log('[PLAYER] 测试：手动添加show类到overlay');
+
+                // 检查show类是否生效
+                const hasShow = overlay.classList.contains('show');
+                console.log('[PLAYER] overlay是否有show类:', hasShow);
+
+                const afterStyle = window.getComputedStyle(topRightControls);
+                console.log('[PLAYER] 添加show类后的样式:');
+                console.log('- opacity:', afterStyle.opacity);
+                console.log('- visibility:', afterStyle.visibility);
+            }, 2000);
+        }
+    }    // 设置全屏状态监听器
     setupFullscreenListeners() {
         const playerContainer = document.querySelector('.player-container');
         const overlay = document.getElementById('player-overlay');
         const danmakuInputContainer = document.getElementById('danmaku-input-container');
         const episodePanel = document.getElementById('episode-panel');
+        const topRightControls = document.querySelector('.top-right-controls');
 
         // 全屏状态变化监听
         const handleFullscreenChange = () => {
@@ -1629,6 +2128,15 @@ class VideoPlayer {
                 // 进入全屏状态
                 document.body.classList.add('fullscreen-mode');
                 console.log('[PLAYER] 添加fullscreen-mode类');
+
+                // 确保右上角按钮在全屏时显示
+                if (topRightControls) {
+                    topRightControls.style.display = 'flex';
+                    topRightControls.style.visibility = 'visible';
+                    topRightControls.style.opacity = '1';
+                    topRightControls.style.zIndex = '1001';
+                    console.log('[PLAYER] 全屏时显示右上角按钮');
+                }
 
                 // 立即显示一次控制栏，让用户知道控制栏还在
                 if (overlay) {
@@ -1649,6 +2157,15 @@ class VideoPlayer {
                 // 退出全屏状态
                 document.body.classList.remove('fullscreen-mode');
                 console.log('[PLAYER] 移除fullscreen-mode类');
+
+                // 恢复右上角按钮的正常显示
+                if (topRightControls) {
+                    topRightControls.style.display = 'flex';
+                    topRightControls.style.visibility = 'visible';
+                    topRightControls.style.opacity = '1';
+                    topRightControls.style.zIndex = '1000';
+                    console.log('[PLAYER] 退出全屏，恢复右上角按钮');
+                }
 
                 // 退出全屏后立即显示鼠标和控制栏
                 document.body.classList.add('mouse-active');
@@ -1680,6 +2197,26 @@ class VideoPlayer {
         const panel = document.getElementById('episode-panel');
         if (panel) {
             panel.classList.add('show');
+
+            // 检查是否是全屏状态，如果是则提升z-index
+            const isFullscreen = document.fullscreenElement ||
+                document.webkitFullscreenElement ||
+                document.mozFullScreenElement ||
+                document.msFullscreenElement ||
+                document.body.classList.contains('fullscreen-mode');
+
+            if (isFullscreen) {
+                console.log('[PLAYER] 全屏状态下显示选集面板');
+                panel.style.zIndex = '99999';
+                panel.style.position = 'fixed';
+            } else {
+                panel.style.zIndex = '';
+                panel.style.position = '';
+            }
+
+            console.log('[PLAYER] 选集面板已显示');
+        } else {
+            console.error('[PLAYER] 未找到选集面板元素');
         }
     }
 
@@ -2567,12 +3104,31 @@ class VideoPlayer {
         }
 
         try {
-            console.log('[PLAYER] 开始分享当前视频:', this.videoData);
+            console.log('[PLAYER] 开始分享当前视频，原始数据:', this.videoData);
+
+            // 从视频数据中获取站点信息，兼容多种数据结构
+            const siteName = this.videoData.siteName || this.videoData.site_name ||
+                (this.videoData.routes && this.videoData.routes[this.currentRouteIndex]?.siteName) ||
+                '当前站点';
+            const siteUrl = this.videoData.siteUrl || this.videoData.site_url ||
+                (this.videoData.routes && this.videoData.routes[this.currentRouteIndex]?.siteUrl) ||
+                'unknown';
+
+            console.log('[PLAYER] 获取到的站点信息:', {
+                siteName,
+                siteUrl,
+                currentRouteIndex: this.currentRouteIndex,
+                routes: this.videoData.routes,
+                原始siteName: this.videoData.siteName,
+                原始site_name: this.videoData.site_name,
+                原始siteUrl: this.videoData.siteUrl,
+                原始site_url: this.videoData.site_url
+            });
 
             // 生成分享数据
             const shareData = {
-                siteName: '当前站点', // 播放器中无法获取站点信息，使用默认值
-                siteUrl: 'unknown', // 播放器中无法获取站点URL
+                siteName: siteName,
+                siteUrl: siteUrl,
                 videoName: this.videoData.vod_name,
                 videoId: this.videoData.vod_id,
                 videoPic: this.videoData.vod_pic || '',
@@ -2581,7 +3137,7 @@ class VideoPlayer {
                 timestamp: Date.now()
             };
 
-            // 加密数据
+            console.log('[PLAYER] 构建的分享数据:', shareData);            // 加密数据
             const encryptedData = this.encryptShareData(shareData);
             if (!encryptedData) {
                 this.showNotification('分享码生成失败', 'error');
@@ -2747,6 +3303,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 全局播放器实例
     window.videoPlayer = player;
+
+    // 添加全局调试方法
+    window.showTopRightControls = () => {
+        const topRightControls = document.querySelector('.top-right-controls');
+        if (topRightControls) {
+            topRightControls.style.opacity = '1';
+            topRightControls.style.visibility = 'visible';
+            topRightControls.style.pointerEvents = 'auto';
+            console.log('手动显示右上角按钮');
+            console.log('当前样式:', window.getComputedStyle(topRightControls));
+        } else {
+            console.log('未找到右上角按钮元素');
+        }
+    };
+
+    window.hideTopRightControls = () => {
+        const topRightControls = document.querySelector('.top-right-controls');
+        if (topRightControls) {
+            topRightControls.style.opacity = '0';
+            topRightControls.style.visibility = 'hidden';
+            topRightControls.style.pointerEvents = 'none';
+            console.log('手动隐藏右上角按钮');
+        }
+    };
+
+    // 额外的延迟检查，确保悬浮控制栏正常工作
+    setTimeout(() => {
+        console.log('[PLAYER] 页面完全加载，悬浮控制栏初始化完成');
+
+        // 在确保控制栏正常后，隐藏其他顶部控制元素
+        setTimeout(() => {
+            if (player.hideTopControls) {
+                player.hideTopControls();
+            }
+        }, 100);
+    }, 500);
+
+    // 移除原来的hideTopControls调用，避免重复执行
+    // setTimeout(() => {
+    //     if (player.hideTopControls) {
+    //         player.hideTopControls();
+    //     }
+    // }, 100);
 
     // 窗口关闭时清理资源
     window.addEventListener('beforeunload', () => {

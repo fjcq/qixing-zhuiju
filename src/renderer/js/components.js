@@ -952,7 +952,10 @@ class ComponentService {
                     ...videoData,
                     currentRoute: routeIndex,
                     currentEpisode: episodeIndex,
-                    routes: allRoutes
+                    routes: allRoutes,
+                    // 添加站点信息
+                    siteName: siteName,
+                    siteUrl: activeSite ? activeSite.url : 'unknown'
                 },
                 // 添加播放进度信息
                 resumeProgress: resumeProgress

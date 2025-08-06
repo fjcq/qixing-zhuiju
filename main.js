@@ -626,11 +626,55 @@ class QixingZhuiju {
         ipcMain.handle('toggle-always-on-top', (event) => {
             const window = BrowserWindow.fromWebContents(event.sender);
             if (window) {
-                const isAlwaysOnTop = window.isAlwaysOnTop();
-                window.setAlwaysOnTop(!isAlwaysOnTop);
-                console.log(`[MAIN] 窗口置顶状态切换: ${!isAlwaysOnTop}`);
-                return !isAlwaysOnTop;
+                const currentState = window.isAlwaysOnTop();
+                const newState = !currentState;
+
+                console.log(`[MAIN] ========== 置顶状态切换请求 ==========`);
+                console.log(`[MAIN] 当前置顶状态: ${currentState}`);
+                console.log(`[MAIN] 请求切换到: ${newState}`);
+
+                // 设置置顶状态，并使用更高的级别确保有效
+                try {
+                    if (newState) {
+                        // 尝试多种置顶级别以确保成功
+                        window.setAlwaysOnTop(true, 'screen-saver');
+                        console.log(`[MAIN] 设置置顶级别: screen-saver`);
+                    } else {
+                        window.setAlwaysOnTop(false, 'normal');
+                        console.log(`[MAIN] 取消置顶，恢复正常级别`);
+                    }
+
+                    // 验证设置是否生效
+                    const actualState = window.isAlwaysOnTop();
+                    console.log(`[MAIN] 设置后实际状态: ${actualState}`);
+
+                    if (newState && !actualState) {
+                        // 如果screen-saver级别失败，尝试其他级别
+                        console.log('[MAIN] screen-saver级别失败，尝试floating级别');
+                        window.setAlwaysOnTop(true, 'floating');
+
+                        const retryState = window.isAlwaysOnTop();
+                        console.log(`[MAIN] floating级别设置后状态: ${retryState}`);
+
+                        if (!retryState) {
+                            console.log('[MAIN] floating级别也失败，尝试normal级别');
+                            window.setAlwaysOnTop(true, 'normal');
+
+                            const finalState = window.isAlwaysOnTop();
+                            console.log(`[MAIN] normal级别设置后状态: ${finalState}`);
+                        }
+                    }
+
+                    const finalResult = window.isAlwaysOnTop();
+                    console.log(`[MAIN] ========== 最终置顶状态: ${finalResult} ==========`);
+
+                    return finalResult;
+                } catch (error) {
+                    console.error('[MAIN] 设置置顶状态时出错:', error);
+                    return currentState; // 返回原始状态
+                }
             }
+            console.error('[MAIN] 无法找到窗口实例');
             return false;
         });
 
