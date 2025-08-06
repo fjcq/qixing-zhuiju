@@ -175,25 +175,8 @@ class DanmakuSystem {
             });
         }
 
-        // 按ESC键隐藏弹幕输入框
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                this.hideDanmakuInput();
-            }
-        });
-
-        // 点击播放器外部隐藏弹幕输入框
-        document.addEventListener('click', (e) => {
-            const inputContainer = document.getElementById('danmaku-input-container');
-            const playerContainer = document.querySelector('.player-container');
-
-            if (inputContainer && playerContainer &&
-                !inputContainer.contains(e.target) &&
-                !playerContainer.contains(e.target) &&
-                !e.target.closest('#toggle-danmaku')) {
-                this.hideDanmakuInput();
-            }
-        });
+        // 注释：Escape键和外部点击关闭弹幕面板的功能已移至player.js统一管理
+        // 这样可以避免多个系统之间的冲突，确保弹幕面板只通过指定的3种方式关闭
 
         // 跟踪鼠标位置，用于智能隐藏判断
         document.addEventListener('mousemove', (e) => {
@@ -513,12 +496,17 @@ class DanmakuSystem {
         }
     }
 
-    // 隐藏弹幕输入框
+    // 隐藏弹幕输入框 - 已禁用，现在由player.js统一管理
     hideDanmakuInput() {
-        const inputContainer = document.getElementById('danmaku-input-container');
-        if (inputContainer) {
-            inputContainer.style.display = 'none';
-        }
+        // 注释：此方法已被禁用，弹幕面板的显示/隐藏现在完全由player.js管理
+        // 这样可以避免多个系统之间的DOM操作冲突
+        console.log('[DANMAKU] hideDanmakuInput调用被忽略，面板控制权已移交给player.js');
+
+        // 原代码：
+        // const inputContainer = document.getElementById('danmaku-input-container');
+        // if (inputContainer) {
+        //     inputContainer.style.display = 'none';
+        // }
     }
 
     // 更新在线用户数

@@ -121,19 +121,27 @@ body {
     top: 0;
     left: 0;
     right: 0;
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.4) 50%, transparent 100%);
+    bottom: 0;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.8) 0%, transparent 30%, transparent 70%, rgba(0, 0, 0, 0.8) 100%);
     z-index: 100;
     opacity: 0;
-    transform: translateY(-100%);
     transition: all 0.3s ease;
     padding: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    pointer-events: none;
 }
 
-.player-container:hover .player-overlay,
+/* 移除自动hover显示，只通过JS控制 */
 .player-overlay:hover,
 .player-overlay.show {
     opacity: 1;
-    transform: translateY(0);
+}
+
+/* 让子元素可以接收鼠标事件 */
+.player-overlay>* {
+    pointer-events: auto;
 }
 
 .overlay-header {
@@ -644,6 +652,207 @@ body {
     height: 100vh !important;
 }
 
+/* 全屏状态下的浮动控制栏样式 */
+.player-container:fullscreen .player-overlay,
+.player-container:-webkit-full-screen .player-overlay,
+.player-container:-moz-full-screen .player-overlay,
+body.fullscreen-mode .player-overlay {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 9999 !important;
+    width: 100vw !important;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.6) 50%, transparent 100%) !important;
+    padding: 30px !important;
+    transform: translateY(-100%) !important;
+    transition: all 0.3s ease !important;
+    opacity: 0 !important;
+}
+
+/* 全屏状态下控制栏的显示状态 */
+.player-container:fullscreen .player-overlay.show,
+.player-container:-webkit-full-screen .player-overlay.show,
+.player-container:-moz-full-screen .player-overlay.show,
+body.fullscreen-mode .player-overlay.show,
+.player-container:fullscreen .player-overlay:hover,
+.player-container:-webkit-full-screen .player-overlay:hover,
+.player-container:-moz-full-screen .player-overlay:hover,
+body.fullscreen-mode .player-overlay:hover {
+    opacity: 1 !important;
+    transform: translateY(0) !important;
+}
+
+/* 确保全屏状态下控制栏内的按钮都能显示 */
+body.fullscreen-mode .player-overlay .overlay-controls,
+body.fullscreen-mode .player-overlay .overlay-controls .btn-control,
+.player-container:fullscreen .player-overlay .overlay-controls,
+.player-container:fullscreen .player-overlay .overlay-controls .btn-control,
+.player-container:-webkit-full-screen .player-overlay .overlay-controls,
+.player-container:-webkit-full-screen .player-overlay .overlay-controls .btn-control,
+.player-container:-moz-full-screen .player-overlay .overlay-controls,
+.player-container:-moz-full-screen .player-overlay .overlay-controls .btn-control {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+/* 确保按钮图标在全屏状态下可见 */
+body.fullscreen-mode .player-overlay .btn-control .icon,
+.player-container:fullscreen .player-overlay .btn-control .icon,
+.player-container:-webkit-full-screen .player-overlay .btn-control .icon,
+.player-container:-moz-full-screen .player-overlay .btn-control .icon {
+    display: inline-block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+/* 播放器容器的鼠标控制 */
+.player-container {
+    cursor: default;
+    transition: cursor 0.3s ease;
+}
+
+/* 鼠标不活动时隐藏光标（窗口模式和全屏模式统一） */
+body:not(.mouse-active) .player-container {
+    cursor: none;
+}
+
+body:not(.mouse-active) .player-container * {
+    cursor: none !important;
+}
+
+/* 鼠标活动时显示光标 */
+body.mouse-active .player-container {
+    cursor: default;
+}
+
+body.mouse-active .player-container * {
+    cursor: inherit;
+}
+
+/* 全屏模式下的body样式 */
+body.fullscreen-mode {
+    cursor: none;
+    transition: cursor 0.3s ease;
+}
+
+body.fullscreen-mode * {
+    cursor: inherit;
+}
+
+/* 全屏模式下鼠标移动时显示指针 */
+body.fullscreen-mode.mouse-active {
+    cursor: default;
+}
+
+body.fullscreen-mode.mouse-active * {
+    cursor: inherit;
+}
+
+/* 全屏模式下鼠标悬停时显示指针 */
+body.fullscreen-mode .player-overlay,
+body.fullscreen-mode .player-overlay * {
+    cursor: pointer !important;
+}
+
+/* 全屏状态下的弹幕输入容器 */
+.player-container:fullscreen .danmaku-input-container,
+.player-container:-webkit-full-screen .danmaku-input-container,
+.player-container:-moz-full-screen .danmaku-input-container,
+body.fullscreen-mode .danmaku-input-container {
+    position: fixed !important;
+    bottom: 100px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    z-index: 9999 !important;
+    width: auto !important;
+    max-width: 600px !important;
+    min-width: 500px !important;
+}
+
+/* 确保弹幕面板在全屏下的隐藏状态正确 */
+body.fullscreen-mode .danmaku-input-container.hidden {
+    display: none !important;
+}
+
+/* 全屏状态下的选集面板 */
+.player-container:fullscreen~.episode-panel,
+.player-container:-webkit-full-screen~.episode-panel,
+.player-container:-moz-full-screen~.episode-panel,
+body.fullscreen-mode .episode-panel {
+    position: fixed !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 9998 !important;
+    width: 350px !important;
+    background: rgba(30, 30, 30, 0.95) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+}
+
+/* 全屏模式下的弹幕容器适配 */
+.player-container:fullscreen .danmaku-container,
+.player-container:-webkit-full-screen .danmaku-container,
+.player-container:-moz-full-screen .danmaku-container,
+body.fullscreen-mode .danmaku-container {
+    position: fixed !important;
+    top: 80px !important;
+    /* 为控制栏留出空间 */
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 120px !important;
+    /* 为弹幕输入框和底部控制栏留出空间 */
+    z-index: 100 !important;
+    width: 100vw !important;
+    height: calc(100vh - 200px) !important;
+}
+
+/* 全屏模式下的投屏对话框适配 */
+.player-container:fullscreen .cast-device-modal,
+.player-container:-webkit-full-screen .cast-device-modal,
+.player-container:-moz-full-screen .cast-device-modal,
+body.fullscreen-mode .cast-device-modal {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 10000 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+}
+
+/* 全屏模式下的加载状态适配 */
+body.fullscreen-mode .player-loading,
+.player-container:fullscreen .player-loading,
+.player-container:-webkit-full-screen .player-loading,
+.player-container:-moz-full-screen .player-loading {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 9999 !important;
+    background: rgba(0, 0, 0, 0.8) !important;
+}
+
+/* 全屏模式下的错误状态适配 */
+body.fullscreen-mode .player-error,
+.player-container:fullscreen .player-error,
+.player-container:-webkit-full-screen .player-error,
+.player-container:-moz-full-screen .player-error {
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    z-index: 9999 !important;
+    background: rgba(0, 0, 0, 0.9) !important;
+    padding: 30px !important;
+    border-radius: 12px !important;
+}
+
 /* =================== 弹幕系统样式 =================== */
 
 /* 弹幕容器 */
@@ -693,7 +902,7 @@ body {
     left: 50%;
     transform: translateX(-50%);
     z-index: 200;
-    display: none;
+    display: block;
     background: rgba(0, 0, 0, 0.85);
     border-radius: 10px;
     padding: 20px;
@@ -705,10 +914,107 @@ body {
     /* 确保在不同分辨率下都有合适的位置 */
 }
 
+/* 隐藏状态的弹幕面板 */
+.danmaku-input-container.hidden {
+    display: none !important;
+}
+
 .danmaku-input-panel {
     display: flex;
     flex-direction: column;
     gap: 12px;
+}
+
+/* 弹幕面板头部 */
+.danmaku-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.danmaku-panel-header span {
+    font-size: 16px;
+    font-weight: 500;
+    color: #ffffff;
+}
+
+.btn-close-panel {
+    background: none;
+    border: none;
+    color: #ffffff;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: background-color 0.3s ease;
+}
+
+.btn-close-panel:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* 弹幕设置区域 */
+.danmaku-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 5px;
+}
+
+.danmaku-toggle-group {
+    display: flex;
+    align-items: center;
+}
+
+.danmaku-toggle-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    color: #ffffff;
+    font-size: 14px;
+}
+
+.danmaku-toggle-group input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #00aaff;
+}
+
+.danmaku-type-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.danmaku-type-group label {
+    color: #ffffff;
+    font-size: 14px;
+    min-width: 80px;
+}
+
+#danmaku-type {
+    padding: 6px 10px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    font-size: 14px;
+    outline: none;
+    cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+#danmaku-type:focus {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: #00aaff;
+}
+
+#danmaku-type option {
+    background: rgba(30, 30, 30, 0.95);
+    color: #ffffff;
 }
 
 /* 弹幕输入框 */
@@ -1212,4 +1518,205 @@ body {
         width: 100%;
         justify-content: center;
     }
+}
+
+/* 底部播放控制栏样式 */
+.overlay-footer {
+    margin-top: auto;
+}
+
+.playback-controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 10px 0;
+}
+
+.btn-playback,
+.btn-volume,
+.btn-fullscreen {
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    color: #ffffff;
+    cursor: pointer;
+    padding: 8px 12px;
+    font-size: 16px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    height: 40px;
+}
+
+.btn-playback:hover,
+.btn-volume:hover,
+.btn-fullscreen:hover {
+    background: rgba(0, 120, 212, 0.8);
+    border-color: rgba(0, 120, 212, 0.5);
+    transform: translateY(-1px);
+}
+
+.progress-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.time-info {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 14px;
+    color: #ffffff;
+    min-width: 100px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.time-separator {
+    color: #ccc;
+}
+
+.progress-bar-container {
+    flex: 1;
+    height: 20px;
+    display: flex;
+    align-items: center;
+}
+
+.progress-bar {
+    position: relative;
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    cursor: pointer;
+    transition: height 0.2s ease;
+}
+
+.progress-bar:hover {
+    height: 6px;
+}
+
+.progress-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: #0078d4;
+    border-radius: 2px;
+    transition: width 0.1s ease;
+}
+
+.progress-handle {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    background: #ffffff;
+    border: 2px solid #0078d4;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.progress-bar:hover .progress-handle,
+.progress-bar.dragging .progress-handle {
+    opacity: 1;
+}
+
+.volume-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.volume-bar-container {
+    width: 80px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+}
+
+.volume-bar {
+    position: relative;
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    cursor: pointer;
+}
+
+.volume-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: #0078d4;
+    border-radius: 2px;
+    transition: width 0.1s ease;
+}
+
+.volume-handle {
+    position: absolute;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    background: #ffffff;
+    border: 2px solid #0078d4;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.volume-bar:hover .volume-handle,
+.volume-bar.dragging .volume-handle {
+    opacity: 1;
+}
+
+/* 全屏模式下的底部控制栏样式 */
+.player-container:fullscreen .overlay-footer,
+.player-container:-webkit-full-screen .overlay-footer,
+.player-container:-moz-full-screen .overlay-footer,
+body.fullscreen-mode .overlay-footer {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 999999 !important;
+    background: rgba(0, 0, 0, 0.8) !important;
+    padding: 15px 30px !important;
+    margin: 0 !important;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+body.fullscreen-mode .playback-controls,
+.player-container:fullscreen .playback-controls,
+.player-container:-webkit-full-screen .playback-controls,
+.player-container:-moz-full-screen .playback-controls {
+    gap: 20px !important;
+}
+
+body.fullscreen-mode .btn-playback,
+body.fullscreen-mode .btn-volume,
+body.fullscreen-mode .btn-fullscreen,
+.player-container:fullscreen .btn-playback,
+.player-container:fullscreen .btn-volume,
+.player-container:fullscreen .btn-fullscreen,
+.player-container:-webkit-full-screen .btn-playback,
+.player-container:-webkit-full-screen .btn-volume,
+.player-container:-webkit-full-screen .btn-fullscreen,
+.player-container:-moz-full-screen .btn-playback,
+.player-container:-moz-full-screen .btn-volume,
+.player-container:-moz-full-screen .btn-fullscreen {
+    width: 45px !important;
+    height: 45px !important;
+    font-size: 18px !important;
 }

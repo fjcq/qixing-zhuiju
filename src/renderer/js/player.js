@@ -83,6 +83,9 @@ class VideoPlayer {
         this.setupVideoEvents();
         this.setupControlEvents();
 
+        // 初始化播放控制栏状态
+        this.initializeControlsState();
+
         // 初始化弹幕系统
         this.initializeDanmaku();
 
@@ -133,6 +136,12 @@ class VideoPlayer {
         this.videoData = data.videoData || data;
         // currentEpisode是数组索引（从0开始），需要转换为从1开始的显示索引
         this.currentEpisodeIndex = (data.videoData?.currentEpisode ?? -1) + 1; // 将数组索引转换为显示索引
+
+        // 保存播放进度信息（来自历史记录）
+        this.resumeProgress = data.resumeProgress || null;
+        if (this.resumeProgress) {
+            console.log('[PLAYER] 接收到继续播放进度:', this.resumeProgress, 'seconds');
+        }
 
         // 如果直接传入了集数名称，保存它
         if (data.episodeName) {
@@ -714,6 +723,13 @@ class VideoPlayer {
             console.log('[PLAYER] 视频元数据加载完成，调整显示');
             this.adjustVideoDisplay();
         });
+
+        // 双击全屏功能
+        this.video.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            this.toggleFullscreen();
+            console.log('[PLAYER] 双击切换全屏');
+        });
     }
 
     // 调整视频显示以适应窗口
@@ -794,6 +810,65 @@ class VideoPlayer {
             });
         }
 
+        // 弹幕按钮
+        const toggleDanmakuBtn = document.getElementById('toggle-danmaku');
+        if (toggleDanmakuBtn) {
+            toggleDanmakuBtn.addEventListener('click', () => {
+                this.toggleDanmakuPanel();
+            });
+        }
+
+        // 关闭弹幕面板按钮
+        const closeDanmakuPanelBtn = document.getElementById('close-danmaku-panel');
+        if (closeDanmakuPanelBtn) {
+            closeDanmakuPanelBtn.addEventListener('click', () => {
+                this.hideDanmakuPanel();
+            });
+        }
+
+        // 弹幕启用/禁用开关
+        const enableDanmakuCheckbox = document.getElementById('enable-danmaku');
+        if (enableDanmakuCheckbox) {
+            enableDanmakuCheckbox.addEventListener('change', (e) => {
+                this.toggleDanmakuDisplay(e.target.checked);
+            });
+        }
+
+        // 弹幕类型切换
+        const danmakuTypeSelect = document.getElementById('danmaku-type');
+        if (danmakuTypeSelect) {
+            danmakuTypeSelect.addEventListener('change', (e) => {
+                this.changeDanmakuType(e.target.value);
+            });
+        }
+
+        // 发送弹幕按钮
+        const sendDanmakuBtn = document.getElementById('send-danmaku');
+        if (sendDanmakuBtn) {
+            sendDanmakuBtn.addEventListener('click', () => {
+                this.sendDanmaku();
+            });
+        }
+
+        // 弹幕输入框回车发送
+        const danmakuInput = document.getElementById('danmaku-input');
+        if (danmakuInput) {
+            danmakuInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.sendDanmaku();
+                }
+            });
+        }
+
+        // 弹幕面板阻止事件冒泡（仅为安全起见保留，实际不再需要外部点击关闭）
+        const danmakuPanel = document.getElementById('danmaku-input-container');
+        if (danmakuPanel) {
+            danmakuPanel.addEventListener('click', (e) => {
+                // 阻止点击事件冒泡到外层，防止面板被意外关闭
+                e.stopPropagation();
+            });
+        }
+
         // 关闭选集面板按钮
         const closeEpisodesBtn = document.getElementById('close-episodes');
         if (closeEpisodesBtn) {
@@ -812,8 +887,14 @@ class VideoPlayer {
             });
         }
 
+        // 设置自定义播放控制栏事件
+        this.setupPlaybackControls();
+
         // 鼠标移动显示悬浮控制栏
         this.setupOverlayControls();
+
+        // 设置全屏状态监听
+        this.setupFullscreenListeners();
     }
 
     // 播放上一集
@@ -911,6 +992,11 @@ class VideoPlayer {
                 e.preventDefault();
                 this.toggleEpisodePanel();
                 break;
+            case 'KeyC':
+                e.preventDefault();
+                // 全屏模式下按C键显示/隐藏控制栏
+                this.toggleControlsInFullscreen();
+                break;
             case 'Escape':
                 e.preventDefault();
                 this.hideEpisodePanel();
@@ -922,7 +1008,36 @@ class VideoPlayer {
         }
     }
 
-    // 切换窗口置顶状态
+    // 切换全屏模式下的控制栏显示
+    toggleControlsInFullscreen() {
+        const overlay = document.getElementById('player-overlay');
+        const isFullscreen = !!(document.fullscreenElement ||
+            document.webkitFullscreenElement ||
+            document.mozFullScreenElement);
+
+        if (isFullscreen && overlay) {
+            if (overlay.classList.contains('show')) {
+                // 当前显示，立即隐藏
+                overlay.classList.remove('show');
+                document.body.classList.remove('mouse-active');
+                console.log('[PLAYER] 手动隐藏控制栏和鼠标');
+            } else {
+                // 当前隐藏，显示并设置3秒后自动隐藏
+                overlay.classList.add('show');
+                document.body.classList.add('mouse-active');
+                console.log('[PLAYER] 手动显示控制栏和鼠标');
+
+                // 3秒后自动隐藏
+                setTimeout(() => {
+                    if (!overlay.matches(':hover')) {
+                        overlay.classList.remove('show');
+                        document.body.classList.remove('mouse-active');
+                        console.log('[PLAYER] 手动显示后3秒自动隐藏');
+                    }
+                }, 3000);
+            }
+        }
+    }    // 切换窗口置顶状态
     async toggleAlwaysOnTop() {
         try {
             if (window.electron && window.electron.window && window.electron.window.toggleAlwaysOnTop) {
@@ -953,10 +1068,34 @@ class VideoPlayer {
 
     // 切换全屏
     toggleFullscreen() {
+        const playerContainer = document.querySelector('.player-container');
+
         if (document.fullscreenElement) {
             document.exitFullscreen();
         } else {
-            this.video.requestFullscreen();
+            // 使用播放器容器进入全屏，而不是仅视频元素
+            if (playerContainer && playerContainer.requestFullscreen) {
+                playerContainer.requestFullscreen();
+            } else if (playerContainer && playerContainer.webkitRequestFullscreen) {
+                playerContainer.webkitRequestFullscreen();
+            } else if (playerContainer && playerContainer.mozRequestFullScreen) {
+                playerContainer.mozRequestFullScreen();
+            } else {
+                // 降级到视频元素全屏
+                this.video.requestFullscreen();
+            }
+        }
+    }
+
+    // 更新全屏按钮图标
+    updateFullscreenButton(isFullscreen) {
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        if (fullscreenBtn) {
+            const icon = fullscreenBtn.querySelector('.icon');
+            if (icon) {
+                icon.textContent = isFullscreen ? '⛶' : '⛶';
+            }
+            fullscreenBtn.title = isFullscreen ? '退出全屏' : '全屏';
         }
     }
 
@@ -993,25 +1132,57 @@ class VideoPlayer {
         try {
             let progress = null;
 
-            if (window.parent && window.parent.app && window.parent.app.storageService) {
-                progress = window.parent.app.storageService.getWatchProgress(
-                    this.videoData.vod_id,
-                    this.currentEpisodeIndex
-                );
+            // 优先使用从历史记录传入的播放进度
+            if (this.resumeProgress && this.resumeProgress > 10) {
+                progress = {
+                    currentTime: this.resumeProgress,
+                    percentage: 0 // 百分比需要等视频加载完成后计算
+                };
+                console.log('[PLAYER] 使用历史记录播放进度:', progress.currentTime, 'seconds');
             } else {
-                const progressKey = `progress_${this.videoData.vod_id}_${this.currentEpisodeIndex}`;
-                const saved = localStorage.getItem(progressKey);
-                if (saved) {
-                    progress = JSON.parse(saved);
+                // 如果没有历史记录进度，尝试从存储中获取
+                if (window.parent && window.parent.app && window.parent.app.storageService) {
+                    progress = window.parent.app.storageService.getWatchProgress(
+                        this.videoData.vod_id,
+                        this.currentEpisodeIndex
+                    );
+                } else {
+                    const progressKey = `progress_${this.videoData.vod_id}_${this.currentEpisodeIndex}`;
+                    const saved = localStorage.getItem(progressKey);
+                    if (saved) {
+                        progress = JSON.parse(saved);
+                    }
                 }
             }
 
-            if (progress && progress.currentTime > 10 && progress.percentage < 90) {
-                this.video.currentTime = progress.currentTime;
-                console.log(`恢复播放进度: ${progress.currentTime}s (${progress.percentage}%)`);
+            if (progress && progress.currentTime > 10) {
+                // 等待视频元数据加载完成后设置播放进度
+                const setProgressWhenReady = () => {
+                    if (this.video.duration && !isNaN(this.video.duration)) {
+                        // 确保进度不超过视频总时长的90%
+                        const maxTime = this.video.duration * 0.9;
+                        const seekTime = Math.min(progress.currentTime, maxTime);
+
+                        this.video.currentTime = seekTime;
+                        console.log(`[PLAYER] 恢复播放进度: ${seekTime}s / ${this.video.duration}s (${Math.round((seekTime / this.video.duration) * 100)}%)`);
+
+                        // 清除历史记录中的播放进度，避免重复使用
+                        this.resumeProgress = null;
+                    } else {
+                        // 如果视频还没准备好，等待一段时间后重试
+                        setTimeout(setProgressWhenReady, 500);
+                    }
+                };
+
+                // 如果视频已经准备好，直接设置；否则等待
+                if (this.video.readyState >= 1) {
+                    setProgressWhenReady();
+                } else {
+                    this.video.addEventListener('loadedmetadata', setProgressWhenReady, { once: true });
+                }
             }
         } catch (error) {
-            console.warn('恢复播放进度失败:', error);
+            console.warn('[PLAYER] 恢复播放进度失败:', error);
         }
     }
 
@@ -1128,7 +1299,260 @@ class VideoPlayer {
         }
     }
 
-    // 设置悬浮控制栏
+    // 设置自定义播放控制栏
+    setupPlaybackControls() {
+        if (!this.video) return;
+
+        // 播放/暂停按钮
+        const playPauseBtn = document.getElementById('play-pause-btn');
+        if (playPauseBtn) {
+            playPauseBtn.addEventListener('click', () => {
+                this.togglePlayPause();
+            });
+        }
+
+        // 全屏按钮
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        if (fullscreenBtn) {
+            fullscreenBtn.addEventListener('click', () => {
+                this.toggleFullscreen();
+            });
+        }
+
+        // 音量按钮
+        const volumeBtn = document.getElementById('volume-btn');
+        if (volumeBtn) {
+            volumeBtn.addEventListener('click', () => {
+                this.toggleMute();
+            });
+        }
+
+        // 进度条控制
+        this.setupProgressBar();
+
+        // 音量条控制
+        this.setupVolumeBar();
+
+        // 更新时间显示和进度条
+        this.video.addEventListener('timeupdate', () => {
+            this.updateProgressDisplay();
+        });
+
+        // 视频加载完成时更新总时长
+        this.video.addEventListener('loadedmetadata', () => {
+            this.updateDurationDisplay();
+        });
+
+        // 播放状态改变时更新按钮
+        this.video.addEventListener('play', () => {
+            this.updatePlayPauseButton(true);
+        });
+
+        this.video.addEventListener('pause', () => {
+            this.updatePlayPauseButton(false);
+        });
+
+        // 音量变化时更新音量按钮和进度条
+        this.video.addEventListener('volumechange', () => {
+            this.updateVolumeDisplay();
+        });
+    }
+
+    // 初始化控制栏状态
+    initializeControlsState() {
+        // 设置默认音量
+        if (this.video) {
+            this.video.volume = 0.8; // 设置为80%音量
+        }
+
+        // 初始化显示状态
+        setTimeout(() => {
+            this.updatePlayPauseButton(false); // 初始为暂停状态
+            this.updateVolumeDisplay();
+            this.updateFullscreenButton(false);
+            this.updateDurationDisplay();
+        }, 100);
+    }
+
+    // 切换播放/暂停
+    togglePlayPause() {
+        if (this.video.paused) {
+            this.video.play();
+        } else {
+            this.video.pause();
+        }
+    }
+
+    // 切换静音
+    toggleMute() {
+        this.video.muted = !this.video.muted;
+    }
+
+    // 更新播放/暂停按钮
+    updatePlayPauseButton(isPlaying) {
+        const playPauseBtn = document.getElementById('play-pause-btn');
+        if (playPauseBtn) {
+            const icon = playPauseBtn.querySelector('.icon');
+            if (icon) {
+                icon.textContent = isPlaying ? '⏸️' : '▶️';
+            }
+            playPauseBtn.title = isPlaying ? '暂停' : '播放';
+        }
+    }
+
+    // 更新时间显示和进度条
+    updateProgressDisplay() {
+        const currentTime = this.video.currentTime;
+        const duration = this.video.duration || 0;
+
+        // 更新时间显示
+        const currentTimeElement = document.getElementById('current-time');
+        if (currentTimeElement) {
+            currentTimeElement.textContent = this.formatTime(currentTime);
+        }
+
+        // 更新进度条
+        const progressFill = document.getElementById('progress-fill');
+        const progressHandle = document.getElementById('progress-handle');
+        if (progressFill && progressHandle && duration > 0) {
+            const percentage = (currentTime / duration) * 100;
+            progressFill.style.width = percentage + '%';
+            progressHandle.style.left = percentage + '%';
+        }
+    }
+
+    // 更新总时长显示
+    updateDurationDisplay() {
+        const duration = this.video.duration || 0;
+        const totalTimeElement = document.getElementById('total-time');
+        if (totalTimeElement) {
+            totalTimeElement.textContent = this.formatTime(duration);
+        }
+    }
+
+    // 更新音量显示
+    updateVolumeDisplay() {
+        const volumeBtn = document.getElementById('volume-btn');
+        const volumeFill = document.getElementById('volume-fill');
+        const volumeHandle = document.getElementById('volume-handle');
+
+        // 更新音量按钮图标
+        if (volumeBtn) {
+            const icon = volumeBtn.querySelector('.icon');
+            if (icon) {
+                if (this.video.muted || this.video.volume === 0) {
+                    icon.textContent = '🔇';
+                } else if (this.video.volume < 0.5) {
+                    icon.textContent = '🔉';
+                } else {
+                    icon.textContent = '🔊';
+                }
+            }
+        }
+
+        // 更新音量条
+        if (volumeFill && volumeHandle) {
+            const volume = this.video.muted ? 0 : this.video.volume;
+            const percentage = volume * 100;
+            volumeFill.style.width = percentage + '%';
+            volumeHandle.style.left = percentage + '%';
+        }
+    }
+
+    // 设置进度条控制
+    setupProgressBar() {
+        const progressBar = document.getElementById('progress-bar');
+        const progressHandle = document.getElementById('progress-handle');
+
+        if (!progressBar || !progressHandle) return;
+
+        let isDragging = false;
+
+        const updateProgress = (e) => {
+            const rect = progressBar.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const percentage = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
+            const newTime = (percentage / 100) * this.video.duration;
+
+            if (!isNaN(newTime)) {
+                this.video.currentTime = newTime;
+            }
+        };
+
+        progressBar.addEventListener('click', updateProgress);
+
+        progressHandle.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            progressBar.classList.add('dragging');
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                updateProgress(e);
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                progressBar.classList.remove('dragging');
+            }
+        });
+    }
+
+    // 设置音量条控制
+    setupVolumeBar() {
+        const volumeBar = document.getElementById('volume-bar');
+        const volumeHandle = document.getElementById('volume-handle');
+
+        if (!volumeBar || !volumeHandle) return;
+
+        let isDragging = false;
+
+        const updateVolume = (e) => {
+            const rect = volumeBar.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const percentage = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
+            const newVolume = percentage / 100;
+
+            this.video.volume = newVolume;
+            this.video.muted = newVolume === 0;
+        };
+
+        volumeBar.addEventListener('click', updateVolume);
+
+        volumeHandle.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            volumeBar.classList.add('dragging');
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                updateVolume(e);
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                volumeBar.classList.remove('dragging');
+            }
+        });
+    }
+
+    // 格式化时间显示
+    formatTime(seconds) {
+        if (!seconds || isNaN(seconds)) return '00:00';
+
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.floor(seconds % 60);
+
+        return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
+
+    // 设置悬浮控制栏 - 统一的鼠标和控制栏管理
     setupOverlayControls() {
         const playerContainer = document.querySelector('.player-container');
         const overlay = document.getElementById('player-overlay');
@@ -1138,12 +1562,18 @@ class VideoPlayer {
         let hideTimer = null;
 
         const showOverlay = () => {
+            // 始终显示鼠标和控制栏（全屏和窗口模式统一）
+            document.body.classList.add('mouse-active');
             overlay.classList.add('show');
+
             if (hideTimer) {
                 clearTimeout(hideTimer);
             }
+
+            // 3秒后自动隐藏
             hideTimer = setTimeout(() => {
                 if (!overlay.matches(':hover')) {
+                    document.body.classList.remove('mouse-active');
                     overlay.classList.remove('show');
                 }
             }, 3000);
@@ -1153,7 +1583,11 @@ class VideoPlayer {
             if (hideTimer) {
                 clearTimeout(hideTimer);
             }
-            overlay.classList.remove('show');
+            // 如果鼠标不在控制栏上，立即隐藏
+            if (!overlay.matches(':hover')) {
+                document.body.classList.remove('mouse-active');
+                overlay.classList.remove('show');
+            }
         };
 
         playerContainer.addEventListener('mousemove', showOverlay);
@@ -1163,7 +1597,70 @@ class VideoPlayer {
                 clearTimeout(hideTimer);
             }
         });
-        overlay.addEventListener('mouseleave', hideOverlay);
+        overlay.addEventListener('mouseleave', () => {
+            // 鼠标离开控制栏后，3秒后隐藏
+            hideTimer = setTimeout(() => {
+                document.body.classList.remove('mouse-active');
+                overlay.classList.remove('show');
+            }, 3000);
+        });
+    }
+
+    // 设置全屏状态监听器
+    setupFullscreenListeners() {
+        const playerContainer = document.querySelector('.player-container');
+        const overlay = document.getElementById('player-overlay');
+        const danmakuInputContainer = document.getElementById('danmaku-input-container');
+        const episodePanel = document.getElementById('episode-panel');
+
+        // 全屏状态变化监听
+        const handleFullscreenChange = () => {
+            const isFullscreen = !!(document.fullscreenElement ||
+                document.webkitFullscreenElement ||
+                document.mozFullScreenElement);
+
+            console.log('[PLAYER] 全屏状态变化:', isFullscreen);
+            console.log('[PLAYER] 当前全屏元素:', document.fullscreenElement);
+
+            // 更新全屏按钮图标
+            this.updateFullscreenButton(isFullscreen);
+
+            if (isFullscreen) {
+                // 进入全屏状态
+                document.body.classList.add('fullscreen-mode');
+                console.log('[PLAYER] 添加fullscreen-mode类');
+
+                // 立即显示一次控制栏，让用户知道控制栏还在
+                if (overlay) {
+                    overlay.classList.add('show');
+                    document.body.classList.add('mouse-active');
+                    console.log('[PLAYER] 进入全屏，显示控制栏');
+
+                    // 3秒后自动隐藏（如果鼠标不在控制栏上）
+                    setTimeout(() => {
+                        if (!overlay.matches(':hover')) {
+                            overlay.classList.remove('show');
+                            document.body.classList.remove('mouse-active');
+                            console.log('[PLAYER] 自动隐藏控制栏和鼠标');
+                        }
+                    }, 3000);
+                }
+            } else {
+                // 退出全屏状态
+                document.body.classList.remove('fullscreen-mode');
+                console.log('[PLAYER] 移除fullscreen-mode类');
+
+                // 退出全屏后立即显示鼠标和控制栏
+                document.body.classList.add('mouse-active');
+                if (overlay) {
+                    overlay.classList.add('show');
+                }
+            }
+        };        // 添加全屏状态变化监听器
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+        document.addEventListener('MSFullscreenChange', handleFullscreenChange);
     }
 
     // 切换选集面板显示状态
@@ -1191,6 +1688,171 @@ class VideoPlayer {
         const panel = document.getElementById('episode-panel');
         if (panel) {
             panel.classList.remove('show');
+        }
+    }
+
+    // 切换弹幕面板显示状态
+    toggleDanmakuPanel() {
+        const panel = document.getElementById('danmaku-input-container');
+        if (panel) {
+            console.log('[PLAYER] 弹幕面板切换 - 当前状态:', {
+                hasHiddenClass: panel.classList.contains('hidden'),
+                classList: Array.from(panel.classList),
+                computedDisplay: getComputedStyle(panel).display,
+                visibility: getComputedStyle(panel).visibility
+            });
+
+            if (panel.classList.contains('hidden')) {
+                console.log('[PLAYER] 显示弹幕面板');
+                this.showDanmakuPanel();
+            } else {
+                console.log('[PLAYER] 隐藏弹幕面板');
+                this.hideDanmakuPanel();
+            }
+
+            // 切换后再次检查状态
+            setTimeout(() => {
+                console.log('[PLAYER] 弹幕面板切换后状态:', {
+                    hasHiddenClass: panel.classList.contains('hidden'),
+                    classList: Array.from(panel.classList),
+                    computedDisplay: getComputedStyle(panel).display,
+                    visibility: getComputedStyle(panel).visibility
+                });
+            }, 100);
+        } else {
+            console.error('[PLAYER] 弹幕面板元素未找到');
+        }
+    }
+
+    // 显示弹幕面板
+    showDanmakuPanel() {
+        const panel = document.getElementById('danmaku-input-container');
+        if (panel) {
+            console.log('[PLAYER] 执行显示弹幕面板 - 移除hidden类');
+            panel.classList.remove('hidden');
+
+            // 强制设置显示样式作为备用
+            panel.style.display = 'block';
+
+            // 更新按钮状态
+            this.updateDanmakuButtonState(true);
+
+            // 焦点到输入框
+            const input = document.getElementById('danmaku-input');
+            if (input) {
+                setTimeout(() => input.focus(), 100);
+            }
+        } else {
+            console.error('[PLAYER] showDanmakuPanel: 弹幕面板元素未找到');
+        }
+    }
+
+    // 隐藏弹幕面板
+    hideDanmakuPanel() {
+        const panel = document.getElementById('danmaku-input-container');
+        if (panel) {
+            console.log('[PLAYER] 执行隐藏弹幕面板 - 添加hidden类');
+            panel.classList.add('hidden');
+
+            // 移除强制显示样式
+            panel.style.display = '';
+
+            // 更新按钮状态
+            this.updateDanmakuButtonState(false);
+        } else {
+            console.error('[PLAYER] hideDanmakuPanel: 弹幕面板元素未找到');
+        }
+    }
+
+    // 更新弹幕按钮状态
+    updateDanmakuButtonState(isPanelVisible) {
+        const btn = document.getElementById('toggle-danmaku');
+        if (btn) {
+            const icon = btn.querySelector('.icon');
+            if (isPanelVisible) {
+                // 面板显示时：显示关闭图标和相应提示
+                icon.textContent = '❌';
+                btn.title = '关闭弹幕设置面板';
+                btn.classList.add('active');
+            } else {
+                // 面板隐藏时：显示设置图标和相应提示
+                icon.textContent = '⚙️';
+                btn.title = '显示弹幕设置面板';
+                btn.classList.remove('active');
+            }
+        }
+    }
+
+    // 切换弹幕显示状态
+    toggleDanmakuDisplay(enabled) {
+        if (window.danmakuSystem) {
+            if (enabled) {
+                window.danmakuSystem.show();
+                console.log('[PLAYER] 弹幕显示已启用');
+            } else {
+                window.danmakuSystem.hide();
+                console.log('[PLAYER] 弹幕显示已禁用');
+            }
+        }
+    }
+
+    // 更改弹幕类型
+    changeDanmakuType(type) {
+        this.danmakuType = type;
+
+        // 如果使用增强弹幕系统，同步更新其模式
+        if (window.danmakuSystem && typeof window.danmakuSystem.danmakuMode !== 'undefined') {
+            window.danmakuSystem.danmakuMode = type;
+            console.log('[PLAYER] 增强弹幕系统模式已同步为:', type);
+
+            // 如果有保存设置的方法，也调用它
+            if (typeof window.danmakuSystem.saveDanmakuMode === 'function') {
+                window.danmakuSystem.saveDanmakuMode();
+            }
+        }
+
+        console.log('[PLAYER] 弹幕类型已切换为:', type === 'realtime' ? '实时弹幕' : '时间轴弹幕');
+    }
+
+    // 发送弹幕
+    sendDanmaku() {
+        const input = document.getElementById('danmaku-input');
+        const colorSelect = document.getElementById('danmaku-color');
+        const sizeSelect = document.getElementById('danmaku-size');
+        const typeSelect = document.getElementById('danmaku-type');
+
+        if (!input || !input.value.trim()) return;
+
+        const danmakuData = {
+            text: input.value.trim(),
+            color: colorSelect?.value || '#ffffff',
+            size: sizeSelect?.value || 'medium',
+            type: typeSelect?.value || 'realtime',
+            time: typeSelect?.value === 'timeline' ? this.video?.currentTime || 0 : Date.now()
+        };
+
+        if (window.danmakuSystem) {
+            if (typeSelect?.value === 'timeline') {
+                // 时间轴弹幕 - 绑定到当前播放时间
+                window.danmakuSystem.addTimelineDanmaku({
+                    ...danmakuData,
+                    time: this.video?.currentTime || 0
+                });
+                console.log('[PLAYER] 发送时间轴弹幕:', danmakuData);
+            } else {
+                // 实时弹幕
+                window.danmakuSystem.addDanmaku(danmakuData);
+                console.log('[PLAYER] 发送实时弹幕:', danmakuData);
+            }
+
+            // 清空输入框
+            input.value = '';
+
+            // 发送弹幕后关闭面板
+            this.hideDanmakuPanel();
+            console.log('[PLAYER] 弹幕发送成功，已关闭设置面板');
+        } else {
+            console.warn('[PLAYER] 弹幕系统未初始化');
         }
     }
 

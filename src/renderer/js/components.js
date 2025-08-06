@@ -910,9 +910,9 @@ class ComponentService {
     }
 
     // 播放视频
-    async playVideo(videoData, routeIndex, episodeIndex, episodeUrl, allRoutes) {
+    async playVideo(videoData, routeIndex, episodeIndex, episodeUrl, allRoutes, resumeProgress = null) {
         try {
-            console.log('[COMPONENTS] 播放视频:', { videoData, routeIndex, episodeIndex, episodeUrl });
+            console.log('[COMPONENTS] 播放视频:', { videoData, routeIndex, episodeIndex, episodeUrl, resumeProgress });
 
             const currentRoute = allRoutes[routeIndex];
             const currentEpisode = currentRoute.episodes[episodeIndex];
@@ -920,6 +920,7 @@ class ComponentService {
             console.log('[COMPONENTS] 当前线路:', currentRoute.name);
             console.log('[COMPONENTS] 当前剧集:', currentEpisode.name);
             console.log('[COMPONENTS] 播放URL:', episodeUrl);
+            console.log('[COMPONENTS] 继续播放进度:', resumeProgress);
 
             // 获取当前活跃站点信息
             const activeSite = this.apiService.getActiveSite();
@@ -952,7 +953,9 @@ class ComponentService {
                     currentRoute: routeIndex,
                     currentEpisode: episodeIndex,
                     routes: allRoutes
-                }
+                },
+                // 添加播放进度信息
+                resumeProgress: resumeProgress
             };
 
             try {
@@ -1154,16 +1157,21 @@ class ComponentService {
         // 查找对应的剧集按钮并高亮
         const episodeButtons = document.querySelectorAll('.episode-btn');
         let targetButton = null;
+        let routeIndex = 0;
+        let episodeIndex = 0;
 
         // 尝试根据剧集名称或集数找到对应按钮
         for (const btn of episodeButtons) {
             const buttonText = btn.textContent.trim();
-            const episodeIndex = parseInt(btn.dataset.episode);
+            const btnEpisodeIndex = parseInt(btn.dataset.episode);
+            const btnRouteIndex = parseInt(btn.dataset.route);
 
             // 匹配剧集名称或集数
             if (buttonText === history.episode_name ||
-                episodeIndex === (history.current_episode - 1)) {
+                btnEpisodeIndex === (history.current_episode - 1)) {
                 targetButton = btn;
+                routeIndex = btnRouteIndex;
+                episodeIndex = btnEpisodeIndex;
                 break;
             }
         }
@@ -1179,10 +1187,22 @@ class ComponentService {
             // 显示继续播放提示
             this.showNotification(`正在继续播放《${history.vod_name}》${history.episode_name}...`, 'success');
 
-            // 自动开始播放，延迟一点时间确保界面更新完成
+            // 直接调用playVideo方法，传递播放进度信息
             setTimeout(() => {
-                console.log('[COMPONENTS] 自动触发播放按钮点击');
-                targetButton.click();
+                console.log('[COMPONENTS] 从历史记录继续播放，进度:', history.progress);
+
+                // 获取剧集URL
+                const episodeUrl = targetButton.dataset.url;
+
+                // 调用playVideo方法，传递播放进度
+                this.playVideo(
+                    this.currentVideoData,
+                    routeIndex,
+                    episodeIndex,
+                    episodeUrl,
+                    this.currentRoutes,
+                    history.progress // 传递播放进度
+                );
             }, 800);
         } else {
             this.showNotification(`未找到对应的剧集：${history.episode_name}`, 'warning');

@@ -36,7 +36,7 @@
     <div id="player-app">
         <!-- 播放器容器 - 全屏布局 -->
         <div class="player-container">
-            <video id="video-player" controls autoplay>
+            <video id="video-player" autoplay>
                 您的浏览器不支持视频播放。
             </video>
 
@@ -51,11 +51,8 @@
                         <span id="video-episode">正片</span>
                     </div>
                     <div class="overlay-controls">
-                        <button id="toggle-danmaku" class="btn-control" title="开启/关闭弹幕">
-                            <span class="icon">💬</span>
-                        </button>
-                        <button id="toggle-episodes" class="btn-control" title="显示/隐藏选集">
-                            <span class="icon">📋</span>
+                        <button id="toggle-danmaku" class="btn-control" title="显示弹幕设置面板">
+                            <span class="icon">⚙️</span>
                         </button>
                         <button id="toggle-always-on-top" class="btn-control" title="窗口置顶">
                             <span class="icon">📌</span>
@@ -66,19 +63,70 @@
                         <button id="share-video" class="btn-control" title="分享此剧集给好友">
                             <span class="icon">📤</span>
                         </button>
-                        <button id="prev-episode" class="btn-control" disabled title="上一集">
-                            <span class="icon">⏮️</span>
+                    </div>
+                </div>
+
+                <!-- 底部播放控制栏 -->
+                <div class="overlay-footer">
+                    <div class="playback-controls">
+                        <button id="play-pause-btn" class="btn-playback" title="播放/暂停">
+                            <span class="icon">▶️</span>
                         </button>
-                        <button id="next-episode" class="btn-control" title="下一集">
-                            <span class="icon">⏭️</span>
+                        <div class="progress-container">
+                            <div class="time-info">
+                                <span id="current-time">00:00</span>
+                                <span class="time-separator">/</span>
+                                <span id="total-time">00:00</span>
+                            </div>
+                            <div class="progress-bar-container">
+                                <div class="progress-bar" id="progress-bar">
+                                    <div class="progress-fill" id="progress-fill"></div>
+                                    <div class="progress-handle" id="progress-handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="volume-control">
+                            <button id="volume-btn" class="btn-volume" title="静音/恢复">
+                                <span class="icon">🔊</span>
+                            </button>
+                            <div class="volume-bar-container">
+                                <div class="volume-bar" id="volume-bar">
+                                    <div class="volume-fill" id="volume-fill"></div>
+                                    <div class="volume-handle" id="volume-handle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <button id="fullscreen-btn" class="btn-fullscreen" title="全屏/退出全屏">
+                            <span class="icon">⛶</span>
                         </button>
                     </div>
                 </div>
             </div>
 
             <!-- 弹幕输入区域 -->
-            <div class="danmaku-input-container" id="danmaku-input-container">
+            <div class="danmaku-input-container hidden" id="danmaku-input-container">
                 <div class="danmaku-input-panel">
+                    <div class="danmaku-panel-header">
+                        <span>弹幕设置</span>
+                        <button id="close-danmaku-panel" class="btn-close-panel" title="关闭弹幕面板">
+                            <span class="icon">❌</span>
+                        </button>
+                    </div>
+                    <div class="danmaku-settings">
+                        <div class="danmaku-toggle-group">
+                            <label for="enable-danmaku">
+                                <input type="checkbox" id="enable-danmaku" checked>
+                                启用弹幕显示
+                            </label>
+                        </div>
+                        <div class="danmaku-type-group">
+                            <label>弹幕类型：</label>
+                            <select id="danmaku-type" title="弹幕类型">
+                                <option value="realtime">实时弹幕</option>
+                                <option value="timeline">时间轴弹幕</option>
+                            </select>
+                        </div>
+                    </div>
                     <input type="text" id="danmaku-input" placeholder="在这里输入弹幕..." maxlength="100" />
                     <div class="danmaku-controls">
                         <select id="danmaku-color" title="弹幕颜色">

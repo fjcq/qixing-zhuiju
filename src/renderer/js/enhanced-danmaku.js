@@ -30,6 +30,9 @@ class EnhancedDanmakuSystem extends DanmakuSystem {
         // 加载弹幕模式设置
         this.loadDanmakuMode();
 
+        // 同步弹幕类型选择控件
+        this.syncDanmakuTypeSelect();
+
         console.log(`[ENHANCED-DANMAKU] 当前弹幕模式: ${this.danmakuMode}`);
     }
 
@@ -204,6 +207,38 @@ class EnhancedDanmakuSystem extends DanmakuSystem {
         this.hideDanmakuInput();
     }
 
+    // 添加弹幕方法（供外部调用）
+    addDanmaku(danmakuData) {
+        // 兼容外部调用的弹幕数据格式
+        const formattedData = {
+            type: 'danmaku',
+            room: this.generateRoomId(this.currentVideoId || ''),
+            user: this.generateUserId(),
+            text: danmakuData.text,
+            color: danmakuData.color || '#ffffff',
+            size: danmakuData.size || 'medium',
+            time: Date.now(),
+            videoTime: this.currentVideoTime,
+            mode: danmakuData.type || 'realtime', // 使用传入的type作为mode
+            local: true
+        };
+
+        // 发送到WebSocket服务器
+        this.sendWebSocketMessage(formattedData);
+
+        // 根据模式处理弹幕
+        if (formattedData.mode === 'realtime') {
+            // 实时模式：立即显示
+            this.displayDanmaku(formattedData);
+        } else if (formattedData.mode === 'timeline') {
+            // 时间轴模式：保存到时间轴并立即显示一次（给发送者看到）
+            this.saveTimelineDanmaku(formattedData);
+            this.displayDanmaku(formattedData);
+        }
+
+        console.log(`[ENHANCED-DANMAKU] 添加弹幕: ${formattedData.mode} - ${formattedData.text}`);
+    }
+
     // 保存时间轴弹幕
     saveTimelineDanmaku(danmakuData) {
         const videoTime = Math.floor(danmakuData.videoTime || this.currentVideoTime);
@@ -218,6 +253,28 @@ class EnhancedDanmakuSystem extends DanmakuSystem {
         });
 
         console.log(`[ENHANCED-DANMAKU] 时间轴弹幕已保存: ${videoTime}s - ${danmakuData.text}`);
+    }
+
+    // 添加时间轴弹幕（公共API）
+    addTimelineDanmaku(danmakuData) {
+        const time = Math.floor(danmakuData.time || this.currentVideoTime);
+
+        const timelineDanmaku = {
+            ...danmakuData,
+            videoTime: time,
+            mode: 'timeline',
+            displayed: false
+        };
+
+        this.saveTimelineDanmaku(timelineDanmaku);
+
+        // 如果当前就是这个时间点，立即显示
+        if (Math.abs(this.currentVideoTime - time) <= 1) {
+            this.displayDanmaku({ ...timelineDanmaku, local: true });
+            timelineDanmaku.displayed = true;
+        }
+
+        console.log(`[ENHANCED-DANMAKU] 添加时间轴弹幕: ${time}s - ${danmakuData.text}`);
     }
 
     // 重写WebSocket消息处理
@@ -295,6 +352,15 @@ class EnhancedDanmakuSystem extends DanmakuSystem {
             this.danmakuMode = savedMode;
         }
         this.updateModeToggleUI();
+    }
+
+    // 同步弹幕类型选择控件
+    syncDanmakuTypeSelect() {
+        const typeSelect = document.getElementById('danmaku-type');
+        if (typeSelect) {
+            typeSelect.value = this.danmakuMode;
+            console.log(`[ENHANCED-DANMAKU] 弹幕类型选择控件已同步为: ${this.danmakuMode}`);
+        }
     }
 
     // 重写销毁方法

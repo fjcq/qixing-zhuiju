@@ -56,6 +56,11 @@ coverage/
 *.tmp
 *.temp
 
+# 测试文件
+*.test.js
+*.spec.js
+test-*.js
+
 # 环境变量文件
 .env
 .env.local
