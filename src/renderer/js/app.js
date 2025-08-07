@@ -204,7 +204,7 @@ class QixingZhuijuApp {
         const githubRepoBtn = document.getElementById('github-repo-btn');
         if (githubRepoBtn) {
             githubRepoBtn.addEventListener('click', async () => {
-                const url = 'https://github.com/fjcq/qixing-zhuiju';
+                const url = 'https://gitee.com/fjcq/qixing-zhuiju/releases/latest';
                 console.log('[APP] GitHub按钮被点击，准备打开链接:', url);
 
                 if (window.electronAPI && window.electronAPI.openExternal) {
@@ -215,7 +215,7 @@ class QixingZhuijuApp {
 
                         if (result && result.success) {
                             console.log('[APP] 外部链接打开成功');
-                            this.componentService.showNotification('已打开GitHub仓库链接', 'success');
+                            this.componentService.showNotification('已打开Gitee仓库链接', 'success');
                         } else {
                             console.error('[APP] 外部链接打开失败:', result?.error);
                             this.componentService.showNotification('打开链接失败: ' + (result?.error || '未知错误'), 'error');

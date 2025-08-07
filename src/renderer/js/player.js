@@ -3542,7 +3542,7 @@ ${description ? `💡 简介：${description}` : ''}
 
 🔐 分享码：${encryptedData}
 
-📱 下载七星追剧：github.com/fjcq/qixing-zhuiju`;
+📱 下载七星追剧：https://gitee.com/fjcq/qixing-zhuiju/releases/latest`;
 
         return shareText;
     }
