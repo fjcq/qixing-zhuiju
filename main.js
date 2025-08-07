@@ -4,6 +4,9 @@ const fs = require('fs');
 const { spawn, exec } = require('child_process');
 const os = require('os');
 
+// 导入DLNA客户端
+const DLNAClient = require('./src/dlna/dlna-client');
+
 // 创建日志文件记录错误
 function logToFile(message) {
     try {
@@ -251,6 +254,9 @@ class QixingZhuiju {
         this.mainWindow = null;
         this.playerWindow = null;
         this.castWindow = null; // 投屏窗口
+        this.testWindow = null; // 测试窗口
+        this.dlnaClient = new DLNAClient(); // DLNA客户端
+        this.discoveredDevices = []; // 发现的设备列表
         this.isDev = process.argv.includes('--dev');
     }
 
@@ -278,13 +284,13 @@ class QixingZhuiju {
             backgroundColor: '#00000000',  // 完全透明的背景
             vibrancy: 'dark',  // macOS亚克力效果（仅macOS）
             backgroundMaterial: 'acrylic',  // Windows亚克力效果（仅Windows 10+）
-            autoHideMenuBar: true,  // 自动隐藏菜单栏
+            autoHideMenuBar: false,  // 显示菜单栏用于测试
             show: false,
             title: '七星追剧'
         });
 
-        // 完全移除菜单栏
-        this.mainWindow.setMenuBarVisibility(false);
+        // 显示菜单栏用于测试
+        this.mainWindow.setMenuBarVisibility(true);
 
         // 加载主页面
         try {
@@ -526,24 +532,65 @@ class QixingZhuiju {
                     { type: 'separator' },
                     { role: 'togglefullscreen', label: '全屏' }
                 ]
+            },
+            {
+                label: '测试',
+                submenu: [
+                    {
+                        label: '测试设备发现',
+                        click: () => {
+                            this.openTestWindow();
+                        }
+                    }
+                ]
             }
         ];
 
         try {
             const menu = Menu.buildFromTemplate(template);
 
-            // 在 macOS 上设置应用菜单
-            if (process.platform === 'darwin') {
-                Menu.setApplicationMenu(menu);
-            } else {
-                // 在 Windows 和 Linux 上，由于我们隐藏了菜单栏，不设置菜单
-                Menu.setApplicationMenu(null);
-            }
+            // 在所有平台上设置应用菜单（用于测试）
+            Menu.setApplicationMenu(menu);
 
             console.log('[MAIN] 应用菜单创建完成');
         } catch (error) {
             console.error('[MAIN] 创建菜单失败:', error);
         }
+    }
+
+    // 打开测试窗口
+    openTestWindow() {
+        console.log('[MAIN] 打开设备发现测试窗口');
+
+        if (this.testWindow) {
+            this.testWindow.focus();
+            return;
+        }
+
+        this.testWindow = new BrowserWindow({
+            width: 900,
+            height: 700,
+            webPreferences: {
+                nodeIntegration: false,
+                contextIsolation: true,
+                webSecurity: false,
+                preload: path.join(__dirname, 'src', 'preload.js')
+            },
+            autoHideMenuBar: false, // 显示菜单栏方便调试
+            title: '设备发现测试'
+        });
+
+        // 加载测试页面
+        const testPagePath = path.join(__dirname, 'test-ipc-discover.html');
+        this.testWindow.loadFile(testPagePath);
+
+        // 打开开发者工具
+        this.testWindow.webContents.openDevTools();
+
+        this.testWindow.on('closed', () => {
+            console.log('[MAIN] 测试窗口已关闭');
+            this.testWindow = null;
+        });
     }
 
     setupIPC() {
@@ -707,6 +754,28 @@ class QixingZhuiju {
             } catch (error) {
                 console.error('[MAIN] 设备发现失败:', error);
                 return { success: false, error: error.message, devices: [] };
+            }
+        });
+
+        // DLNA投屏处理
+        ipcMain.handle('cast-to-dlna-device', async (event, deviceId, mediaUrl, metadata) => {
+            console.log('[MAIN] 收到DLNA投屏请求:', { deviceId, mediaUrl });
+            try {
+                return await this.castToDLNADevice(deviceId, mediaUrl, metadata);
+            } catch (error) {
+                console.error('[MAIN] DLNA投屏失败:', error);
+                return { success: false, error: error.message };
+            }
+        });
+
+        // 停止DLNA投屏
+        ipcMain.handle('stop-dlna-casting', async (event, deviceId) => {
+            console.log('[MAIN] 收到停止DLNA投屏请求:', deviceId);
+            try {
+                return await this.stopDLNACasting(deviceId);
+            } catch (error) {
+                console.error('[MAIN] 停止DLNA投屏失败:', error);
+                return { success: false, error: error.message };
             }
         });
 
@@ -1032,28 +1101,143 @@ class QixingZhuiju {
 
     // 系统级设备发现
     async discoverCastDevices() {
-        console.log('[MAIN] 开始系统级设备发现...');
-        const devices = [];
+        console.log('[MAIN] 开始DLNA设备发现...');
 
         try {
-            // 根据平台使用不同的发现方法
-            if (process.platform === 'win32') {
-                const windowsDevices = await this.discoverWindowsDevices();
-                devices.push(...windowsDevices);
-            } else if (process.platform === 'darwin') {
-                const macDevices = await this.discoverMacDevices();
-                devices.push(...macDevices);
-            } else {
-                const linuxDevices = await this.discoverLinuxDevices();
-                devices.push(...linuxDevices);
-            }
+            // 清空之前的设备列表
+            this.discoveredDevices = [];
 
-            console.log(`[MAIN] 系统级设备发现完成，找到 ${devices.length} 个设备`);
-            return devices;
+            // 设置DLNA客户端事件监听
+            this.dlnaClient.removeAllListeners(); // 清除之前的监听器
+            console.log('[MAIN] 已清除旧的事件监听器');
+
+            this.dlnaClient.on('deviceFound', (device) => {
+                console.log('[MAIN] 发现DLNA设备:', device.name, 'IP:', device.address);
+
+                // 检查是否已存在相同设备（基于ID去重）
+                const existingDeviceIndex = this.discoveredDevices.findIndex(d => d.id === device.id);
+
+                // 转换为统一的设备格式
+                const formattedDevice = {
+                    id: device.id,
+                    name: device.name,
+                    type: device.type,
+                    icon: device.icon,
+                    status: device.status,
+                    protocol: device.protocol,
+                    address: device.address,
+                    manufacturer: device.manufacturer,
+                    modelName: device.modelName,
+                    supportedServices: device.supportedServices ? Array.from(device.supportedServices) : [],
+                    lastSeen: device.lastSeen || device.discoveredAt,
+                    originalDevice: device // 保存原始设备对象
+                };
+
+                if (existingDeviceIndex >= 0) {
+                    // 更新已存在的设备信息
+                    this.discoveredDevices[existingDeviceIndex] = formattedDevice;
+                    console.log(`[MAIN] 设备信息已更新: ${device.name} (${device.address})`);
+                } else {
+                    // 添加新设备
+                    this.discoveredDevices.push(formattedDevice);
+                    console.log(`[MAIN] 设备已添加到列表: ${device.name} (${device.address})`);
+                }
+
+                console.log(`[MAIN] 当前设备列表总数: ${this.discoveredDevices.length}`);
+            });
+
+            this.dlnaClient.on('discoveryComplete', (devices) => {
+                console.log(`[MAIN] DLNA设备发现完成事件触发，传入设备数量: ${devices.length}`);
+                console.log(`[MAIN] 当前发现设备列表长度: ${this.discoveredDevices.length}`);
+            });
+
+            console.log('[MAIN] 事件监听器已设置，开始设备发现...');
+
+            // 开始设备发现
+            const startResult = await this.dlnaClient.startDiscovery(5000); // 5秒超时
+            console.log('[MAIN] startDiscovery 返回结果:', startResult);
+
+            // 等待发现过程完成
+            console.log('[MAIN] 等待设备发现完成...');
+            await new Promise((resolve) => {
+                const timeout = setTimeout(() => {
+                    console.log('[MAIN] 设备发现超时，强制结束');
+                    resolve();
+                }, 6000); // 6秒超时，给DLNA客户端足够时间
+
+                this.dlnaClient.once('discoveryComplete', () => {
+                    console.log('[MAIN] 收到 discoveryComplete 事件，结束等待');
+                    clearTimeout(timeout);
+                    resolve();
+                });
+
+                // 添加额外的检查
+                setTimeout(() => {
+                    console.log(`[MAIN] 中途检查：当前发现设备数量 ${this.discoveredDevices.length}`);
+                }, 2500);
+            });
+
+            console.log(`[MAIN] 最终发现 ${this.discoveredDevices.length} 个DLNA设备`);
+            return this.discoveredDevices;
 
         } catch (error) {
-            console.error('[MAIN] 系统级设备发现失败:', error);
-            return [];
+            console.error('[MAIN] DLNA设备发现失败:', error);
+            return this.discoveredDevices; // 返回已发现的设备
+        }
+    }
+
+    // DLNA投屏到设备
+    async castToDLNADevice(deviceId, mediaUrl, metadata = {}) {
+        console.log(`[MAIN] 开始DLNA投屏: ${deviceId}`);
+
+        try {
+            // 查找设备
+            const device = this.discoveredDevices.find(d => d.id === deviceId);
+            if (!device) {
+                throw new Error('设备不存在或已离线');
+            }
+
+            console.log(`[MAIN] 投屏到设备: ${device.name} (${device.address})`);
+
+            // 使用DLNA客户端进行投屏
+            const result = await this.dlnaClient.castToDevice(deviceId, mediaUrl, {
+                title: metadata.title || '七星追剧',
+                artist: metadata.artist || '未知',
+                album: metadata.album || '影视剧集'
+            });
+
+            if (result.success) {
+                console.log(`[MAIN] DLNA投屏成功: ${device.name}`);
+                return {
+                    success: true,
+                    message: `已投屏到 ${device.name}`,
+                    device: device
+                };
+            } else {
+                throw new Error(result.error || '投屏失败');
+            }
+
+        } catch (error) {
+            console.error('[MAIN] DLNA投屏失败:', error);
+            throw error;
+        }
+    }
+
+    // 停止DLNA投屏
+    async stopDLNACasting(deviceId) {
+        console.log(`[MAIN] 停止DLNA投屏: ${deviceId}`);
+
+        try {
+            // 这里可以实现停止播放的DLNA命令
+            // 目前简化实现，返回成功
+            return {
+                success: true,
+                message: '投屏已停止'
+            };
+
+        } catch (error) {
+            console.error('[MAIN] 停止DLNA投屏失败:', error);
+            throw error;
         }
     }
 

@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('electron', {
                 'start-system-casting',
                 'stop-casting',
                 'discover-cast-devices',
+                'cast-to-dlna-device',
+                'stop-dlna-casting',
                 'read-clipboard',
                 'write-clipboard'
             ];

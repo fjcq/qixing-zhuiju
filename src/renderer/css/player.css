@@ -1545,6 +1545,55 @@ body.fullscreen-mode .player-error,
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
+}
+
+/* DLNA设备特殊标识 */
+.cast-device-item[data-protocol="dlna"] .cast-device-icon::after {
+    content: "🔗";
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    font-size: 10px;
+    background: rgba(0, 120, 212, 0.9);
+    border-radius: 50%;
+    width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Chromecast设备特殊标识 */
+.cast-device-item[data-protocol="presentation"] .cast-device-icon::after {
+    content: "📡";
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    font-size: 10px;
+    background: rgba(52, 168, 83, 0.9);
+    border-radius: 50%;
+    width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 系统投屏设备特殊标识 */
+.cast-device-item[data-protocol="system"] .cast-device-icon::after {
+    content: "⚙️";
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    font-size: 10px;
+    background: rgba(255, 193, 7, 0.9);
+    border-radius: 50%;
+    width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 /* 设备信息 */

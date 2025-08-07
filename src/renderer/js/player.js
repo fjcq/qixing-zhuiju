@@ -2594,45 +2594,53 @@ class VideoPlayer {
 
     // 发现投屏设备（真实实现）
     async discoverCastDevices() {
-        console.log('[PLAYER] 开始真实设备发现...');
+        console.log('[PLAYER] 开始真实DLNA设备发现...');
         const devices = [];
 
         try {
-            // 1. 检查并使用浏览器 Presentation API 发现设备
-            if (navigator.presentation && navigator.presentation.getAvailability) {
-                console.log('[PLAYER] 使用 Presentation API 搜索设备...');
-                const presentationDevices = await this.discoverPresentationDevices();
-                devices.push(...presentationDevices);
-            }
-
-            // 2. 使用 WebRTC 发现本地网络设备
-            console.log('[PLAYER] 使用 WebRTC 搜索本地网络设备...');
-            const webrtcDevices = await this.discoverWebRTCDevices();
-            devices.push(...webrtcDevices);
-
-            // 3. 调用主进程的系统级设备发现
+            // 1. 调用主进程的DLNA设备发现
             if (window.electron && window.electron.ipcRenderer) {
-                console.log('[PLAYER] 调用系统级设备发现...');
+                console.log('[PLAYER] 调用主进程DLNA设备发现...');
                 try {
-                    const systemDevices = await window.electron.ipcRenderer.invoke('discover-cast-devices');
-                    if (systemDevices && systemDevices.length > 0) {
-                        devices.push(...systemDevices);
+                    const dlnaDevices = await window.electron.ipcRenderer.invoke('discover-cast-devices');
+                    if (dlnaDevices && dlnaDevices.length > 0) {
+                        console.log(`[PLAYER] 发现 ${dlnaDevices.length} 个DLNA设备:`, dlnaDevices);
+                        devices.push(...dlnaDevices);
+                    } else {
+                        console.log('[PLAYER] 未发现DLNA设备');
                     }
                 } catch (error) {
-                    console.warn('[PLAYER] 系统级设备发现失败:', error);
+                    console.warn('[PLAYER] DLNA设备发现失败:', error);
                 }
             }
 
-            // 4. 使用 mDNS 发现网络设备（如果支持）
-            console.log('[PLAYER] 搜索 mDNS 网络服务...');
-            const mdnsDevices = await this.discoverMDNSDevices();
-            devices.push(...mdnsDevices);
+            // 2. 如果没有发现DLNA设备，尝试浏览器 Presentation API
+            if (devices.length === 0) {
+                console.log('[PLAYER] 尝试浏览器 Presentation API...');
+                if (navigator.presentation && navigator.presentation.getAvailability) {
+                    try {
+                        const presentationDevices = await this.discoverPresentationDevices();
+                        devices.push(...presentationDevices);
+                    } catch (error) {
+                        console.warn('[PLAYER] Presentation API 失败:', error);
+                    }
+                }
+            }
 
-            // 去重处理
-            const uniqueDevices = this.deduplicateDevices(devices);
+            // 3. 添加手动投屏选项
+            if (devices.length === 0) {
+                devices.push({
+                    id: 'manual_cast',
+                    name: '手动投屏 (系统默认)',
+                    type: '系统投屏',
+                    icon: '🖥️',
+                    status: 'available',
+                    protocol: 'system'
+                });
+            }
 
-            console.log(`[PLAYER] 设备发现完成，找到 ${uniqueDevices.length} 个设备:`, uniqueDevices);
-            return uniqueDevices;
+            console.log(`[PLAYER] 设备发现完成，找到 ${devices.length} 个设备:`, devices);
+            return devices;
 
         } catch (error) {
             console.error('[PLAYER] 设备发现过程出错:', error);
@@ -2794,17 +2802,29 @@ class VideoPlayer {
             const deviceItem = document.createElement('div');
             deviceItem.className = 'cast-device-item';
             deviceItem.dataset.deviceId = device.id;
+            deviceItem.dataset.protocol = device.protocol || 'unknown'; // 添加协议标识
 
             const statusClass = device.status === 'available' ? 'available' :
                 device.status === 'busy' ? 'busy' : 'offline';
             const statusText = device.status === 'available' ? '可用' :
                 device.status === 'busy' ? '使用中' : '离线';
 
+            // 根据协议添加额外信息
+            let protocolInfo = '';
+            if (device.protocol === 'dlna') {
+                protocolInfo = ' (DLNA)';
+            } else if (device.protocol === 'presentation') {
+                protocolInfo = ' (Cast)';
+            } else if (device.protocol === 'system') {
+                protocolInfo = ' (系统)';
+            }
+
             deviceItem.innerHTML = `
                 <div class="cast-device-icon">${device.icon}</div>
                 <div class="cast-device-info">
                     <div class="cast-device-name">${device.name}</div>
-                    <div class="cast-device-type">${device.type}</div>
+                    <div class="cast-device-type">${device.type}${protocolInfo}</div>
+                    ${device.address ? `<div style="font-size: 11px; color: #999; margin-top: 2px;">${device.address}</div>` : ''}
                 </div>
                 <div class="cast-device-status ${statusClass}">${statusText}</div>
             `;
@@ -2879,20 +2899,35 @@ class VideoPlayer {
 
             const currentTime = this.video?.currentTime || 0;
 
-            // 根据设备类型使用不同的连接方式
+            // 准备元数据
+            const metadata = {
+                title: this.videoData?.vod_name || '七星追剧',
+                artist: this.videoData?.siteName || '未知来源',
+                album: '影视剧集'
+            };
+
+            // 根据设备协议使用不同的连接方式
             let success = false;
 
-            if (device.type === 'Chromecast' && navigator.presentation) {
+            if (device.protocol === 'dlna') {
+                // 使用DLNA协议投屏
+                success = await this.connectDLNADevice(device, currentUrl, metadata);
+            } else if (device.protocol === 'presentation' && navigator.presentation) {
+                // 使用Presentation API
                 success = await this.connectChromecast(currentUrl, currentTime);
-            } else if (device.type === 'AirPlay') {
-                success = await this.connectAirPlay(currentUrl, currentTime);
+            } else if (device.protocol === 'system') {
+                // 使用系统投屏
+                success = await this.connectSystemCasting(currentUrl, currentTime, metadata);
             } else {
+                // 通用设备连接
                 success = await this.connectGenericDevice(currentUrl, currentTime);
             }
 
             if (success) {
                 // 更新投屏状态
                 this.isCasting = true;
+                this.selectedCastDevice = device;
+
                 const castBtn = document.getElementById('cast-video');
                 if (castBtn) {
                     castBtn.classList.add('casting');
@@ -2905,6 +2940,7 @@ class VideoPlayer {
                 }
 
                 this.showNotification(`投屏到 ${device.name} 成功`, 'success');
+                console.log(`[PLAYER] 成功投屏到: ${device.name}`);
             } else {
                 throw new Error('连接失败');
             }
@@ -2912,6 +2948,60 @@ class VideoPlayer {
         } catch (error) {
             console.error('[PLAYER] 连接投屏设备失败:', error);
             this.showNotification(`连接 ${device.name} 失败: ${error.message}`, 'error');
+        }
+    }
+
+    // 连接DLNA设备
+    async connectDLNADevice(device, mediaUrl, metadata) {
+        console.log('[PLAYER] 使用DLNA协议投屏...');
+
+        try {
+            if (!window.electron || !window.electron.ipcRenderer) {
+                throw new Error('DLNA功能需要桌面版支持');
+            }
+
+            const result = await window.electron.ipcRenderer.invoke('cast-to-dlna-device', device.id, mediaUrl, metadata);
+
+            if (result.success) {
+                console.log('[PLAYER] DLNA投屏成功:', result.message);
+                return true;
+            } else {
+                throw new Error(result.error || 'DLNA投屏失败');
+            }
+
+        } catch (error) {
+            console.error('[PLAYER] DLNA投屏失败:', error);
+            throw error;
+        }
+    }
+
+    // 连接系统投屏
+    async connectSystemCasting(mediaUrl, currentTime, metadata) {
+        console.log('[PLAYER] 使用系统投屏...');
+
+        try {
+            if (!window.electron || !window.electron.ipcRenderer) {
+                throw new Error('系统投屏功能需要桌面版支持');
+            }
+
+            const castInfo = {
+                url: mediaUrl,
+                title: metadata.title,
+                currentTime: currentTime
+            };
+
+            const result = await window.electron.ipcRenderer.invoke('start-system-casting', castInfo);
+
+            if (result.success) {
+                console.log('[PLAYER] 系统投屏成功');
+                return true;
+            } else {
+                throw new Error(result.error || '系统投屏失败');
+            }
+
+        } catch (error) {
+            console.error('[PLAYER] 系统投屏失败:', error);
+            throw error;
         }
     }
 
@@ -2991,15 +3081,35 @@ class VideoPlayer {
         console.log('[PLAYER] 停止投屏...');
 
         try {
-            // 如果有活动的投屏连接，关闭它
-            if (this.presentationRequest) {
-                // 这里我们无法直接关闭连接，但可以清除引用
-                this.presentationRequest = null;
-            }
+            // 根据当前投屏设备的协议停止投屏
+            if (this.selectedCastDevice) {
+                if (this.selectedCastDevice.protocol === 'dlna') {
+                    // 停止DLNA投屏
+                    if (window.electron && window.electron.ipcRenderer) {
+                        await window.electron.ipcRenderer.invoke('stop-dlna-casting', this.selectedCastDevice.id);
+                    }
+                } else if (this.selectedCastDevice.protocol === 'presentation') {
+                    // 停止Presentation投屏
+                    if (this.presentationRequest) {
+                        this.presentationRequest = null;
+                    }
+                } else {
+                    // 停止系统投屏
+                    if (window.electron && window.electron.ipcRenderer) {
+                        await window.electron.ipcRenderer.invoke('stop-casting');
+                    }
+                }
 
-            // 调用系统级投屏停止
-            if (window.electron && window.electron.ipcRenderer) {
-                await window.electron.ipcRenderer.invoke('stop-casting');
+                console.log(`[PLAYER] 已停止投屏到: ${this.selectedCastDevice.name}`);
+            } else {
+                // 通用停止方法
+                if (this.presentationRequest) {
+                    this.presentationRequest = null;
+                }
+
+                if (window.electron && window.electron.ipcRenderer) {
+                    await window.electron.ipcRenderer.invoke('stop-casting');
+                }
             }
 
         } catch (error) {
@@ -3007,6 +3117,7 @@ class VideoPlayer {
         } finally {
             // 无论如何都要重置状态
             this.isCasting = false;
+            this.selectedCastDevice = null;
 
             const castBtn = document.getElementById('cast-video');
             if (castBtn) {
