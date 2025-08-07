@@ -216,9 +216,42 @@
                             </div>
 
                             <div class="about-section">
-                                <h3>更新日志</h3>
-                                <div class="changelog" id="changelog-container">
-                                    <!-- 更新日志内容将通过JavaScript动态生成 -->
+                                <h3>软件更新</h3>
+                                <div class="update-section">
+                                    <div class="current-version">
+                                        <span class="label">当前版本：</span>
+                                        <span class="value" id="current-version-display">v1.2.6</span>
+                                    </div>
+                                    <div class="update-controls">
+                                        <button class="update-btn" id="check-update-btn">
+                                            <span class="update-icon">🔄</span>
+                                            <span class="update-text">检查更新</span>
+                                        </button>
+                                        <button class="download-btn" id="download-latest-btn" style="display: none;">
+                                            <span class="download-icon">⬇️</span>
+                                            <span class="download-text">下载最新版</span>
+                                        </button>
+                                    </div>
+                                    <div class="update-status" id="update-status">
+                                        <p class="status-text">点击检查更新按钮来检查是否有新版本可用</p>
+                                    </div>
+                                    <div class="update-info" id="update-info" style="display: none;">
+                                        <h4>发现新版本</h4>
+                                        <div class="new-version-info">
+                                            <div class="version-item">
+                                                <span class="label">最新版本：</span>
+                                                <span class="value" id="latest-version"></span>
+                                            </div>
+                                            <div class="version-item">
+                                                <span class="label">发布时间：</span>
+                                                <span class="value" id="release-date"></span>
+                                            </div>
+                                            <div class="version-item">
+                                                <span class="label">更新内容：</span>
+                                                <div class="release-notes" id="release-notes"></div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -237,19 +270,6 @@
                                         <span class="label">技术栈：</span>
                                         <span class="value">Electron + HLS.js + WebSocket</span>
                                     </div>
-                                </div>
-                            </div>
-
-                            <div class="about-section">
-                                <h3>仓库链接</h3>
-                                <div class="repo-links">
-                                    <button class="repo-link" id="github-repo-btn">
-                                        <span class="repo-icon">📁</span>
-                                        <div class="repo-info">
-                                            <div class="repo-name">Gitee 仓库</div>
-                                            <div class="repo-url">gitee.com/fjcq/qixing-zhuiju/releases/latest</div>
-                                        </div>
-                                    </button>
                                 </div>
                             </div>
 

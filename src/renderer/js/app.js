@@ -86,9 +86,6 @@ class QixingZhuijuApp {
             // 加载并显示版本号
             await this.loadVersionInfo();
 
-            // 初始化更新日志
-            this.initializeChangelog();
-
             // 清理过期数据
             this.storageService.cleanupOldData();
 
@@ -200,40 +197,8 @@ class QixingZhuijuApp {
             this.addTestHistory();
         }
 
-        // GitHub链接点击事件
-        const githubRepoBtn = document.getElementById('github-repo-btn');
-        if (githubRepoBtn) {
-            githubRepoBtn.addEventListener('click', async () => {
-                const url = 'https://gitee.com/fjcq/qixing-zhuiju/releases/latest';
-                console.log('[APP] GitHub按钮被点击，准备打开链接:', url);
-
-                if (window.electronAPI && window.electronAPI.openExternal) {
-                    console.log('[APP] electronAPI可用，尝试打开外部链接');
-                    try {
-                        const result = await window.electronAPI.openExternal(url);
-                        console.log('[APP] 外部链接打开结果:', result);
-
-                        if (result && result.success) {
-                            console.log('[APP] 外部链接打开成功');
-                            this.componentService.showNotification('已打开Gitee仓库链接', 'success');
-                        } else {
-                            console.error('[APP] 外部链接打开失败:', result?.error);
-                            this.componentService.showNotification('打开链接失败: ' + (result?.error || '未知错误'), 'error');
-                        }
-                    } catch (error) {
-                        console.error('[APP] 打开外部链接异常:', error);
-                        this.componentService.showNotification('打开链接异常: ' + error.message, 'error');
-                    }
-                } else {
-                    console.warn('[APP] electronAPI不可用');
-                    console.log('[APP] window.electronAPI:', window.electronAPI);
-                    console.log('[APP] window对象键:', Object.keys(window));
-                    this.componentService.showNotification('electronAPI不可用，请检查preload脚本', 'warning');
-                }
-            });
-        } else {
-            console.warn('[APP] 未找到GitHub按钮元素');
-        }
+        // 更新检查功能
+        this.setupUpdateChecker();
 
         // 键盘快捷键
         document.addEventListener('keydown', (e) => {
@@ -307,57 +272,60 @@ class QixingZhuijuApp {
         try {
             const versionElement = document.getElementById('version-info');
             const aboutVersionElement = document.getElementById('about-version');
+            const currentVersionElement = document.getElementById('current-version-display');
 
             // 尝试从主进程获取版本号
             if (window.electron && window.electron.ipcRenderer) {
                 const version = await window.electron.ipcRenderer.invoke('get-app-version');
                 if (version) {
                     const versionText = `v${version}`;
+                    this.version = versionText; // 保存到实例属性
+
                     if (versionElement) {
                         versionElement.textContent = versionText;
                     }
                     if (aboutVersionElement) {
                         aboutVersionElement.textContent = versionText;
                     }
+                    if (currentVersionElement) {
+                        currentVersionElement.textContent = versionText;
+                    }
                     return;
                 }
             }
 
             // 如果无法从主进程获取，使用全局版本号
-            const defaultVersion = window.APP_VERSION || 'v1.2.4';
+            const defaultVersion = window.APP_VERSION || 'v1.2.6';
+            this.version = defaultVersion; // 保存到实例属性
+
             if (versionElement) {
                 versionElement.textContent = defaultVersion;
             }
             if (aboutVersionElement) {
                 aboutVersionElement.textContent = defaultVersion;
+            }
+            if (currentVersionElement) {
+                currentVersionElement.textContent = defaultVersion;
             }
         } catch (error) {
             console.warn('获取版本号失败:', error);
             // 使用全局版本号
-            const defaultVersion = window.APP_VERSION || 'v1.2.4';
+            const defaultVersion = window.APP_VERSION || 'v1.2.6';
+            this.version = defaultVersion; // 保存到实例属性
+
             const versionElement = document.getElementById('version-info');
             const aboutVersionElement = document.getElementById('about-version');
+            const currentVersionElement = document.getElementById('current-version-display');
+
             if (versionElement) {
                 versionElement.textContent = defaultVersion;
             }
             if (aboutVersionElement) {
                 aboutVersionElement.textContent = defaultVersion;
             }
-        }
-    }
-
-    // 初始化更新日志
-    initializeChangelog() {
-        try {
-            const changelogContainer = document.getElementById('changelog-container');
-            if (changelogContainer && window.generateChangelogHTML) {
-                changelogContainer.innerHTML = window.generateChangelogHTML(6); // 显示最近6个版本
-                console.log('更新日志初始化完成');
-            } else {
-                console.warn('更新日志容器或生成函数不存在');
+            if (currentVersionElement) {
+                currentVersionElement.textContent = defaultVersion;
             }
-        } catch (error) {
-            console.error('初始化更新日志失败:', error);
         }
     }
 
@@ -1117,6 +1085,180 @@ class QixingZhuijuApp {
             }
         } else {
             console.log('[APP] 分享的站点已存在:', existingSite);
+        }
+    }
+
+    // 设置更新检查功能
+    setupUpdateChecker() {
+        const checkUpdateBtn = document.getElementById('check-update-btn');
+        const downloadLatestBtn = document.getElementById('download-latest-btn');
+        const updateStatus = document.getElementById('update-status');
+        const updateInfo = document.getElementById('update-info');
+        const currentVersionDisplay = document.getElementById('current-version-display');
+
+        if (!checkUpdateBtn) {
+            console.warn('[APP] 未找到检查更新按钮');
+            return;
+        }
+
+        // 显示当前版本
+        if (currentVersionDisplay && this.version) {
+            currentVersionDisplay.textContent = this.version;
+        }
+
+        // 检查更新按钮事件
+        checkUpdateBtn.addEventListener('click', async () => {
+            await this.checkForUpdates();
+        });
+
+        // 下载最新版按钮事件
+        if (downloadLatestBtn) {
+            downloadLatestBtn.addEventListener('click', async () => {
+                const url = 'https://gitee.com/fjcq/qixing-zhuiju/releases/latest';
+                await this.openExternalLink(url, '下载页面');
+            });
+        }
+
+        console.log('[APP] 更新检查功能已初始化');
+    }
+
+    // 检查更新
+    async checkForUpdates() {
+        const checkUpdateBtn = document.getElementById('check-update-btn');
+        const downloadLatestBtn = document.getElementById('download-latest-btn');
+        const updateStatus = document.getElementById('update-status');
+        const updateInfo = document.getElementById('update-info');
+        const statusText = updateStatus?.querySelector('.status-text');
+
+        try {
+            // 更新UI状态
+            if (checkUpdateBtn) {
+                checkUpdateBtn.disabled = true;
+                checkUpdateBtn.querySelector('.update-text').textContent = '检查中...';
+            }
+
+            if (updateStatus) {
+                updateStatus.className = 'update-status checking';
+                if (statusText) statusText.textContent = '正在检查更新，请稍候...';
+            }
+
+            if (updateInfo) updateInfo.style.display = 'none';
+            if (downloadLatestBtn) downloadLatestBtn.style.display = 'none';
+
+            console.log('[APP] 开始检查更新...');
+
+            // 调用Gitee API获取最新版本信息
+            const response = await fetch('https://gitee.com/api/v5/repos/fjcq/qixing-zhuiju/releases/latest');
+
+            if (!response.ok) {
+                throw new Error(`API请求失败: ${response.status}`);
+            }
+
+            const releaseData = await response.json();
+            console.log('[APP] 获取到最新版本信息:', releaseData);
+
+            const latestVersion = releaseData.tag_name;
+            const releaseDate = new Date(releaseData.created_at).toLocaleDateString('zh-CN');
+            const releaseNotes = releaseData.body || '暂无更新说明';
+
+            // 比较版本
+            const currentVersion = this.version || 'v1.2.6';
+            const isNewerVersion = this.compareVersions(latestVersion, currentVersion);
+
+            if (isNewerVersion) {
+                // 有新版本
+                if (updateStatus) {
+                    updateStatus.className = 'update-status update-available';
+                    if (statusText) statusText.textContent = `发现新版本 ${latestVersion}，建议更新！`;
+                }
+
+                // 显示更新信息
+                if (updateInfo) {
+                    updateInfo.style.display = 'block';
+                    const latestVersionEl = document.getElementById('latest-version');
+                    const releaseDateEl = document.getElementById('release-date');
+                    const releaseNotesEl = document.getElementById('release-notes');
+
+                    if (latestVersionEl) latestVersionEl.textContent = latestVersion;
+                    if (releaseDateEl) releaseDateEl.textContent = releaseDate;
+                    if (releaseNotesEl) releaseNotesEl.textContent = releaseNotes;
+                }
+
+                // 显示下载按钮
+                if (downloadLatestBtn) {
+                    downloadLatestBtn.style.display = 'flex';
+                }
+
+                this.componentService.showNotification(`发现新版本 ${latestVersion}`, 'info');
+            } else {
+                // 已是最新版本
+                if (updateStatus) {
+                    updateStatus.className = 'update-status up-to-date';
+                    if (statusText) statusText.textContent = '您使用的已是最新版本！';
+                }
+
+                this.componentService.showNotification('您使用的已是最新版本', 'success');
+            }
+
+        } catch (error) {
+            console.error('[APP] 检查更新失败:', error);
+
+            if (updateStatus) {
+                updateStatus.className = 'update-status error';
+                if (statusText) statusText.textContent = `检查更新失败: ${error.message}`;
+            }
+
+            this.componentService.showNotification('检查更新失败: ' + error.message, 'error');
+        } finally {
+            // 恢复按钮状态
+            if (checkUpdateBtn) {
+                checkUpdateBtn.disabled = false;
+                checkUpdateBtn.querySelector('.update-text').textContent = '检查更新';
+            }
+        }
+    }
+
+    // 比较版本号
+    compareVersions(version1, version2) {
+        // 移除 'v' 前缀并分割版本号
+        const v1 = version1.replace(/^v/, '').split('.').map(Number);
+        const v2 = version2.replace(/^v/, '').split('.').map(Number);
+
+        // 确保数组长度一致
+        const maxLength = Math.max(v1.length, v2.length);
+        while (v1.length < maxLength) v1.push(0);
+        while (v2.length < maxLength) v2.push(0);
+
+        // 逐位比较
+        for (let i = 0; i < maxLength; i++) {
+            if (v1[i] > v2[i]) return true;  // version1 > version2
+            if (v1[i] < v2[i]) return false; // version1 < version2
+        }
+
+        return false; // 版本相同
+    }
+
+    // 打开外部链接
+    async openExternalLink(url, linkName = '链接') {
+        console.log(`[APP] 准备打开${linkName}:`, url);
+
+        if (window.electronAPI && window.electronAPI.openExternal) {
+            try {
+                const result = await window.electronAPI.openExternal(url);
+                console.log(`[APP] ${linkName}打开结果:`, result);
+
+                if (result && result.success) {
+                    this.componentService.showNotification(`已打开${linkName}`, 'success');
+                } else {
+                    this.componentService.showNotification(`打开${linkName}失败: ` + (result?.error || '未知错误'), 'error');
+                }
+            } catch (error) {
+                console.error(`[APP] 打开${linkName}异常:`, error);
+                this.componentService.showNotification(`打开${linkName}异常: ` + error.message, 'error');
+            }
+        } else {
+            console.warn('[APP] electronAPI不可用');
+            this.componentService.showNotification(`请手动访问: ${url}`, 'info');
         }
     }
 }
