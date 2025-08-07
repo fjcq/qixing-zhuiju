@@ -6,6 +6,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>七星追剧 - 播放器</title>
     <link rel="stylesheet" href="css/player.css">
+
+    <!-- 立即执行的测试脚本 -->
+    <script>
+        console.log('🔥🔥🔥🔥🔥 [PLAYER-HEAD] player.html HEAD 脚本立即执行！🔥🔥🔥🔥🔥');
+        console.log('[PLAYER-HEAD] 执行时间:', new Date().toLocaleTimeString());
+        console.log('[PLAYER-HEAD] document.readyState:', document.readyState);
+        console.log('[PLAYER-HEAD] window.location:', window.location.href);
+
+        // 添加一个全局测试函数
+        window.testPlayerLoaded = function () {
+            console.log('🧪 [PLAYER-TEST] 播放器页面测试函数被调用');
+            return true;
+        };
+
+        // 立即测试元素查找
+        setTimeout(() => {
+            console.log('🔍 [PLAYER-HEAD] 延迟测试DOM元素...');
+            const video = document.getElementById('video-player');
+            const playBtn = document.getElementById('play-pause-btn');
+            console.log('[PLAYER-HEAD] video元素:', video ? '✅ 找到' : '❌ 未找到');
+            console.log('[PLAYER-HEAD] 播放按钮:', playBtn ? '✅ 找到' : '❌ 未找到');
+        }, 1000);
+    </script>
 </head>
 
 <body>
@@ -36,7 +59,8 @@
     <div id="player-app">
         <!-- 播放器容器 - 全屏布局 -->
         <div class="player-container">
-            <video id="video-player" autoplay controlsList="nodownload nofullscreen noremoteplayback">
+            <video id="video-player" autoplay controlsList="nodownload nofullscreen noremoteplayback"
+                preload="metadata">
                 您的浏览器不支持视频播放。
             </video>
 
@@ -365,7 +389,34 @@
     <script>
         // 确保DOM完全加载后初始化播放器
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('[PLAYER] DOM加载完成，开始初始化播放器');
+            console.log('🌟🌟🌟 [PLAYER] DOM加载完成，开始初始化播放器 🌟🌟🌟');
+
+            // 立即测试关键元素是否存在
+            console.log('🔍 [PLAYER-TEST] 开始检查关键DOM元素...');
+            const testElements = [
+                'video-player',
+                'play-pause-btn',
+                'player-overlay',
+                'toggle-always-on-top',
+                'share-video',
+                'cast-video'
+            ];
+
+            testElements.forEach(id => {
+                const element = document.getElementById(id);
+                console.log(`[PLAYER-TEST] ${id}: ${element ? '✅ 找到' : '❌ 未找到'}`);
+                if (element) {
+                    console.log(`[PLAYER-TEST] ${id} 详情:`, {
+                        tagName: element.tagName,
+                        className: element.className,
+                        style: element.style.cssText || '无内联样式',
+                        visible: element.offsetParent !== null
+                    });
+                }
+            });
+
+            console.log('🔍 [PLAYER-TEST] DOM元素检查完成');
+
             try {
                 window.videoPlayer = new VideoPlayer();
                 window.videoPlayer.initialize();

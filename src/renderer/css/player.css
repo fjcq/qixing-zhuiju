@@ -135,6 +135,14 @@ button {
     background: #000;
     max-width: 100%;
     max-height: 100%;
+    /* 确保视频元素可以接收点击事件 */
+    pointer-events: auto !important;
+    cursor: pointer;
+    /* 防止用户选择文本干扰点击 */
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
 }
 
 /* 隐藏原生视频控制栏 - 强制隐藏所有可能的控制元素 */
@@ -1893,6 +1901,12 @@ body.fullscreen-mode .player-error,
     height: 28px;
     font-size: 16px;
     padding: 2px;
+    /* 确保按钮可以接收点击事件 */
+    pointer-events: auto !important;
+    cursor: pointer !important;
+    /* 防止事件被其他元素阻止 */
+    position: relative;
+    z-index: 10;
 }
 
 .btn-playback:hover {

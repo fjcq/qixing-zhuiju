@@ -28,7 +28,8 @@ contextBridge.exposeInMainWorld('electron', {
                 'cast-to-dlna-device',
                 'stop-dlna-casting',
                 'read-clipboard',
-                'write-clipboard'
+                'write-clipboard',
+                'player-log'
             ];
             if (validChannels.includes(channel)) {
                 return ipcRenderer.invoke(channel, data);
@@ -64,6 +65,13 @@ contextBridge.exposeInMainWorld('electron', {
     clipboard: {
         readText: () => ipcRenderer.invoke('read-clipboard'),
         writeText: (text) => ipcRenderer.invoke('write-clipboard', text)
+    },
+    // 播放器日志API - 发送到主进程cmd控制台
+    playerLog: {
+        info: (message, ...args) => ipcRenderer.invoke('player-log', 'info', message, ...args),
+        warn: (message, ...args) => ipcRenderer.invoke('player-log', 'warn', message, ...args),
+        error: (message, ...args) => ipcRenderer.invoke('player-log', 'error', message, ...args),
+        debug: (message, ...args) => ipcRenderer.invoke('player-log', 'debug', message, ...args)
     }
 });
 

@@ -1,4 +1,33 @@
 // 播放器页面脚本
+
+// 创建cmd控制台日志函数
+const cmdLog = {
+    info: (message, ...args) => {
+        console.log(message, ...args); // 保留浏览器日志
+        if (window.electron && window.electron.playerLog) {
+            window.electron.playerLog.info(message, ...args);
+        }
+    },
+    warn: (message, ...args) => {
+        console.warn(message, ...args);
+        if (window.electron && window.electron.playerLog) {
+            window.electron.playerLog.warn(message, ...args);
+        }
+    },
+    error: (message, ...args) => {
+        console.error(message, ...args);
+        if (window.electron && window.electron.playerLog) {
+            window.electron.playerLog.error(message, ...args);
+        }
+    },
+    debug: (message, ...args) => {
+        console.log(message, ...args);
+        if (window.electron && window.electron.playerLog) {
+            window.electron.playerLog.debug(message, ...args);
+        }
+    }
+};
+
 class VideoPlayer {
     constructor() {
         this.video = null;
@@ -73,13 +102,13 @@ class VideoPlayer {
 
     // 初始化播放器
     initialize() {
-        console.log('[PLAYER] 初始化播放器...');
+        cmdLog.info('🎬 播放器初始化完成');
 
         // 初始化存储服务
         this.storageService = new StorageService();
-        console.log('[PLAYER] 存储服务初始化完成');
 
         this.video = document.getElementById('video-player');
+        cmdLog.info('📺 视频元素获取结果:', this.video ? '成功' : '失败');
 
         // 强制移除原生控制栏
         if (this.video) {
@@ -126,7 +155,6 @@ class VideoPlayer {
                 topRightControls.style.opacity = '0';
                 topRightControls.style.visibility = 'hidden';
                 topRightControls.style.pointerEvents = 'none';
-                console.log('[PLAYER] 初始化时隐藏右上角按钮');
             }
         }, 100);
     }
@@ -140,12 +168,7 @@ class VideoPlayer {
                 if (!window.danmakuSystem) {
                     window.danmakuSystem = new EnhancedDanmakuSystem();
                 }
-                console.log('[PLAYER] 增强版弹幕系统已就绪');
-            } else if (window.danmakuSystem) {
-                // 使用基础弹幕系统
-                console.log('[PLAYER] 基础弹幕系统已就绪');
-            } else {
-                console.log('[PLAYER] 等待弹幕系统加载...');
+            } else if (!window.danmakuSystem) {
                 setTimeout(initDanmaku, 100);
             }
         };
@@ -392,6 +415,18 @@ class VideoPlayer {
             // 开始播放视频
             await this.loadVideo(episodeUrl);
 
+            // 自动开始播放（如果是直接视频文件）
+            if (this.isDirectVideoFile(episodeUrl)) {
+                console.log('[PLAYER] 视频加载完成，开始自动播放');
+                try {
+                    await this.video.play();
+                    console.log('[PLAYER] 视频自动播放成功');
+                } catch (error) {
+                    console.log('[PLAYER] 自动播放失败，用户需要手动点击播放:', error.message);
+                    this.showNotification('点击播放按钮开始播放', 'info');
+                }
+            }
+
             // 记录播放历史
             this.recordPlayback(episodeIndex, episodeUrl);
 
@@ -486,8 +521,19 @@ class VideoPlayer {
         this.video.style.maxWidth = '100%';
         this.video.style.maxHeight = '100%';
 
+        // 确保视频元素可以接收事件
+        this.video.style.pointerEvents = 'auto';
+        this.video.style.zIndex = '1';
+
         // 清理可能存在的iframe
         this.cleanupWebPage();
+
+        console.log('[PLAYER] 视频元素状态:', {
+            display: this.video.style.display,
+            pointerEvents: this.video.style.pointerEvents,
+            zIndex: this.video.style.zIndex,
+            readyState: this.video.readyState
+        });
 
         // 根据文件类型选择播放方式
         if (videoUrl.includes('.m3u8') || videoUrl.includes('m3u8') || videoUrl.includes('.M3U8')) {
@@ -778,29 +824,121 @@ class VideoPlayer {
             this.adjustVideoDisplay();
         });
 
+        // 用于防止双击时重复触发单击事件
+        this.clickTimeout = null;
+        this.doubleClickFlag = false;
+
         // 双击全屏功能
         this.video.addEventListener('dblclick', (e) => {
             e.preventDefault();
+            e.stopPropagation();
+
+            // 设置双击标记，防止单击事件执行
+            this.doubleClickFlag = true;
+            if (this.clickTimeout) {
+                clearTimeout(this.clickTimeout);
+                this.clickTimeout = null;
+            }
+
             this.toggleFullscreen();
-            console.log('[PLAYER] 双击切换全屏');
+            cmdLog.info('🔥 [TRIGGER-DBLCLICK] 双击切换全屏');
+
+            // 200ms后清除双击标记
+            setTimeout(() => {
+                this.doubleClickFlag = false;
+            }, 200);
         });
 
-        // 单击切换播放/暂停
+        // 单击切换播放/暂停 - 使用延迟处理避免与双击冲突
         this.video.addEventListener('click', (e) => {
             e.preventDefault();
-            this.togglePlayPause();
-            console.log('[PLAYER] 单击切换播放/暂停');
+            e.stopPropagation();
+
+            // 如果是双击的一部分，忽略这次单击
+            if (this.doubleClickFlag) {
+                return;
+            }
+
+            // 清除之前的延迟执行
+            if (this.clickTimeout) {
+                clearTimeout(this.clickTimeout);
+            }
+
+            // 延迟150ms执行，如果期间发生双击则会被取消
+            this.clickTimeout = setTimeout(() => {
+                if (!this.doubleClickFlag) {
+                    cmdLog.info('🔥 [TRIGGER-2] 视频画面被点击！');
+                    cmdLog.info('🔥 [TRIGGER-2] 当前视频状态: paused=' + this.video?.paused + ', currentTime=' + this.video?.currentTime);
+                    cmdLog.info('🔥 [TRIGGER-2] 准备调用 togglePlayPause()...');
+                    this.togglePlayPause();
+                    cmdLog.info('🔥 [TRIGGER-2] togglePlayPause() 调用完成');
+                }
+                this.clickTimeout = null;
+            }, 150);
         });
 
-        // 监听播放状态变化
+        // 确保视频元素可以接收点击事件
+        this.video.style.pointerEvents = 'auto';
+        this.video.style.userSelect = 'none'; // 防止文本选择干扰点击
+
+        // 监听播放状态变化 - 增加更详细的日志
         this.video.addEventListener('play', () => {
+            console.log('🎉🎉🎉 [PLAYER-EVENT] 视频开始播放 - 触发play事件 🎉🎉🎉');
+            console.log('[PLAYER-EVENT] play事件时间:', new Date().toLocaleTimeString());
+            console.log('[PLAYER-EVENT] 当前视频状态:', {
+                paused: this.video.paused,
+                currentTime: this.video.currentTime,
+                readyState: this.video.readyState
+            });
             this.updatePlayPauseButton(true);
-            console.log('[PLAYER] 视频开始播放');
         });
 
         this.video.addEventListener('pause', () => {
+            console.log('⏸️⏸️⏸️ [PLAYER-EVENT] 视频已暂停 - 触发pause事件 ⏸️⏸️⏸️');
+            console.log('[PLAYER-EVENT] pause事件时间:', new Date().toLocaleTimeString());
+            console.log('[PLAYER-EVENT] 当前视频状态:', {
+                paused: this.video.paused,
+                currentTime: this.video.currentTime,
+                readyState: this.video.readyState
+            });
             this.updatePlayPauseButton(false);
-            console.log('[PLAYER] 视频暂停');
+        });
+
+        // 添加更多视频状态监听
+        this.video.addEventListener('loadstart', () => {
+            console.log('[PLAYER] 视频开始加载');
+        });
+
+        this.video.addEventListener('canplay', () => {
+            console.log('[PLAYER] 视频可以播放');
+        });
+
+        this.video.addEventListener('playing', () => {
+            console.log('[PLAYER] 视频正在播放');
+        });
+
+        this.video.addEventListener('waiting', () => {
+            console.log('[PLAYER] 视频缓冲中');
+        });
+
+        this.video.addEventListener('stalled', () => {
+            console.log('[PLAYER] 视频加载停滞');
+        });
+
+        // 监听视频错误
+        this.video.addEventListener('error', (e) => {
+            console.error('[PLAYER] 视频播放错误:', e);
+            const error = this.video.error;
+            if (error) {
+                console.error('[PLAYER] 错误详情:', {
+                    code: error.code,
+                    message: error.message,
+                    MEDIA_ERR_ABORTED: error.MEDIA_ERR_ABORTED,
+                    MEDIA_ERR_NETWORK: error.MEDIA_ERR_NETWORK,
+                    MEDIA_ERR_DECODE: error.MEDIA_ERR_DECODE,
+                    MEDIA_ERR_SRC_NOT_SUPPORTED: error.MEDIA_ERR_SRC_NOT_SUPPORTED
+                });
+            }
         });
 
         // 监听音量变化
@@ -884,8 +1022,6 @@ class VideoPlayer {
         // 置顶按钮 - 关键修复点
         const toggleAlwaysOnTopBtn = document.getElementById('toggle-always-on-top');
         if (toggleAlwaysOnTopBtn) {
-            console.log('[PLAYER] 找到置顶按钮，准备设置事件监听');
-
             // 使用cloneNode方法彻底移除所有已存在的事件监听器
             const newToggleBtn = toggleAlwaysOnTopBtn.cloneNode(true);
             toggleAlwaysOnTopBtn.parentNode.replaceChild(newToggleBtn, toggleAlwaysOnTopBtn);
@@ -1008,6 +1144,14 @@ class VideoPlayer {
         const playerContainer = document.querySelector('.player-container');
         if (playerContainer) {
             playerContainer.addEventListener('click', (e) => {
+                console.log('[PLAYER] 播放器容器被点击:', {
+                    target: e.target.tagName,
+                    targetId: e.target.id,
+                    targetClass: e.target.className,
+                    clientX: e.clientX,
+                    clientY: e.clientY
+                });
+
                 if (e.target === playerContainer || e.target === this.video) {
                     this.hideEpisodePanel();
                 }
@@ -1086,10 +1230,34 @@ class VideoPlayer {
     async handleKeyboard(e) {
         if (!this.video) return;
 
+        // 检查焦点是否在输入框中，如果是则不处理快捷键
+        const activeElement = document.activeElement;
+        const isInputFocused = activeElement && (
+            activeElement.tagName === 'INPUT' ||
+            activeElement.tagName === 'TEXTAREA' ||
+            activeElement.isContentEditable
+        );
+
+        if (isInputFocused && e.code !== 'Escape') {
+            console.log('[PLAYER] 输入框有焦点，跳过快捷键处理');
+            return;
+        }
+
+        console.log('[PLAYER] 处理键盘事件:', e.code, '当前视频状态:', {
+            paused: this.video.paused,
+            currentTime: this.video.currentTime,
+            readyState: this.video.readyState
+        });
+
         switch (e.code) {
             case 'Space':
                 e.preventDefault();
+                e.stopPropagation();
+                cmdLog.info('🔥 [TRIGGER-3] 空格键被按下！');
+                cmdLog.info('🔥 [TRIGGER-3] 当前视频状态: paused=' + this.video?.paused + ', currentTime=' + this.video?.currentTime);
+                cmdLog.info('🔥 [TRIGGER-3] 准备调用 togglePlayPause()...');
                 this.togglePlayPause();
+                cmdLog.info('🔥 [TRIGGER-3] togglePlayPause() 调用完成');
                 break;
             case 'F5':
                 e.preventDefault();
@@ -1152,19 +1320,16 @@ class VideoPlayer {
                 // 当前显示，立即隐藏
                 overlay.classList.remove('show');
                 document.body.classList.remove('mouse-active');
-                console.log('[PLAYER] 手动隐藏控制栏和鼠标');
             } else {
                 // 当前隐藏，显示并设置3秒后自动隐藏
                 overlay.classList.add('show');
                 document.body.classList.add('mouse-active');
-                console.log('[PLAYER] 手动显示控制栏和鼠标');
 
                 // 3秒后自动隐藏
                 setTimeout(() => {
                     if (!overlay.matches(':hover')) {
                         overlay.classList.remove('show');
                         document.body.classList.remove('mouse-active');
-                        console.log('[PLAYER] 手动显示后3秒自动隐藏');
                     }
                 }, 3000);
             }
@@ -1190,7 +1355,6 @@ class VideoPlayer {
 
                 // 更新按钮状态
                 const toggleBtn = document.getElementById('toggle-always-on-top');
-                console.log(`[PLAYER] 找到置顶按钮元素: ${toggleBtn ? '是' : '否'}`);
 
                 if (toggleBtn) {
                     // 清除旧样式
@@ -1344,15 +1508,7 @@ class VideoPlayer {
         const duration = this.video.duration;
 
         if (currentTime > 0 && duration > 0) {
-            console.log('[PLAYER] 保存播放进度:', {
-                vodId: this.videoData.vod_id,
-                episode: this.currentEpisodeIndex,
-                currentTime: Math.round(currentTime),
-                duration: Math.round(duration),
-                percentage: Math.round((currentTime / duration) * 100)
-            });
-
-            // 使用存储服务保存进度
+            // 静默保存播放进度，避免频繁日志输出
             this.storageService.saveWatchProgress(
                 this.videoData.vod_id,
                 this.currentEpisodeIndex,
@@ -1443,11 +1599,8 @@ class VideoPlayer {
 
     // 记录播放历史
     recordPlayback(episodeIndex, episodeUrl) {
-        console.log('[PLAYER] 记录播放历史:', {
-            视频ID: this.videoData.vod_id,
-            集数索引: episodeIndex,
-            URL: episodeUrl
-        });
+        // 简化日志输出，只记录基本信息
+        console.log(`[PLAYER] 播放历史：${this.videoData.vod_name} 第${episodeIndex + 1}集`);
 
         // 保存到内部播放历史数组
         this.playbackHistory.push({
@@ -1538,14 +1691,36 @@ class VideoPlayer {
 
     // 设置自定义播放控制栏
     setupPlaybackControls() {
-        if (!this.video) return;
+        cmdLog.info('🎮 setupPlaybackControls() 开始执行');
 
-        // 播放/暂停按钮
+        if (!this.video) {
+            cmdLog.error('❌ 视频元素为空，无法设置控制栏');
+            return;
+        }
+
+        cmdLog.info('✅ 视频元素可用，开始设置控制按钮...');
+
+        // 播放/暂停按钮 - 增加调试和错误处理
         const playPauseBtn = document.getElementById('play-pause-btn');
+
         if (playPauseBtn) {
-            playPauseBtn.addEventListener('click', () => {
+            cmdLog.info('🎯 播放/暂停按钮找到，开始设置事件监听');
+            playPauseBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                cmdLog.info('🔥 [TRIGGER-1] 播放/暂停按钮被点击！');
+                cmdLog.info('🔥 [TRIGGER-1] 当前视频状态: paused=' + this.video?.paused + ', currentTime=' + this.video?.currentTime);
+                cmdLog.info('🔥 [TRIGGER-1] 准备调用 togglePlayPause()...');
                 this.togglePlayPause();
+                cmdLog.info('🔥 [TRIGGER-1] togglePlayPause() 调用完成');
             });
+
+            // 确保按钮可以接收点击事件
+            playPauseBtn.style.pointerEvents = 'auto';
+            playPauseBtn.style.cursor = 'pointer';
+            cmdLog.info('✅ 播放/暂停按钮事件监听设置完成');
+        } else {
+            cmdLog.error('❌ 播放/暂停按钮未找到！DOM结构可能有问题');
         }
 
         // 全屏按钮
@@ -1626,11 +1801,76 @@ class VideoPlayer {
 
     // 切换播放/暂停
     togglePlayPause() {
-        if (this.video.paused) {
-            this.video.play();
-        } else {
-            this.video.pause();
+        cmdLog.info('🎬 togglePlayPause() 方法开始执行');
+
+        if (!this.video) {
+            cmdLog.error('❌ 视频元素不存在，无法切换播放状态');
+            return;
         }
+
+        cmdLog.info('✅ 视频元素存在，继续检查...');
+
+        // 检查当前是否在使用网页播放器（iframe）
+        const webPageContainer = document.getElementById('webpage-player-container');
+        const isUsingWebPage = webPageContainer && webPageContainer.style.display !== 'none';
+
+        cmdLog.info('🔍 网页播放器检查结果: isUsingWebPage=' + isUsingWebPage);
+
+        if (isUsingWebPage) {
+            cmdLog.warn('⚠️ 当前使用网页播放器，暂停功能不适用于iframe内容');
+            this.showNotification('网页播放器不支持暂停控制，请使用网页内的播放控制', 'info');
+            return;
+        }
+
+        cmdLog.info('📊 详细视频状态检查:', {
+            paused: this.video.paused,
+            readyState: this.video.readyState,
+            currentTime: this.video.currentTime,
+            duration: this.video.duration,
+            display: this.video.style.display,
+            hasSrc: !!this.video.src,
+            videoWidth: this.video.videoWidth,
+            videoHeight: this.video.videoHeight
+        });
+
+        // 检查视频元素是否真正可用
+        if (this.video.style.display === 'none' || !this.video.src) {
+            cmdLog.warn('⚠️ 视频元素不可用（隐藏或无源），无法控制播放');
+            this.showNotification('当前播放模式不支持外部播放控制', 'warning');
+            return;
+        }
+
+        cmdLog.info('✅ 视频元素可用，开始执行播放/暂停操作...');
+
+        try {
+            if (this.video.paused) {
+                cmdLog.info('▶️ 视频当前是暂停状态，准备播放...');
+                const playPromise = this.video.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        cmdLog.info('✅ 视频播放成功！');
+                        this.updatePlayPauseButton(true);
+                    }).catch(error => {
+                        cmdLog.error('❌ 视频播放失败:', error.message);
+                        this.showNotification('播放失败: ' + error.message, 'error');
+                    });
+                } else {
+                    cmdLog.info('ℹ️ play() 返回了 undefined（可能是同步操作）');
+                }
+            } else {
+                cmdLog.info('⏸️ 视频当前正在播放，准备暂停...');
+                this.video.pause();
+                cmdLog.info('✅ video.pause() 调用完成');
+                cmdLog.info('🔍 检查暂停后状态: paused=' + this.video.paused + ', currentTime=' + this.video.currentTime);
+                this.updatePlayPauseButton(false);
+                cmdLog.info('✅ 暂停按钮状态已更新');
+            }
+        } catch (error) {
+            cmdLog.error('❌ 切换播放状态时发生异常:', error.message);
+            this.showNotification('播放控制出错: ' + error.message, 'error');
+        }
+
+        cmdLog.info('🎬 togglePlayPause() 方法执行完成');
     }
 
     // 切换静音
@@ -2074,36 +2314,7 @@ class VideoPlayer {
             }, 3000);
         });
 
-        // 调试：检查右上角按钮状态 - 已移除强制显示调试代码
-        const topRightControls = document.querySelector('.top-right-controls');
         console.log('[PLAYER] 悬浮控制栏初始化完成');
-        console.log('[PLAYER] 右上角按钮元素:', topRightControls);
-        if (topRightControls) {
-            const style = window.getComputedStyle(topRightControls);
-            console.log('[PLAYER] 右上角按钮计算样式:');
-            console.log('- display:', style.display);
-            console.log('- opacity:', style.opacity);
-            console.log('- visibility:', style.visibility);
-            console.log('- z-index:', style.zIndex);
-            console.log('- position:', style.position);
-            console.log('- top:', style.top);
-            console.log('- right:', style.right);
-
-            // 测试：立即显示右上角按钮（无红色背景）
-            setTimeout(() => {
-                overlay.classList.add('show');
-                console.log('[PLAYER] 测试：手动添加show类到overlay');
-
-                // 检查show类是否生效
-                const hasShow = overlay.classList.contains('show');
-                console.log('[PLAYER] overlay是否有show类:', hasShow);
-
-                const afterStyle = window.getComputedStyle(topRightControls);
-                console.log('[PLAYER] 添加show类后的样式:');
-                console.log('- opacity:', afterStyle.opacity);
-                console.log('- visibility:', afterStyle.visibility);
-            }, 2000);
-        }
     }    // 设置全屏状态监听器
     setupFullscreenListeners() {
         const playerContainer = document.querySelector('.player-container');
@@ -2127,7 +2338,6 @@ class VideoPlayer {
             if (isFullscreen) {
                 // 进入全屏状态
                 document.body.classList.add('fullscreen-mode');
-                console.log('[PLAYER] 添加fullscreen-mode类');
 
                 // 确保右上角按钮在全屏时显示
                 if (topRightControls) {
@@ -2142,21 +2352,17 @@ class VideoPlayer {
                 if (overlay) {
                     overlay.classList.add('show');
                     document.body.classList.add('mouse-active');
-                    console.log('[PLAYER] 进入全屏，显示控制栏');
-
                     // 3秒后自动隐藏（如果鼠标不在控制栏上）
                     setTimeout(() => {
                         if (!overlay.matches(':hover')) {
                             overlay.classList.remove('show');
                             document.body.classList.remove('mouse-active');
-                            console.log('[PLAYER] 自动隐藏控制栏和鼠标');
                         }
                     }, 3000);
                 }
             } else {
                 // 退出全屏状态
                 document.body.classList.remove('fullscreen-mode');
-                console.log('[PLAYER] 移除fullscreen-mode类');
 
                 // 恢复右上角按钮的正常显示
                 if (topRightControls) {
@@ -2265,7 +2471,6 @@ class VideoPlayer {
     showDanmakuPanel() {
         const panel = document.getElementById('danmaku-input-container');
         if (panel) {
-            console.log('[PLAYER] 执行显示弹幕面板 - 移除hidden类');
             panel.classList.remove('hidden');
 
             // 强制设置显示样式作为备用
@@ -2288,7 +2493,6 @@ class VideoPlayer {
     hideDanmakuPanel() {
         const panel = document.getElementById('danmaku-input-container');
         if (panel) {
-            console.log('[PLAYER] 执行隐藏弹幕面板 - 添加hidden类');
             panel.classList.add('hidden');
 
             // 移除强制显示样式
@@ -3404,62 +3608,3 @@ ${description ? `💡 简介：${description}` : ''}
         console.log('播放器已销毁');
     }
 }
-
-// 页面加载完成后初始化播放器
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('播放器页面加载完成');
-
-    const player = new VideoPlayer();
-    player.initialize();
-
-    // 全局播放器实例
-    window.videoPlayer = player;
-
-    // 添加全局调试方法
-    window.showTopRightControls = () => {
-        const topRightControls = document.querySelector('.top-right-controls');
-        if (topRightControls) {
-            topRightControls.style.opacity = '1';
-            topRightControls.style.visibility = 'visible';
-            topRightControls.style.pointerEvents = 'auto';
-            console.log('手动显示右上角按钮');
-            console.log('当前样式:', window.getComputedStyle(topRightControls));
-        } else {
-            console.log('未找到右上角按钮元素');
-        }
-    };
-
-    window.hideTopRightControls = () => {
-        const topRightControls = document.querySelector('.top-right-controls');
-        if (topRightControls) {
-            topRightControls.style.opacity = '0';
-            topRightControls.style.visibility = 'hidden';
-            topRightControls.style.pointerEvents = 'none';
-            console.log('手动隐藏右上角按钮');
-        }
-    };
-
-    // 额外的延迟检查，确保悬浮控制栏正常工作
-    setTimeout(() => {
-        console.log('[PLAYER] 页面完全加载，悬浮控制栏初始化完成');
-
-        // 在确保控制栏正常后，隐藏其他顶部控制元素
-        setTimeout(() => {
-            if (player.hideTopControls) {
-                player.hideTopControls();
-            }
-        }, 100);
-    }, 500);
-
-    // 移除原来的hideTopControls调用，避免重复执行
-    // setTimeout(() => {
-    //     if (player.hideTopControls) {
-    //         player.hideTopControls();
-    //     }
-    // }, 100);
-
-    // 窗口关闭时清理资源
-    window.addEventListener('beforeunload', () => {
-        player.destroy();
-    });
-});

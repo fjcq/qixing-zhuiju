@@ -254,7 +254,6 @@ class QixingZhuiju {
         this.mainWindow = null;
         this.playerWindow = null;
         this.castWindow = null; // 投屏窗口
-        this.testWindow = null; // 测试窗口
         this.dlnaClient = new DLNAClient(); // DLNA客户端
         this.discoveredDevices = []; // 发现的设备列表
         this.isDev = process.argv.includes('--dev');
@@ -284,13 +283,13 @@ class QixingZhuiju {
             backgroundColor: '#00000000',  // 完全透明的背景
             vibrancy: 'dark',  // macOS亚克力效果（仅macOS）
             backgroundMaterial: 'acrylic',  // Windows亚克力效果（仅Windows 10+）
-            autoHideMenuBar: false,  // 显示菜单栏用于测试
+            autoHideMenuBar: true,  // 隐藏菜单栏
             show: false,
             title: '七星追剧'
         });
 
-        // 显示菜单栏用于测试
-        this.mainWindow.setMenuBarVisibility(true);
+        // 隐藏菜单栏
+        this.mainWindow.setMenuBarVisibility(false);
 
         // 加载主页面
         try {
@@ -485,8 +484,10 @@ class QixingZhuiju {
         this.playerWindow.once('ready-to-show', () => {
             console.log('[MAIN] 播放器窗口准备显示');
             this.playerWindow.show();
+
             // 发送视频数据到播放器窗口
             if (videoData) {
+                console.log('[MAIN] 发送视频数据到播放器窗口:', videoData.title);
                 this.playerWindow.webContents.send('video-data', videoData);
             }
         });
@@ -532,65 +533,19 @@ class QixingZhuiju {
                     { type: 'separator' },
                     { role: 'togglefullscreen', label: '全屏' }
                 ]
-            },
-            {
-                label: '测试',
-                submenu: [
-                    {
-                        label: '测试设备发现',
-                        click: () => {
-                            this.openTestWindow();
-                        }
-                    }
-                ]
             }
         ];
 
         try {
             const menu = Menu.buildFromTemplate(template);
 
-            // 在所有平台上设置应用菜单（用于测试）
+            // 在所有平台上设置应用菜单
             Menu.setApplicationMenu(menu);
 
             console.log('[MAIN] 应用菜单创建完成');
         } catch (error) {
             console.error('[MAIN] 创建菜单失败:', error);
         }
-    }
-
-    // 打开测试窗口
-    openTestWindow() {
-        console.log('[MAIN] 打开设备发现测试窗口');
-
-        if (this.testWindow) {
-            this.testWindow.focus();
-            return;
-        }
-
-        this.testWindow = new BrowserWindow({
-            width: 900,
-            height: 700,
-            webPreferences: {
-                nodeIntegration: false,
-                contextIsolation: true,
-                webSecurity: false,
-                preload: path.join(__dirname, 'src', 'preload.js')
-            },
-            autoHideMenuBar: false, // 显示菜单栏方便调试
-            title: '设备发现测试'
-        });
-
-        // 加载测试页面
-        const testPagePath = path.join(__dirname, 'test-ipc-discover.html');
-        this.testWindow.loadFile(testPagePath);
-
-        // 打开开发者工具
-        this.testWindow.webContents.openDevTools();
-
-        this.testWindow.on('closed', () => {
-            console.log('[MAIN] 测试窗口已关闭');
-            this.testWindow = null;
-        });
     }
 
     setupIPC() {
@@ -800,6 +755,21 @@ class QixingZhuiju {
                 console.error('[MAIN] 写入剪切板失败:', error);
                 return false;
             }
+        });
+
+        // 播放器日志输出到cmd控制台
+        ipcMain.handle('player-log', async (event, level, message, ...args) => {
+            const fullMessage = `[PLAYER-${level.toUpperCase()}] ${message}` + (args.length > 0 ? ' ' + args.join(' ') : '');
+
+            if (level === 'error') {
+                console.error(fullMessage);
+            } else if (level === 'warn') {
+                console.warn(fullMessage);
+            } else {
+                console.log(fullMessage);
+            }
+
+            return true;
         });
     }
 
