@@ -77,6 +77,22 @@
                         </a>
                     </li>
                 </ul>
+                
+                <!-- 更新检查功能 -->
+                <div class="sidebar-update-section">
+                    <div class="update-checker">
+                        <button id="check-update-btn" class="check-update-btn">
+                            <i class="icon-update"></i>
+                            <span>检查更新</span>
+                        </button>
+                        <div class="update-status" id="update-status" style="display: none;">
+                            <div class="update-message" id="update-message"></div>
+                            <button id="download-update-btn" class="download-update-btn" style="display: none;">
+                                下载最新版
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </nav>
 
             <!-- 主内容区域 -->
@@ -211,46 +227,6 @@
                                     <div class="feature-item">
                                         <h4>📺 投屏播放</h4>
                                         <p>支持将视频投屏到电视等大屏设备</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="about-section">
-                                <h3>软件更新</h3>
-                                <div class="update-section">
-                                    <div class="current-version">
-                                        <span class="label">当前版本：</span>
-                                        <span class="value" id="current-version-display">v1.2.6</span>
-                                    </div>
-                                    <div class="update-controls">
-                                        <button class="update-btn" id="check-update-btn">
-                                            <span class="update-icon">🔄</span>
-                                            <span class="update-text">检查更新</span>
-                                        </button>
-                                        <button class="download-btn" id="download-latest-btn" style="display: none;">
-                                            <span class="download-icon">⬇️</span>
-                                            <span class="download-text">下载最新版</span>
-                                        </button>
-                                    </div>
-                                    <div class="update-status" id="update-status">
-                                        <p class="status-text">点击检查更新按钮来检查是否有新版本可用</p>
-                                    </div>
-                                    <div class="update-info" id="update-info" style="display: none;">
-                                        <h4>发现新版本</h4>
-                                        <div class="new-version-info">
-                                            <div class="version-item">
-                                                <span class="label">最新版本：</span>
-                                                <span class="value" id="latest-version"></span>
-                                            </div>
-                                            <div class="version-item">
-                                                <span class="label">发布时间：</span>
-                                                <span class="value" id="release-date"></span>
-                                            </div>
-                                            <div class="version-item">
-                                                <span class="label">更新内容：</span>
-                                                <div class="release-notes" id="release-notes"></div>
-                                            </div>
-                                        </div>
                                     </div>
                                 </div>
                             </div>

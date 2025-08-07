@@ -213,6 +213,118 @@ body {
     content: 'ℹ️';
 }
 
+.icon-update::before {
+    content: '🔄';
+}
+
+/* 侧边栏更新检查功能样式 */
+.sidebar-update-section {
+    margin-top: auto;
+    padding: 15px 10px 20px 10px;
+    border-top: 1px solid rgba(64, 64, 64, 0.3);
+}
+
+.update-checker {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.check-update-btn {
+    display: flex;
+    align-items: center;
+    padding: 10px 15px;
+    background: rgba(0, 120, 212, 0.8);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.check-update-btn:hover {
+    background: rgba(0, 120, 212, 1);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 120, 212, 0.3);
+}
+
+.check-update-btn:active {
+    transform: translateY(0);
+}
+
+.check-update-btn.checking {
+    background: rgba(255, 193, 7, 0.8);
+    cursor: not-allowed;
+}
+
+.check-update-btn.checking .icon-update::before {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.check-update-btn i {
+    margin-right: 8px;
+    font-size: 14px;
+}
+
+.update-status {
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.update-message {
+    margin-bottom: 8px;
+}
+
+.update-status.checking {
+    background: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
+    border: 1px solid rgba(255, 193, 7, 0.3);
+}
+
+.update-status.up-to-date {
+    background: rgba(40, 167, 69, 0.2);
+    color: #28a745;
+    border: 1px solid rgba(40, 167, 69, 0.3);
+}
+
+.update-status.update-available {
+    background: rgba(0, 123, 255, 0.2);
+    color: #007bff;
+    border: 1px solid rgba(0, 123, 255, 0.3);
+}
+
+.update-status.error {
+    background: rgba(220, 53, 69, 0.2);
+    color: #dc3545;
+    border: 1px solid rgba(220, 53, 69, 0.3);
+}
+
+.download-update-btn {
+    padding: 6px 12px;
+    background: rgba(0, 123, 255, 0.8);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.3s ease;
+}
+
+.download-update-btn:hover {
+    background: rgba(0, 123, 255, 1);
+    transform: translateY(-1px);
+}
+
 /* 主内容区域 */
 .main-content {
     flex: 1;
@@ -1055,173 +1167,4 @@ body {
     border: 1px solid rgba(64, 64, 64, 0.3);
 }
 
-.current-version {
-    display: flex;
-    align-items: center;
-    margin-bottom: 15px;
-}
-
-.current-version .label {
-    color: #cccccc;
-    font-weight: 500;
-    min-width: 80px;
-}
-
-.current-version .value {
-    color: #0078d4;
-    font-weight: 600;
-    font-size: 1.1em;
-}
-
-.update-controls {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 15px;
-    flex-wrap: wrap;
-}
-
-.update-btn,
-.download-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
-    border: 2px solid #0078d4;
-    border-radius: 6px;
-    background: rgba(0, 120, 212, 0.1);
-    color: #0078d4;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    font-size: 0.9em;
-    font-weight: 500;
-}
-
-.update-btn:hover,
-.download-btn:hover {
-    background: rgba(0, 120, 212, 0.2);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 120, 212, 0.3);
-}
-
-.update-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-}
-
-.download-btn {
-    border-color: #28a745;
-    color: #28a745;
-    background: rgba(40, 167, 69, 0.1);
-}
-
-.download-btn:hover {
-    background: rgba(40, 167, 69, 0.2);
-    box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
-}
-
-.update-icon,
-.download-icon {
-    font-size: 1em;
-}
-
-.update-status {
-    padding: 12px;
-    border-radius: 6px;
-    background: rgba(64, 64, 64, 0.3);
-    border-left: 4px solid #6c757d;
-}
-
-.update-status.checking {
-    border-left-color: #0078d4;
-    background: rgba(0, 120, 212, 0.1);
-}
-
-.update-status.up-to-date {
-    border-left-color: #28a745;
-    background: rgba(40, 167, 69, 0.1);
-}
-
-.update-status.update-available {
-    border-left-color: #ffc107;
-    background: rgba(255, 193, 7, 0.1);
-}
-
-.update-status.error {
-    border-left-color: #dc3545;
-    background: rgba(220, 53, 69, 0.1);
-}
-
-.status-text {
-    color: #cccccc;
-    font-size: 0.9em;
-    margin: 0;
-    line-height: 1.4;
-}
-
-.update-info {
-    margin-top: 15px;
-    padding: 15px;
-    background: rgba(255, 193, 7, 0.1);
-    border: 1px solid rgba(255, 193, 7, 0.3);
-    border-radius: 6px;
-}
-
-.update-info h4 {
-    color: #ffc107;
-    margin-bottom: 12px;
-    font-size: 1.1em;
-}
-
-.new-version-info {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.version-item {
-    display: flex;
-    align-items: flex-start;
-}
-
-.version-item .label {
-    color: #cccccc;
-    font-weight: 500;
-    min-width: 80px;
-    margin-right: 10px;
-}
-
-.version-item .value {
-    color: #ffffff;
-    font-weight: 400;
-    flex: 1;
-}
-
-.release-notes {
-    color: #cccccc;
-    font-size: 0.9em;
-    line-height: 1.4;
-    max-height: 120px;
-    overflow-y: auto;
-    padding: 8px;
-    background: rgba(45, 45, 45, 0.5);
-    border-radius: 4px;
-}
-
-.release-notes::-webkit-scrollbar {
-    width: 6px;
-}
-
-.release-notes::-webkit-scrollbar-track {
-    background: rgba(64, 64, 64, 0.3);
-    border-radius: 3px;
-}
-
-.release-notes::-webkit-scrollbar-thumb {
-    background: rgba(120, 120, 120, 0.5);
-    border-radius: 3px;
-}
-
-.release-notes::-webkit-scrollbar-thumb:hover {
-    background: rgba(120, 120, 120, 0.7);
-}
+/* 作者信息样式 */

@@ -1091,19 +1091,13 @@ class QixingZhuijuApp {
     // 设置更新检查功能
     setupUpdateChecker() {
         const checkUpdateBtn = document.getElementById('check-update-btn');
-        const downloadLatestBtn = document.getElementById('download-latest-btn');
+        const downloadUpdateBtn = document.getElementById('download-update-btn');
         const updateStatus = document.getElementById('update-status');
-        const updateInfo = document.getElementById('update-info');
-        const currentVersionDisplay = document.getElementById('current-version-display');
+        const updateMessage = document.getElementById('update-message');
 
         if (!checkUpdateBtn) {
             console.warn('[APP] 未找到检查更新按钮');
             return;
-        }
-
-        // 显示当前版本
-        if (currentVersionDisplay && this.version) {
-            currentVersionDisplay.textContent = this.version;
         }
 
         // 检查更新按钮事件
@@ -1112,8 +1106,8 @@ class QixingZhuijuApp {
         });
 
         // 下载最新版按钮事件
-        if (downloadLatestBtn) {
-            downloadLatestBtn.addEventListener('click', async () => {
+        if (downloadUpdateBtn) {
+            downloadUpdateBtn.addEventListener('click', async () => {
                 const url = 'https://gitee.com/fjcq/qixing-zhuiju/releases/latest';
                 await this.openExternalLink(url, '下载页面');
             });
@@ -1125,25 +1119,30 @@ class QixingZhuijuApp {
     // 检查更新
     async checkForUpdates() {
         const checkUpdateBtn = document.getElementById('check-update-btn');
-        const downloadLatestBtn = document.getElementById('download-latest-btn');
+        const downloadUpdateBtn = document.getElementById('download-update-btn');
         const updateStatus = document.getElementById('update-status');
-        const updateInfo = document.getElementById('update-info');
-        const statusText = updateStatus?.querySelector('.status-text');
+        const updateMessage = document.getElementById('update-message');
 
         try {
-            // 更新UI状态
+            // 更新UI状态 - 检查中
             if (checkUpdateBtn) {
+                checkUpdateBtn.classList.add('checking');
                 checkUpdateBtn.disabled = true;
-                checkUpdateBtn.querySelector('.update-text').textContent = '检查中...';
+                checkUpdateBtn.querySelector('span').textContent = '检查中...';
             }
 
             if (updateStatus) {
+                updateStatus.style.display = 'block';
                 updateStatus.className = 'update-status checking';
-                if (statusText) statusText.textContent = '正在检查更新，请稍候...';
             }
 
-            if (updateInfo) updateInfo.style.display = 'none';
-            if (downloadLatestBtn) downloadLatestBtn.style.display = 'none';
+            if (updateMessage) {
+                updateMessage.textContent = '正在检查更新，请稍候...';
+            }
+
+            if (downloadUpdateBtn) {
+                downloadUpdateBtn.style.display = 'none';
+            }
 
             console.log('[APP] 开始检查更新...');
 
@@ -1169,24 +1168,15 @@ class QixingZhuijuApp {
                 // 有新版本
                 if (updateStatus) {
                     updateStatus.className = 'update-status update-available';
-                    if (statusText) statusText.textContent = `发现新版本 ${latestVersion}，建议更新！`;
                 }
 
-                // 显示更新信息
-                if (updateInfo) {
-                    updateInfo.style.display = 'block';
-                    const latestVersionEl = document.getElementById('latest-version');
-                    const releaseDateEl = document.getElementById('release-date');
-                    const releaseNotesEl = document.getElementById('release-notes');
-
-                    if (latestVersionEl) latestVersionEl.textContent = latestVersion;
-                    if (releaseDateEl) releaseDateEl.textContent = releaseDate;
-                    if (releaseNotesEl) releaseNotesEl.textContent = releaseNotes;
+                if (updateMessage) {
+                    updateMessage.textContent = `发现新版本 ${latestVersion}，点击下方按钮下载！`;
                 }
 
                 // 显示下载按钮
-                if (downloadLatestBtn) {
-                    downloadLatestBtn.style.display = 'flex';
+                if (downloadUpdateBtn) {
+                    downloadUpdateBtn.style.display = 'block';
                 }
 
                 this.componentService.showNotification(`发现新版本 ${latestVersion}`, 'info');
@@ -1194,7 +1184,10 @@ class QixingZhuijuApp {
                 // 已是最新版本
                 if (updateStatus) {
                     updateStatus.className = 'update-status up-to-date';
-                    if (statusText) statusText.textContent = '您使用的已是最新版本！';
+                }
+
+                if (updateMessage) {
+                    updateMessage.textContent = '您使用的已是最新版本！';
                 }
 
                 this.componentService.showNotification('您使用的已是最新版本', 'success');
@@ -1205,15 +1198,19 @@ class QixingZhuijuApp {
 
             if (updateStatus) {
                 updateStatus.className = 'update-status error';
-                if (statusText) statusText.textContent = `检查更新失败: ${error.message}`;
+            }
+
+            if (updateMessage) {
+                updateMessage.textContent = `检查更新失败: ${error.message}`;
             }
 
             this.componentService.showNotification('检查更新失败: ' + error.message, 'error');
         } finally {
             // 恢复按钮状态
             if (checkUpdateBtn) {
+                checkUpdateBtn.classList.remove('checking');
                 checkUpdateBtn.disabled = false;
-                checkUpdateBtn.querySelector('.update-text').textContent = '检查更新';
+                checkUpdateBtn.querySelector('span').textContent = '检查更新';
             }
         }
     }
