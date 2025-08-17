@@ -399,19 +399,15 @@ class ComponentService {
 
     // 创建视频卡片
     createVideoCard(video) {
-        console.log('[DEBUG] 创建视频卡片:', video);
-
         const card = document.createElement('div');
         card.className = 'video-card';
         card.dataset.videoId = video.vod_id;
 
         // 处理图片URL
         let posterUrl = video.vod_pic || '';
-        console.log('[DEBUG] 原始海报URL:', posterUrl);
 
         if (posterUrl && !posterUrl.startsWith('http')) {
             posterUrl = 'https:' + posterUrl;
-            console.log('[DEBUG] 修正后海报URL:', posterUrl);
         }
 
         // 视频基本信息
@@ -429,16 +425,6 @@ class ComponentService {
         if (videoTime) metaItems.push(videoTime);
 
         const videoMeta = metaItems.join(' / ') || '暂无信息';
-
-        console.log('[DEBUG] 视频信息:', {
-            title: videoTitle,
-            type: videoType,
-            remarks: videoRemarks,
-            time: videoTime,
-            year: videoYear,
-            meta: videoMeta,
-            poster: posterUrl
-        });
 
         card.innerHTML = `
             <div class="video-poster">
@@ -472,7 +458,6 @@ class ComponentService {
 
         // 添加点击事件
         card.addEventListener('click', () => {
-            console.log('[DEBUG] 点击视频卡片:', video.vod_id);
             this.showVideoDetail(video.vod_id);
         });
 
@@ -481,7 +466,6 @@ class ComponentService {
             this.setupMarqueeEffect(card, videoTitle);
         }, 100);
 
-        console.log('[DEBUG] 视频卡片创建完成');
         return card;
     }
 
@@ -521,20 +505,21 @@ class ComponentService {
             `已播放: ${playDurationText}` :
             (progressPercentage > 0 ? progressText : '');
 
-        console.log('[COMPONENTS] 格式化后的时间信息:', {
-            watchTimeText,
-            playDurationText,
-            playTimeDisplay,
-            progressPercentage,
-            originalWatchTime: history.watch_time,
-            watchTimeType: typeof history.watch_time,
-            historyVodName: history.vod_name,
-            historyEpisodeName: history.episode_name
-        });
+        // 根据site_url动态获取站点名称
+        let siteName = '未知站点';
+        if (history.site_url) {
+            const sites = this.apiService.getSites();
+            const currentSite = sites.find(site => site.url === history.site_url);
 
-        console.log('[COMPONENTS] 具体的watchTimeText值:', watchTimeText);
-        console.log('[COMPONENTS] 具体的playDurationText值:', playDurationText);
-        console.log('[COMPONENTS] 具体的playTimeDisplay值:', playTimeDisplay);
+            if (currentSite) {
+                siteName = currentSite.name;
+            } else {
+                siteName = `站点(${history.site_url})`;
+            }
+        } else if (history.site_name) {
+            // 兼容旧版本历史记录
+            siteName = history.site_name;
+        }
 
         item.innerHTML = `
             <div class="history-poster">
@@ -547,7 +532,7 @@ class ComponentService {
                 <p class="history-meta">
                     <span class="history-type">${history.type_name || '未知类型'}</span>
                     <span class="history-separator">•</span>
-                    <span class="history-site">${history.site_name || '未知站点'}</span>
+                    <span class="history-site">${siteName}</span>
                 </p>
                 <p class="history-episode">观看到: ${history.episode_name || '第' + (history.current_episode || 1) + '集'}</p>
                 <p class="history-time">观看时间: ${watchTimeText}</p>
@@ -579,7 +564,28 @@ class ComponentService {
         });
 
         // 添加点击事件
-        item.addEventListener('click', () => {
+        item.addEventListener('click', async () => {
+            // 如果历史记录有站点URL，先切换到对应站点
+            if (history.site_url) {
+                const sites = this.apiService.getSites();
+                const targetSite = sites.find(site => site.url === history.site_url);
+
+                if (targetSite) {
+                    const currentSite = this.apiService.getActiveSite();
+                    if (!currentSite || currentSite.url !== history.site_url) {
+                        console.log('[COMPONENTS] 切换到历史记录对应站点:', targetSite.name);
+                        this.apiService.setActiveSite(targetSite.id);
+
+                        // 等待站点切换完成
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                } else {
+                    console.warn('[COMPONENTS] 找不到历史记录对应的站点:', history.site_url);
+                    alert('该历史记录对应的站点已不存在，请重新配置站点');
+                    return;
+                }
+            }
+
             this.showVideoDetail(history.vod_id);
         });
 
@@ -910,32 +916,55 @@ class ComponentService {
     }
 
     // 播放视频
-    async playVideo(videoData, routeIndex, episodeIndex, episodeUrl, allRoutes, resumeProgress = null) {
+    async playVideo(videoData, routeIndex, episodeIndex, episodeUrl, allRoutes, resumeProgress = null, forceUseActiveSite = false) {
         try {
-            console.log('[COMPONENTS] 播放视频:', { videoData, routeIndex, episodeIndex, episodeUrl, resumeProgress });
-
             const currentRoute = allRoutes[routeIndex];
             const currentEpisode = currentRoute.episodes[episodeIndex];
 
-            console.log('[COMPONENTS] 当前线路:', currentRoute.name);
-            console.log('[COMPONENTS] 当前剧集:', currentEpisode.name);
-            console.log('[COMPONENTS] 播放URL:', episodeUrl);
-            console.log('[COMPONENTS] 继续播放进度:', resumeProgress);
+            // 简化站点信息获取逻辑
+            let siteName = '未知站点';
 
-            // 获取当前活跃站点信息
-            const activeSite = this.apiService.getActiveSite();
-            const siteName = activeSite ? activeSite.name : '未知站点';
+            try {
+                // 方法1：从localStorage直接获取，这是最可靠的
+                const sitesFromStorage = JSON.parse(localStorage.getItem('VIDEO_SITES') || '[]');
+                const activeFromStorage = sitesFromStorage.find(site => site.active);
 
-            // 添加到播放历史
-            this.storageService.addPlayHistory({
+                if (activeFromStorage && activeFromStorage.name) {
+                    siteName = activeFromStorage.name;
+                } else {
+                    // 方法2：通过apiService获取
+                    const activeSite = this.apiService.getActiveSite();
+                    if (activeSite && activeSite.name) {
+                        siteName = activeSite.name;
+                    } else {
+                        // 方法3：使用第一个可用站点
+                        const allSites = this.apiService.getSites();
+                        if (allSites.length > 0 && allSites[0].name) {
+                            siteName = allSites[0].name;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('[DEBUG] 获取站点信息时出错:', error);
+            }
+
+            // 在通知中显示获取到的站点信息
+            this.showNotification(`正在播放 - 当前站点：${siteName}`, 'info');
+
+            // 获取当前站点信息
+            const currentSiteInfo = this.apiService.getActiveSite();
+
+            // 添加到播放历史 - 只保存必要的站点标识信息
+            const historyData = {
                 vod_id: videoData.vod_id,
                 vod_name: videoData.vod_name,
                 vod_pic: videoData.vod_pic,
                 type_name: videoData.type_name || '未知类型',
                 current_episode: episodeIndex + 1,
                 episode_name: currentEpisode?.name || `第${episodeIndex + 1}集`,
-                site_name: siteName
-            });
+                site_url: currentSiteInfo?.url || null  // 只保存站点URL作为唯一标识
+            };
+            this.storageService.addPlayHistory(historyData);
 
             // 检查Electron环境
             if (!window.electron || !window.electron.ipcRenderer) {
@@ -955,7 +984,7 @@ class ComponentService {
                     routes: allRoutes,
                     // 添加站点信息
                     siteName: siteName,
-                    siteUrl: activeSite ? activeSite.url : 'unknown'
+                    siteUrl: this.apiService.getActiveSite()?.url || 'unknown'
                 },
                 // 添加播放进度信息
                 resumeProgress: resumeProgress
@@ -1136,26 +1165,166 @@ class ComponentService {
 
     // 继续播放历史记录
     continuePlayback(history) {
-        console.log('[COMPONENTS] 继续播放:', history);
+        // 首先显示历史记录的详细信息，用于调试
+        console.log('历史记录播放:', history.vod_name, '站点:', history.site_url || '未知');
 
-        // 先跳转到详情页面，然后继续播放
+        // 根据site_url获取站点名称
+        let historySiteName = '未知站点';
+        if (history.site_url) {
+            const sites = this.apiService.getSites();
+            const historySite = sites.find(site => site.url === history.site_url);
+            if (historySite) {
+                historySiteName = historySite.name;
+            } else {
+                historySiteName = `站点(${history.site_url})`;
+            }
+        }
+
+        // 处理历史记录播放 - 应该直接使用历史记录中的站点信息
+
+        // 如果历史记录中没有站点URL，说明是旧数据，在当前站点尝试播放
+        if (!history.site_url) {
+            this.continuePlaybackAfterSiteSwitch(history);
+            return;
+        }
+
+        // 根据历史记录中的站点URL找到对应的站点
+        const allSites = this.apiService.getSites();
+        const targetSite = allSites.find(site => site.url === history.site_url);
+
+        if (!targetSite) {
+            this.showNotification(`未找到站点"${history.site_url}"，该站点可能已被删除`, 'warning');
+            return;
+        }
+
+        // 切换到目标站点
+        this.apiService.setActiveSite(targetSite.id);
+
+        // 验证切换是否成功
+        const verifySwitch = this.apiService.getActiveSite();
+        if (!verifySwitch || verifySwitch.url !== history.site_url) {
+            console.error('[DEBUG] 站点切换失败');
+            this.showNotification('站点切换失败，无法播放该历史记录', 'error');
+            return;
+        }
+
+        this.showNotification(`已切换到站点：${targetSite.name}`, 'info');
+
+        // 延迟播放，确保站点切换完成
+        setTimeout(() => {
+            this.continuePlaybackAfterSiteSwitch(history);
+        }, 1000);
+    }
+
+    // 切换站点后继续播放
+    continuePlaybackAfterSiteSwitch(history) {
+        // 验证当前站点是否正确
+        const currentSite = this.apiService.getActiveSite();
+        if (history.site_url && currentSite && currentSite.url !== history.site_url) {
+            console.error('[ERROR] 站点切换失败，当前站点与期望不匹配');
+            this.showNotification('站点切换失败，无法播放该历史记录', 'error');
+            return;
+        }
+
+        // 获取视频详情并播放
         this.showVideoDetail(history.vod_id).then(() => {
-            // 页面切换完成后，如果有播放信息，继续播放指定集数
+            // 如果有播放进度信息，继续播放指定集数
             if (history.current_episode && history.episode_name) {
-                // 延迟一段时间确保详情页面完全加载
                 setTimeout(() => {
                     this.continueFromHistory(history);
                 }, 500);
             }
         }).catch(error => {
-            console.error('[COMPONENTS] 跳转到详情页面失败:', error);
-            this.showNotification('无法跳转到详情页面', 'error');
+            console.error('[ERROR] 获取视频详情失败:', error);
+            // 如果获取视频详情失败，尝试智能搜索
+            this.smartSearchInAllSites(history);
+        });
+    }
+
+    // 智能搜索：在所有站点中查找视频
+    async smartSearchInAllSites(history) {
+        this.showNotification(`视频ID ${history.vod_id} 在当前站点不存在，正在其他站点搜索...`, 'info');
+
+        const allSites = this.apiService.getSites();
+        const currentSite = this.apiService.getActiveSite();
+
+        for (const site of allSites) {
+            if (site.id === currentSite?.id) continue; // 跳过当前站点
+
+            try {
+                // 切换到目标站点
+                this.apiService.setActiveSite(site.id);
+
+                // 尝试获取视频详情
+                const response = await this.apiService.getVideoDetail(history.vod_id);
+
+                if (response && response.list && response.list.length > 0) {
+                    // 找到了！
+                    this.showNotification(`在站点"${site.name}"中找到了该视频！`, 'success');
+
+                    // 更新历史记录中的站点信息
+                    this.updateHistorySiteInfo(history.vod_id, site);
+
+                    // 直接显示视频详情，不再调用可能导致循环的方法
+                    setTimeout(() => {
+                        this.showVideoDetail(history.vod_id).then(() => {
+                            // 如果有播放进度信息，继续播放指定集数
+                            if (history.current_episode && history.episode_name) {
+                                setTimeout(() => {
+                                    this.continueFromHistory(history);
+                                }, 500);
+                            }
+                        }).catch(error => {
+                            console.error('[ERROR] 智能搜索后仍无法获取视频详情:', error);
+                            this.showNotification('获取视频详情失败，请手动搜索', 'error');
+                        });
+                    }, 1000);
+                    return;
+                }
+            } catch (error) {
+                console.log(`在站点"${site.name}"中未找到视频:`, error);
+            }
+        }
+
+        // 所有站点都没找到
+        this.showNotification(`很抱歉，在所有${allSites.length}个站点中都未找到该视频`, 'error');
+        this.showNotification('建议手动搜索该视频名称', 'info');
+    }
+
+    // 更新历史记录中的站点信息
+    updateHistorySiteInfo(vodId, siteInfo) {
+        const history = this.storageService.getPlayHistory();
+        const updatedHistory = history.map(item => {
+            if (item.vod_id === vodId) {
+                return {
+                    ...item,
+                    site_name: siteInfo.name,
+                    site_id: siteInfo.id,
+                    site_url: siteInfo.url
+                };
+            }
+            return item;
+        });
+
+        localStorage.setItem('PLAY_HISTORY', JSON.stringify(updatedHistory));
+        console.log(`已更新视频ID ${vodId} 的完整站点信息:`, {
+            name: siteInfo.name,
+            id: siteInfo.id,
+            url: siteInfo.url
         });
     }
 
     // 从历史记录继续播放
     continueFromHistory(history) {
-        console.log('[COMPONENTS] 从历史记录继续播放:', history);
+        // 检查当前视频数据是否已加载
+        if (!this.currentVideoData) {
+            const currentSite = this.apiService.getActiveSite();
+            const errorMsg = `视频数据加载失败。视频ID:${history.vod_id} 在站点"${currentSite?.name || '当前站点'}"中不存在。`;
+
+            this.showNotification(errorMsg, 'error');
+            this.showNotification('建议：尝试切换到其他站点或手动搜索该视频', 'info');
+            return;
+        }
 
         // 查找对应的剧集按钮并高亮
         const episodeButtons = document.querySelectorAll('.episode-btn');
@@ -1173,7 +1342,7 @@ class ComponentService {
             if (buttonText === history.episode_name ||
                 btnEpisodeIndex === (history.current_episode - 1)) {
                 targetButton = btn;
-                routeIndex = btnRouteIndex;
+                routeIndex = btnRouteIndex || 0;
                 episodeIndex = btnEpisodeIndex;
                 break;
             }
@@ -1192,10 +1361,11 @@ class ComponentService {
 
             // 直接调用playVideo方法，传递播放进度信息
             setTimeout(() => {
-                console.log('[COMPONENTS] 从历史记录继续播放，进度:', history.progress);
-
                 // 获取剧集URL
                 const episodeUrl = targetButton.dataset.url;
+
+                // 确保有可用的路线数据
+                const routesData = this.currentRoutes || [];
 
                 // 调用playVideo方法，传递播放进度
                 this.playVideo(
@@ -1203,12 +1373,18 @@ class ComponentService {
                     routeIndex,
                     episodeIndex,
                     episodeUrl,
-                    this.currentRoutes,
-                    history.progress // 传递播放进度
+                    routesData,
+                    history.progress, // 传递播放进度
+                    true // forceUseActiveSite = true，强制使用当前活跃站点信息
                 );
             }, 800);
         } else {
-            this.showNotification(`未找到对应的剧集：${history.episode_name}`, 'warning');
+            this.showNotification(`未找到《${history.vod_name}》的第${history.current_episode}集，将播放第1集`, 'warning');
+
+            // 如果找不到对应剧集，播放第一集
+            if (episodeButtons.length > 0) {
+                episodeButtons[0].click();
+            }
         }
     }
 

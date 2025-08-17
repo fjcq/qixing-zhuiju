@@ -1717,6 +1717,7 @@ body.fullscreen-mode .player-error,
     padding: 20px 24px;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     gap: 12px;
+    flex-wrap: wrap;
 }
 
 .btn-cancel {
@@ -1746,7 +1747,35 @@ body.fullscreen-mode .player-error,
     transition: all 0.3s ease;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
+}
+
+.btn-manual-cast:hover {
+    background: rgba(138, 43, 226, 0.9);
+    transform: translateY(-1px);
+}
+
+.btn-dlna-diagnose {
+    background: rgba(255, 152, 0, 0.8);
+    border: 1px solid rgba(255, 152, 0, 0.5);
+    color: #ffffff;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-dlna-diagnose:hover {
+    background: rgba(255, 152, 0, 0.9);
+    transform: translateY(-1px);
+}
+
+.btn-dlna-diagnose .icon {
+    font-size: 16px;
 }
 
 .btn-manual-cast:hover {

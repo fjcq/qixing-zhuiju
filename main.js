@@ -256,6 +256,7 @@ class QixingZhuiju {
         this.castWindow = null; // 投屏窗口
         this.dlnaClient = new DLNAClient(); // DLNA客户端
         this.discoveredDevices = []; // 发现的设备列表
+        this.currentVideoUrl = null; // 当前播放的视频URL（用于投屏）
         this.isDev = process.argv.includes('--dev');
     }
 
@@ -553,6 +554,11 @@ class QixingZhuiju {
         ipcMain.handle('open-player', async (event, videoData) => {
             try {
                 console.log('[MAIN] 收到打开播放器请求:', videoData);
+
+                // 🔥 保存当前播放的视频URL，用于投屏
+                this.currentVideoUrl = videoData.url;
+                console.log('[MAIN] 保存视频URL用于投屏:', this.currentVideoUrl);
+
                 this.createPlayerWindow(videoData);
                 return { success: true, message: '播放器已打开' };
             } catch (error) {
@@ -680,27 +686,6 @@ class QixingZhuiju {
             return false;
         });
 
-        // 系统投屏处理
-        ipcMain.handle('start-system-casting', async (event, castInfo) => {
-            console.log('[MAIN] 收到系统投屏请求:', castInfo);
-            try {
-                return await this.startSystemCasting(castInfo);
-            } catch (error) {
-                console.error('[MAIN] 系统投屏失败:', error);
-                return { success: false, error: error.message };
-            }
-        });
-
-        ipcMain.handle('stop-casting', async (event) => {
-            console.log('[MAIN] 收到停止投屏请求');
-            try {
-                return await this.stopSystemCasting();
-            } catch (error) {
-                console.error('[MAIN] 停止投屏失败:', error);
-                return { success: false, error: error.message };
-            }
-        });
-
         // 设备发现处理
         ipcMain.handle('discover-cast-devices', async (event) => {
             console.log('[MAIN] 收到设备发现请求');
@@ -715,6 +700,13 @@ class QixingZhuiju {
         // DLNA投屏处理
         ipcMain.handle('cast-to-dlna-device', async (event, deviceId, mediaUrl, metadata) => {
             console.log('[MAIN] 收到DLNA投屏请求:', { deviceId, mediaUrl });
+
+            // 🔥 修复：如果mediaUrl为空，使用保存的视频URL
+            if (!mediaUrl && this.currentVideoUrl) {
+                mediaUrl = this.currentVideoUrl;
+                console.log('[MAIN] 使用保存的视频URL:', mediaUrl);
+            }
+
             try {
                 return await this.castToDLNADevice(deviceId, mediaUrl, metadata);
             } catch (error) {
@@ -773,27 +765,10 @@ class QixingZhuiju {
         });
     }
 
-    // 系统投屏功能
+    // 系统投屏功能 (已移除)
     async startSystemCasting(castInfo) {
-        console.log('[MAIN] 启动系统投屏功能...');
-
-        try {
-            const { url, title, currentTime } = castInfo;
-
-            // 在 Windows 上，我们可以尝试调用系统的投屏功能
-            if (process.platform === 'win32') {
-                return await this.startWindowsCasting(url, title, currentTime);
-            } else if (process.platform === 'darwin') {
-                return await this.startMacCasting(url, title, currentTime);
-            } else {
-                // Linux 或其他系统
-                return await this.startGenericCasting(url, title, currentTime);
-            }
-
-        } catch (error) {
-            console.error('[MAIN] 系统投屏启动失败:', error);
-            throw error;
-        }
+        console.log('[MAIN] 系统投屏功能已被移除');
+        throw new Error('系统投屏功能已被移除，请使用DLNA投屏');
     }
 
     // Windows 投屏
@@ -1184,7 +1159,24 @@ class QixingZhuiju {
                     device: device
                 };
             } else {
-                throw new Error(result.error || '投屏失败');
+                // 详细的错误处理
+                const errorMsg = result.error || '投屏失败';
+                console.error(`[MAIN] DLNA投屏失败: ${errorMsg}`);
+                console.error(`[MAIN] 设备信息: ${device.name} (${device.address})`);
+                console.error(`[MAIN] 媒体URL: ${mediaUrl}`);
+
+                // 根据错误类型提供更有帮助的错误信息
+                if (errorMsg.includes('UPnP错误码: 501')) {
+                    throw new Error('投屏失败：媒体URL为空或无效，请确保视频正在播放且使用直接视频链接（非网页播放器）');
+                } else if (errorMsg.includes('SOAP错误')) {
+                    throw new Error(`设备不支持此操作或媒体格式不兼容: ${errorMsg}`);
+                } else if (errorMsg.includes('网络')) {
+                    throw new Error(`网络连接问题: ${errorMsg}`);
+                } else if (errorMsg.includes('超时')) {
+                    throw new Error(`设备响应超时，请检查设备状态: ${errorMsg}`);
+                } else {
+                    throw new Error(`投屏失败: ${errorMsg}`);
+                }
             }
 
         } catch (error) {
@@ -1491,23 +1483,10 @@ class QixingZhuiju {
         return devices;
     }
 
-    // 停止系统投屏
+    // 停止系统投屏 (已移除)
     async stopSystemCasting() {
-        console.log('[MAIN] 停止系统投屏...');
-
-        try {
-            if (this.castWindow) {
-                this.castWindow.close();
-                this.castWindow = null;
-                console.log('[MAIN] 投屏窗口已关闭');
-            }
-
-            return { success: true };
-
-        } catch (error) {
-            console.error('[MAIN] 停止投屏失败:', error);
-            throw error;
-        }
+        console.log('[MAIN] 系统投屏功能已被移除');
+        return { success: false, error: '系统投屏功能已被移除' };
     }
 
     async initialize() {

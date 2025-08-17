@@ -14,13 +14,18 @@ class DLNAClient extends EventEmitter {
         this.SSDP_ADDRESS = '239.255.255.250';
         this.SSDP_PORT = 1900;
 
-        // 搜索目标类型
+        // 搜索目标类型（扩展搜索范围以兼容更多设备）
         this.SEARCH_TARGETS = [
+            'upnp:rootdevice',                               // 所有UPnP设备（最重要）
             'urn:schemas-upnp-org:device:MediaRenderer:1',  // DLNA媒体渲染器
+            'urn:schemas-upnp-org:device:MediaRenderer:2',  // DLNA媒体渲染器v2
+            'urn:schemas-upnp-org:device:MediaServer:1',    // DLNA媒体服务器
             'urn:schemas-upnp-org:service:AVTransport:1',   // AV传输服务
+            'urn:schemas-upnp-org:service:AVTransport:2',   // AV传输服务v2
             'urn:schemas-upnp-org:service:RenderingControl:1', // 渲染控制服务
+            'urn:schemas-upnp-org:service:ConnectionManager:1', // 连接管理服务
             'urn:dial-multiscreen-org:service:dial:1',      // DIAL协议（Chromecast等）
-            'upnp:rootdevice'                               // 所有UPnP设备
+            'ssdp:all'                                      // 搜索所有SSDP设备
         ];
     }
 
@@ -35,10 +40,10 @@ class DLNAClient extends EventEmitter {
             // 创建UDP套接字
             this.socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
 
-            // 绑定套接字事件
+            // 首先设置事件监听器
             this.setupSocketEvents();
 
-            // 绑定到随机端口
+            // 绑定到随机端口并立即开始监听
             await new Promise((resolve, reject) => {
                 this.socket.bind(0, '0.0.0.0', () => {
                     const address = this.socket.address();
@@ -51,7 +56,7 @@ class DLNAClient extends EventEmitter {
                     resolve();
                 });
 
-                this.socket.on('error', reject);
+                this.socket.once('error', reject);
             });
 
             // 发送搜索请求
@@ -113,7 +118,8 @@ class DLNAClient extends EventEmitter {
     // 设置套接字事件监听
     setupSocketEvents() {
         this.socket.on('message', (msg, rinfo) => {
-            console.log(`[DLNA] 收到来自 ${rinfo.address}:${rinfo.port} 的响应，长度: ${msg.length} 字节`);
+            console.log(`[DLNA] ✅ 收到来自 ${rinfo.address}:${rinfo.port} 的响应，长度: ${msg.length} 字节`);
+            console.log(`[DLNA] 消息内容预览: ${msg.toString().substring(0, 100)}...`);
             this.handleSSDPResponse(msg.toString(), rinfo);
         });
 
@@ -123,7 +129,8 @@ class DLNAClient extends EventEmitter {
         });
 
         this.socket.on('listening', () => {
-            console.log('[DLNA] 套接字开始监听');
+            const address = this.socket.address();
+            console.log(`[DLNA] 套接字开始监听 ${address.address}:${address.port}`);
         });
 
         this.socket.on('close', () => {
@@ -182,7 +189,7 @@ class DLNAClient extends EventEmitter {
                 'MAN: "ssdp:discover"',
                 'MX: 3',
                 `ST: ${searchTarget}`,
-                'USER-AGENT: QiXing-ZhuiJu/1.2.5 UPnP/1.0',
+                'USER-AGENT: SimpleDiscovery/1.0',
                 '',
                 ''
             ].join('\r\n');
@@ -192,6 +199,7 @@ class DLNAClient extends EventEmitter {
             console.log(`[DLNA] 准备发送搜索请求到 ${this.SSDP_ADDRESS}:${this.SSDP_PORT}`);
             console.log(`[DLNA] 搜索目标: ${searchTarget}`);
             console.log(`[DLNA] 消息长度: ${buffer.length} 字节`);
+            console.log(`[DLNA] 完整消息:\n${searchMessage}`);
 
             this.socket.send(buffer, this.SSDP_PORT, this.SSDP_ADDRESS, (error) => {
                 if (error) {
@@ -208,10 +216,10 @@ class DLNAClient extends EventEmitter {
     // 处理SSDP响应
     handleSSDPResponse(message, rinfo) {
         try {
-            console.log(`[DLNA] 处理来自 ${rinfo.address} 的SSDP响应:`);
-            console.log('='.repeat(50));
+            console.log(`[DLNA] 收到来自 ${rinfo.address}:${rinfo.port} 的SSDP响应`);
+            console.log('='.repeat(60));
             console.log(message);
-            console.log('='.repeat(50));
+            console.log('='.repeat(60));
 
             const lines = message.split('\r\n');
             const headers = {};
@@ -226,7 +234,7 @@ class DLNAClient extends EventEmitter {
                 }
             });
 
-            console.log('[DLNA] 解析的头部信息:', headers);
+            console.log('[DLNA] 解析的响应头:', headers);
 
             // 检查是否为有效的UPnP设备响应
             if (!headers['location']) {
@@ -234,13 +242,21 @@ class DLNAClient extends EventEmitter {
                 return;
             }
 
-            if (!headers['st']) {
-                console.log('[DLNA] 缺少st头，跳过此响应');
+            // 更宽松的检查：只要有location就认为是有效设备
+            const st = headers['st'] || headers['nt'] || 'unknown';
+            console.log(`[DLNA] 发现设备类型: ${st}`);
+
+            // 检查是否为NOTIFY消息（设备广播）
+            const isNotify = message.startsWith('NOTIFY');
+            const isResponse = message.startsWith('HTTP/1.1 200 OK');
+
+            if (!isNotify && !isResponse) {
+                console.log('[DLNA] 非标准响应格式，跳过');
                 return;
             }
 
             // 提取设备UUID用于去重
-            const usn = headers['usn'];
+            const usn = headers['usn'] || headers['nt'];
             let deviceUUID = null;
             if (usn) {
                 // USN格式通常为: uuid:device-uuid::service-type 或 uuid:device-uuid::upnp:rootdevice
@@ -251,7 +267,7 @@ class DLNAClient extends EventEmitter {
             }
 
             // 生成基于地址和UUID的设备ID（用于去重同一台设备）
-            const deviceId = deviceUUID ? `${rinfo.address}_${deviceUUID}` : `${rinfo.address}_${headers['location']}`;
+            const deviceId = deviceUUID ? `${rinfo.address}_${deviceUUID}` : `${rinfo.address}_${Date.now()}`;
 
             // 检查是否为已知设备的新服务
             if (this.devices.has(deviceId)) {
@@ -260,9 +276,9 @@ class DLNAClient extends EventEmitter {
                 return;
             }
 
-            console.log(`[DLNA] 发现新设备: ${rinfo.address} - ${headers['st']}`);
+            console.log(`[DLNA] 发现新设备: ${rinfo.address} - ${st}`);
 
-            // 解析设备信息
+            // 解析设备信息（现在接受所有UPnP设备）
             this.parseDeviceInfo(deviceId, headers, rinfo);
 
         } catch (error) {
@@ -273,23 +289,27 @@ class DLNAClient extends EventEmitter {
     // 解析设备信息
     async parseDeviceInfo(deviceId, headers, rinfo) {
         try {
+            const st = headers['st'] || headers['nt'] || 'upnp:device';
+
             const device = {
                 id: deviceId,
                 address: rinfo.address,
                 port: rinfo.port,
                 location: headers['location'],
-                st: headers['st'],
-                usn: headers['usn'],
-                server: headers['server'],
+                st: st,
+                usn: headers['usn'] || headers['nt'],
+                server: headers['server'] || headers['user-agent'] || '未知设备',
                 discoveredAt: new Date(),
                 lastSeen: new Date(),
-                type: this.getDeviceType(headers['st']),
-                name: 'DLNA设备',
-                icon: this.getDeviceIcon(headers['st']),
+                type: this.getDeviceType(st),
+                name: `网络设备 (${rinfo.address})`, // 默认名称
+                icon: this.getDeviceIcon(st),
                 status: 'available',
                 protocol: 'dlna',
-                supportedServices: new Set([headers['st']]) // 跟踪支持的服务类型
+                supportedServices: new Set([st]) // 跟踪支持的服务类型
             };
+
+            console.log(`[DLNA] 正在获取设备 ${rinfo.address} 的详细信息...`);
 
             // 尝试获取设备描述
             try {
@@ -301,20 +321,49 @@ class DLNAClient extends EventEmitter {
                     device.modelDescription = deviceInfo.modelDescription;
                     device.services = deviceInfo.services;
 
+                    console.log(`[DLNA] 设备详细信息获取成功: ${device.name}`);
+
                     // 更精确的设备类型判断
                     if (deviceInfo.deviceType) {
                         device.type = this.getDeviceTypeFromDescription(deviceInfo.deviceType);
                         device.icon = this.getDeviceIcon(deviceInfo.deviceType);
                     }
+
+                    // 检查是否支持媒体渲染功能
+                    if (deviceInfo.services) {
+                        const hasAVTransport = deviceInfo.services.some(service =>
+                            service.serviceType && service.serviceType.includes('AVTransport')
+                        );
+                        const hasRenderingControl = deviceInfo.services.some(service =>
+                            service.serviceType && service.serviceType.includes('RenderingControl')
+                        );
+
+                        if (hasAVTransport && hasRenderingControl) {
+                            device.type = 'DLNA媒体渲染器';
+                            device.icon = '📺';
+                            console.log(`[DLNA] 检测到完整的DLNA媒体渲染器: ${device.name}`);
+                        } else if (hasAVTransport) {
+                            device.type = 'DLNA兼容设备';
+                            device.icon = '📱';
+                            console.log(`[DLNA] 检测到DLNA兼容设备: ${device.name}`);
+                        }
+                    }
+                } else {
+                    console.warn(`[DLNA] 无法获取设备 ${rinfo.address} 的详细信息，使用基本信息`);
+                    // 即使无法获取详细信息，也添加设备（可能仍然可以投屏）
+                    device.name = `UPnP设备 (${rinfo.address})`;
                 }
             } catch (error) {
                 console.warn(`[DLNA] 获取设备描述失败 (${device.address}):`, error);
+                // 即使获取描述失败，也保留设备
+                device.name = `网络设备 (${rinfo.address})`;
+                device.type = 'UPnP设备';
             }
 
             this.devices.set(deviceId, device);
             this.emit('deviceFound', device);
 
-            console.log(`[DLNA] 设备已添加: ${device.name} (${device.address})`);
+            console.log(`[DLNA] 设备已添加: ${device.name} (${device.address}) - ${device.type}`);
 
         } catch (error) {
             console.error('[DLNA] 解析设备信息失败:', error);
@@ -357,6 +406,8 @@ class DLNAClient extends EventEmitter {
 
     // 获取设备描述XML
     async fetchDeviceDescription(location) {
+        console.log(`[DLNA] 获取设备描述: ${location}`);
+
         try {
             // 使用动态导入或require来加载axios
             let axios;
@@ -368,58 +419,92 @@ class DLNAClient extends EventEmitter {
             }
 
             const response = await axios.get(location, {
-                timeout: 5000,
+                timeout: 8000, // 增加超时时间
                 headers: {
-                    'User-Agent': 'QiXing-ZhuiJu/1.2.5 UPnP/1.0'
-                }
+                    'User-Agent': 'QiXing-ZhuiJu/1.2.5 UPnP/1.0',
+                    'Accept': 'text/xml, application/xml',
+                    'Connection': 'close'
+                },
+                maxRedirects: 3
             });
 
+            console.log(`[DLNA] 设备描述获取成功，长度: ${response.data.length}`);
             return this.parseDeviceDescriptionXML(response.data);
 
         } catch (error) {
-            console.warn('[DLNA] 获取设备描述失败:', error);
+            console.warn(`[DLNA] 获取设备描述失败: ${error.message}`);
+
+            // 如果是超时错误，尝试使用HTTP模块重试一次
+            if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+                console.log('[DLNA] 超时，尝试使用HTTP模块重试...');
+                try {
+                    return await this.fetchDeviceDescriptionWithHttp(location);
+                } catch (retryError) {
+                    console.warn(`[DLNA] 重试也失败: ${retryError.message}`);
+                }
+            }
+
             return null;
         }
     }
 
     // 使用Node.js内置HTTP模块获取设备描述
     async fetchDeviceDescriptionWithHttp(location) {
+        console.log(`[DLNA] 使用HTTP模块获取设备描述: ${location}`);
+
         return new Promise((resolve, reject) => {
             const url = new URL(location);
             const http = url.protocol === 'https:' ? require('https') : require('http');
 
             const options = {
                 hostname: url.hostname,
-                port: url.port,
-                path: url.pathname + url.search,
+                port: url.port || (url.protocol === 'https:' ? 443 : 80),
+                path: url.pathname + (url.search || ''),
                 method: 'GET',
                 headers: {
-                    'User-Agent': 'QiXing-ZhuiJu/1.2.5 UPnP/1.0'
+                    'User-Agent': 'QiXing-ZhuiJu/1.2.5 UPnP/1.0',
+                    'Accept': 'text/xml, application/xml',
+                    'Connection': 'close'
                 },
-                timeout: 5000
+                timeout: 8000
             };
+
+            console.log(`[DLNA] HTTP请求选项:`, {
+                hostname: options.hostname,
+                port: options.port,
+                path: options.path
+            });
 
             const req = http.request(options, (res) => {
                 let data = '';
+
+                console.log(`[DLNA] 设备描述响应状态: ${res.statusCode}`);
 
                 res.on('data', (chunk) => {
                     data += chunk;
                 });
 
                 res.on('end', () => {
+                    console.log(`[DLNA] 设备描述接收完成，长度: ${data.length}`);
                     try {
                         const deviceInfo = this.parseDeviceDescriptionXML(data);
                         resolve(deviceInfo);
                     } catch (error) {
+                        console.error(`[DLNA] 解析设备描述失败: ${error.message}`);
                         reject(error);
                     }
                 });
             });
 
-            req.on('error', reject);
+            req.on('error', (error) => {
+                console.error(`[DLNA] HTTP请求错误: ${error.message}`);
+                reject(error);
+            });
+
             req.on('timeout', () => {
+                console.error('[DLNA] HTTP请求超时');
                 req.destroy();
-                reject(new Error('请求超时'));
+                reject(new Error('设备描述请求超时'));
             });
 
             req.end();
@@ -537,56 +622,224 @@ class DLNAClient extends EventEmitter {
         }
 
         console.log(`[DLNA] 开始投屏到设备: ${device.name} (${device.address})`);
+        console.log(`[DLNA] 媒体URL: ${mediaUrl}`);
+        console.log(`[DLNA] 设备详情:`, {
+            id: device.id,
+            address: device.address,
+            location: device.location,
+            services: device.services
+        });
 
         try {
-            // 检查设备是否支持AVTransport服务
-            const avTransportService = device.services?.find(service =>
-                service.serviceType.includes('AVTransport')
-            );
+            // 首先验证设备是否仍然可达
+            await this.validateDevice(device);
 
-            if (!avTransportService) {
-                throw new Error('设备不支持媒体传输服务');
+            // 查找AVTransport服务
+            let avTransportService = null;
+
+            if (device.services && device.services.length > 0) {
+                avTransportService = device.services.find(service =>
+                    service.serviceType && service.serviceType.includes('AVTransport')
+                );
             }
+
+            // 如果没有找到服务，尝试使用正确的控制URL（基于设备描述XML）
+            if (!avTransportService) {
+                console.log('[DLNA] 未找到AVTransport服务，尝试获取设备描述并解析服务');
+
+                // 重新获取设备描述以确保有服务信息
+                const freshDeviceInfo = await this.fetchDeviceDescription(device.location);
+                if (freshDeviceInfo && freshDeviceInfo.services) {
+                    device.services = freshDeviceInfo.services;
+
+                    avTransportService = freshDeviceInfo.services.find(service =>
+                        service.serviceType && service.serviceType.includes('AVTransport')
+                    );
+                }
+
+                // 如果还是没有找到，使用默认路径
+                if (!avTransportService) {
+                    console.log('[DLNA] 仍未找到AVTransport服务，使用默认路径');
+                    avTransportService = {
+                        serviceType: 'urn:schemas-upnp-org:service:AVTransport:1',
+                        controlURL: '_urn:schemas-upnp-org:service:AVTransport_control'
+                    };
+                }
+            }
+
+            console.log(`[DLNA] 使用AVTransport服务:`, avTransportService);
 
             // 构建控制URL
             const controlUrl = this.buildControlUrl(device.location, avTransportService.controlURL);
+            console.log(`[DLNA] 控制URL: ${controlUrl}`);
 
-            // 发送SetAVTransportURI请求
-            const result = await this.sendSetAVTransportURI(controlUrl, mediaUrl, metadata);
+            // 发送SetAVTransportURI请求（带重试）
+            const setUriResult = await this.sendSetAVTransportURIWithRetry(controlUrl, mediaUrl, metadata);
 
-            if (result.success) {
-                // 开始播放
-                await this.sendPlay(controlUrl);
-                console.log(`[DLNA] 投屏成功: ${device.name}`);
-                return { success: true, device: device };
+            if (setUriResult.success) {
+                // 等待一下让设备准备好
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                // 开始播放（带重试）
+                const playResult = await this.sendPlayWithRetry(controlUrl);
+
+                if (playResult.success) {
+                    console.log(`[DLNA] 投屏成功: ${device.name}`);
+                    return { success: true, device: device };
+                } else {
+                    console.warn(`[DLNA] 播放命令失败，但URI设置成功: ${playResult.error}`);
+                    // 即使播放命令失败，URI设置成功也算部分成功
+                    return { success: true, device: device, warning: '播放可能需要手动开始' };
+                }
             } else {
-                throw new Error(result.error || '投屏失败');
+                // 提供更详细的错误信息
+                const errorMsg = setUriResult.error || '设置媒体URI失败';
+                console.error(`[DLNA] SetAVTransportURI失败: ${errorMsg}`);
+                console.error(`[DLNA] 状态码: ${setUriResult.statusCode}`);
+
+                // 根据错误类型提供解决建议
+                if (errorMsg.includes('UPnP错误码: 501')) {
+                    throw new Error('设备操作失败：媒体URL为空或无效，请确保视频正在播放且为直接视频链接');
+                } else if (errorMsg.includes('UPnP错误码: 718')) {
+                    throw new Error('设备不支持此媒体格式，请尝试其他播放线路');
+                } else if (errorMsg.includes('UPnP错误码: 714')) {
+                    throw new Error('媒体URL无效或设备无法访问，请检查网络连接');
+                } else if (errorMsg.includes('UPnP错误码: 701')) {
+                    throw new Error('设备转换错误，请重试或尝试其他设备');
+                } else {
+                    throw new Error(`${errorMsg}`);
+                }
             }
 
         } catch (error) {
             console.error(`[DLNA] 投屏失败: ${error.message}`);
+            console.error(`[DLNA] 错误详情:`, error);
             throw error;
+        }
+    }
+
+    // 验证设备是否仍然可达
+    async validateDevice(device) {
+        console.log(`[DLNA] 验证设备连接: ${device.name} (${device.address})`);
+
+        try {
+            // 尝试重新获取设备描述以验证设备是否仍然可达
+            const deviceInfo = await this.fetchDeviceDescription(device.location);
+            if (!deviceInfo) {
+                throw new Error('设备无响应或已离线');
+            }
+
+            console.log(`[DLNA] 设备验证成功: ${device.name}`);
+            return true;
+
+        } catch (error) {
+            console.warn(`[DLNA] 设备验证失败: ${error.message}`);
+            throw new Error(`设备 ${device.name} 当前不可达，请检查网络连接`);
+        }
+    }
+
+    // 带重试的SetAVTransportURI请求
+    async sendSetAVTransportURIWithRetry(controlUrl, mediaUrl, metadata, maxRetries = 2) {
+        console.log(`[DLNA] 发送SetAVTransportURI请求 (最大重试: ${maxRetries})`);
+
+        for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+            try {
+                console.log(`[DLNA] SetAVTransportURI 尝试 ${attempt}/${maxRetries + 1}`);
+                const result = await this.sendSetAVTransportURI(controlUrl, mediaUrl, metadata);
+
+                if (result.success) {
+                    console.log(`[DLNA] SetAVTransportURI 成功 (尝试 ${attempt})`);
+                    return result;
+                }
+
+                // 如果不是最后一次尝试，等待后重试
+                if (attempt <= maxRetries) {
+                    console.log(`[DLNA] SetAVTransportURI 失败，等待 ${attempt * 1000}ms 后重试: ${result.error}`);
+                    await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+                } else {
+                    return result; // 返回最后的失败结果
+                }
+
+            } catch (error) {
+                console.error(`[DLNA] SetAVTransportURI 尝试 ${attempt} 出错:`, error);
+
+                if (attempt <= maxRetries) {
+                    console.log(`[DLNA] 等待 ${attempt * 1000}ms 后重试`);
+                    await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+                } else {
+                    throw error; // 抛出最后的错误
+                }
+            }
+        }
+    }
+
+    // 带重试的Play请求
+    async sendPlayWithRetry(controlUrl, maxRetries = 2) {
+        console.log(`[DLNA] 发送Play请求 (最大重试: ${maxRetries})`);
+
+        for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+            try {
+                console.log(`[DLNA] Play 尝试 ${attempt}/${maxRetries + 1}`);
+                const result = await this.sendPlay(controlUrl);
+
+                if (result.success) {
+                    console.log(`[DLNA] Play 成功 (尝试 ${attempt})`);
+                    return result;
+                }
+
+                // 如果不是最后一次尝试，等待后重试
+                if (attempt <= maxRetries) {
+                    console.log(`[DLNA] Play 失败，等待 ${attempt * 500}ms 后重试: ${result.error}`);
+                    await new Promise(resolve => setTimeout(resolve, attempt * 500));
+                } else {
+                    return result; // 返回最后的失败结果
+                }
+
+            } catch (error) {
+                console.error(`[DLNA] Play 尝试 ${attempt} 出错:`, error);
+
+                if (attempt <= maxRetries) {
+                    console.log(`[DLNA] 等待 ${attempt * 500}ms 后重试`);
+                    await new Promise(resolve => setTimeout(resolve, attempt * 500));
+                } else {
+                    throw error; // 抛出最后的错误
+                }
+            }
         }
     }
 
     // 构建控制URL
     buildControlUrl(deviceLocation, controlPath) {
         try {
+            console.log(`[DLNA] 构建控制URL - 设备位置: ${deviceLocation}, 控制路径: ${controlPath}`);
+
             const deviceUrl = new URL(deviceLocation);
+            let controlUrl;
+
             if (controlPath.startsWith('http')) {
-                return controlPath;
+                // 绝对URL
+                controlUrl = controlPath;
             } else if (controlPath.startsWith('/')) {
-                return `${deviceUrl.protocol}//${deviceUrl.host}${controlPath}`;
+                // 根路径
+                controlUrl = `${deviceUrl.protocol}//${deviceUrl.host}${controlPath}`;
             } else {
-                return `${deviceUrl.protocol}//${deviceUrl.host}/${controlPath}`;
+                // 相对路径 - 基于设备的主机地址，而不是description.xml路径
+                controlUrl = `${deviceUrl.protocol}//${deviceUrl.host}/${controlPath}`;
             }
+
+            console.log(`[DLNA] 构建的控制URL: ${controlUrl}`);
+            return controlUrl;
+
         } catch (error) {
+            console.error(`[DLNA] 构建控制URL失败:`, error);
             throw new Error(`无效的控制URL: ${error.message}`);
         }
     }
-
     // 发送SetAVTransportURI SOAP请求
     async sendSetAVTransportURI(controlUrl, mediaUrl, metadata) {
+        console.log(`[DLNA] 发送SetAVTransportURI请求到: ${controlUrl}`);
+        console.log(`[DLNA] 媒体URL: ${mediaUrl}`);
+
         const soapAction = 'urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI';
 
         const soapBody = `<?xml version="1.0" encoding="utf-8"?>
@@ -600,11 +853,14 @@ class DLNAClient extends EventEmitter {
     </s:Body>
 </s:Envelope>`;
 
+        console.log(`[DLNA] SOAP请求体:`, soapBody);
         return await this.sendSOAPRequest(controlUrl, soapAction, soapBody);
     }
 
     // 发送Play SOAP请求
     async sendPlay(controlUrl) {
+        console.log(`[DLNA] 发送Play请求到: ${controlUrl}`);
+
         const soapAction = 'urn:schemas-upnp-org:service:AVTransport:1#Play';
 
         const soapBody = `<?xml version="1.0" encoding="utf-8"?>
@@ -617,56 +873,108 @@ class DLNAClient extends EventEmitter {
     </s:Body>
 </s:Envelope>`;
 
+        console.log(`[DLNA] Play SOAP请求体:`, soapBody);
         return await this.sendSOAPRequest(controlUrl, soapAction, soapBody);
     }
 
-    // 发送SOAP请求
+    // 发送SOAP请求（改进版，增加更好的错误处理）
     async sendSOAPRequest(url, soapAction, soapBody) {
+        console.log(`[DLNA] 发送SOAP请求: ${soapAction} -> ${url}`);
+
         return new Promise((resolve, reject) => {
             const urlObj = new URL(url);
             const http = urlObj.protocol === 'https:' ? require('https') : require('http');
 
             const options = {
                 hostname: urlObj.hostname,
-                port: urlObj.port,
-                path: urlObj.pathname + urlObj.search,
+                port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+                path: urlObj.pathname + (urlObj.search || ''),
                 method: 'POST',
                 headers: {
                     'Content-Type': 'text/xml; charset="utf-8"',
                     'Content-Length': Buffer.byteLength(soapBody),
                     'SOAPAction': `"${soapAction}"`,
-                    'User-Agent': 'QiXing-ZhuiJu/1.2.5 UPnP/1.0'
+                    'User-Agent': 'QiXing-ZhuiJu/1.2.5 UPnP/1.0',
+                    'Connection': 'close'
                 },
-                timeout: 10000
+                timeout: 15000 // 增加超时时间到15秒
             };
+
+            console.log(`[DLNA] 请求选项:`, {
+                hostname: options.hostname,
+                port: options.port,
+                path: options.path,
+                method: options.method,
+                headers: options.headers
+            });
 
             const req = http.request(options, (res) => {
                 let data = '';
+
+                console.log(`[DLNA] 收到响应状态: ${res.statusCode} ${res.statusMessage}`);
+                console.log(`[DLNA] 响应头:`, res.headers);
 
                 res.on('data', (chunk) => {
                     data += chunk;
                 });
 
                 res.on('end', () => {
+                    console.log(`[DLNA] 响应完成，数据长度: ${data.length}`);
+                    console.log(`[DLNA] 响应内容:`, data);
+
                     if (res.statusCode === 200) {
-                        resolve({ success: true, response: data });
+                        resolve({ success: true, response: data, statusCode: res.statusCode });
                     } else {
-                        resolve({ success: false, error: `HTTP ${res.statusCode}: ${data}` });
+                        const errorMsg = `HTTP ${res.statusCode}: ${res.statusMessage || 'Unknown error'}`;
+                        console.error(`[DLNA] HTTP错误: ${errorMsg}`);
+                        console.error(`[DLNA] 错误响应内容: ${data}`);
+
+                        // 检查是否是SOAP错误
+                        if (data.includes('soap:Fault') || data.includes('s:Fault')) {
+                            const faultMatch = data.match(/<faultstring[^>]*>([^<]+)<\/faultstring>/i) ||
+                                data.match(/<soap:faultstring[^>]*>([^<]+)<\/soap:faultstring>/i);
+
+                            // 尝试提取UPnP错误码
+                            const errorCodeMatch = data.match(/<errorCode>(\d+)<\/errorCode>/i);
+                            const errorDescMatch = data.match(/<errorDescription>([^<]+)<\/errorDescription>/i);
+
+                            let faultMsg = faultMatch ? faultMatch[1] : '未知SOAP错误';
+
+                            // 如果有UPnP错误信息，添加到错误消息中
+                            if (errorCodeMatch || errorDescMatch) {
+                                const errorCode = errorCodeMatch ? errorCodeMatch[1] : '未知';
+                                const errorDesc = errorDescMatch ? errorDescMatch[1] : '无描述';
+                                faultMsg += ` (UPnP错误码: ${errorCode}, 描述: ${errorDesc})`;
+                            }
+
+                            console.error(`[DLNA] SOAP Fault详情: ${faultMsg}`);
+                            console.error(`[DLNA] 完整SOAP响应: ${data}`);
+                            resolve({ success: false, error: `SOAP错误: ${faultMsg}`, statusCode: res.statusCode });
+                        } else {
+                            resolve({ success: false, error: errorMsg, statusCode: res.statusCode, response: data });
+                        }
                     }
                 });
             });
 
             req.on('error', (error) => {
-                reject(error);
+                console.error(`[DLNA] 请求错误:`, error);
+                reject(new Error(`网络请求失败: ${error.message}`));
             });
 
             req.on('timeout', () => {
+                console.error('[DLNA] 请求超时');
                 req.destroy();
-                reject(new Error('SOAP请求超时'));
+                reject(new Error('SOAP请求超时，设备可能无响应'));
             });
 
-            req.write(soapBody);
-            req.end();
+            try {
+                req.write(soapBody);
+                req.end();
+            } catch (error) {
+                console.error(`[DLNA] 发送请求失败:`, error);
+                reject(new Error(`发送SOAP请求失败: ${error.message}`));
+            }
         });
     }
 

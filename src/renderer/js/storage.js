@@ -13,12 +13,13 @@ class StorageService {
     // 获取播放历史
     getPlayHistory() {
         const history = localStorage.getItem(this.STORAGE_KEYS.PLAY_HISTORY);
-        return history ? JSON.parse(history) : [];
+        const parsedHistory = history ? JSON.parse(history) : [];
+
+        return parsedHistory;
     }
 
     // 添加播放历史
     addPlayHistory(videoData) {
-        console.log('添加播放历史:', videoData);
         let history = this.getPlayHistory();
 
         // 移除重复项
@@ -34,11 +35,13 @@ class StorageService {
             episode_name: videoData.episode_name || '第1集',
             watch_time: Date.now(),
             site_name: videoData.site_name || '未知站点',
+            site_url: videoData.site_url || '', // 新增：保存站点API地址
             progress: videoData.progress || 0,
             play_duration: videoData.play_duration || 0 // 添加播放时长字段
         };
 
-        console.log('创建历史记录项:', historyItem);
+        console.log('[STORAGE] 创建的历史记录项:', historyItem);
+        console.log('[STORAGE] 历史记录项的站点名称:', historyItem.site_name);
         history.unshift(historyItem);
 
         // 限制历史记录数量（最多保留100条）

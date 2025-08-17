@@ -43,6 +43,9 @@ class VideoPlayer {
         this.isCasting = false; // 投屏状态
         this.presentationRequest = null; // 投屏请求
         this.selectedCastDevice = null; // 选中的投屏设备
+        this.currentVideoUrl = null; // 当前播放的视频URL（用于投屏）
+        this.originalVideoUrl = null; // 原始视频URL（HTTP/HTTPS，用于投屏）
+        this.lastPlayedUrl = null; // 最后播放的URL（备份）
 
         // 初始化标题栏控制
         this.initializeTitlebarControls();
@@ -487,6 +490,33 @@ class VideoPlayer {
 
         console.log('处理后的视频URL:', cleanUrl);
 
+        // 保存当前视频URL用于投屏（重要：确保保存原始URL而不是blob URL）
+        this.currentVideoUrl = cleanUrl;
+        this.originalVideoUrl = cleanUrl; // 同时保存原始URL
+
+        // 同时保存到videoData中作为备份
+        if (this.videoData) {
+            this.videoData.currentPlayUrl = cleanUrl;
+        }
+
+        console.log('[DLNA] 保存原始视频URL:', this.originalVideoUrl);
+        console.log('[DLNA] URL保存确认:', {
+            currentVideoUrl: this.currentVideoUrl,
+            originalVideoUrl: this.originalVideoUrl,
+            cleanUrl: cleanUrl,
+            videoDataUrl: this.videoData?.currentPlayUrl
+        });
+
+        // 同时保存到localStorage作为备份（用于应急恢复）
+        if (this.videoData && this.videoData.vod_id) {
+            const backupKey = `video_url_backup_${this.videoData.vod_id}`;
+            localStorage.setItem(backupKey, cleanUrl);
+            console.log('[DLNA] URL已备份到localStorage:', backupKey, '=', cleanUrl);
+        }
+
+        // 额外调用多重备份
+        this.backupVideoUrl(cleanUrl);
+
         // 简化判断：检查是否为直接视频文件
         if (this.isDirectVideoFile(cleanUrl)) {
             console.log('检测到直接视频文件，使用原生播放器');
@@ -500,6 +530,54 @@ class VideoPlayer {
         if (this.isDirectVideoFile(cleanUrl)) {
             this.restorePlaybackProgress();
         }
+
+        // 更新投屏按钮状态
+        this.updateCastButtonState();
+    }
+
+    // 强制保存视频URL（用于投屏）
+    forceSetVideoUrl(url) {
+        if (!url || typeof url !== 'string') return;
+
+        const cleanUrl = url.trim();
+        this.currentVideoUrl = cleanUrl;
+        this.originalVideoUrl = cleanUrl;
+        this.lastPlayedUrl = cleanUrl;
+
+        if (this.videoData) {
+            this.videoData.currentPlayUrl = cleanUrl;
+        }
+
+        console.log('[DLNA] 强制设置视频URL:', {
+            currentVideoUrl: this.currentVideoUrl,
+            originalVideoUrl: this.originalVideoUrl,
+            lastPlayedUrl: this.lastPlayedUrl,
+            videoDataUrl: this.videoData?.currentPlayUrl
+        });
+    }
+
+    // 备份视频URL到多个位置（增强容错）
+    backupVideoUrl(url) {
+        if (!url || typeof url !== 'string') return;
+
+        const cleanUrl = url.trim();
+
+        // 备份到localStorage
+        if (this.videoData && this.videoData.vod_id) {
+            const backupKey = `video_url_backup_${this.videoData.vod_id}`;
+            localStorage.setItem(backupKey, cleanUrl);
+            console.log('[PLAYER] URL已备份到localStorage:', backupKey);
+        }
+
+        // 备份到全局变量
+        window.currentPlayingUrl = cleanUrl;
+
+        // 备份到DOM数据属性
+        if (this.video) {
+            this.video.dataset.originalUrl = cleanUrl;
+        }
+
+        console.log('[PLAYER] 视频URL多重备份完成:', cleanUrl);
     }
 
     // 检查是否为直接视频文件
@@ -671,6 +749,13 @@ class VideoPlayer {
     async loadHLSVideo(videoUrl) {
         console.log('加载HLS视频:', videoUrl);
 
+        // 重要：确保原始URL被正确保存，不被HLS.js的blob URL覆盖
+        console.log('[DLNA] 加载HLS前确认URL保存:', {
+            videoUrl: videoUrl,
+            currentVideoUrl: this.currentVideoUrl,
+            originalVideoUrl: this.originalVideoUrl
+        });
+
         // 确保视频元素的显示属性
         this.video.style.objectFit = 'contain';
         this.video.style.width = '100%';
@@ -692,9 +777,27 @@ class VideoPlayer {
             this.hls.loadSource(videoUrl);
             this.hls.attachMedia(this.video);
 
+            // 保存到全局变量以便投屏使用
+            window.lastLoadedVideoUrl = videoUrl;
+            window.hls = this.hls;
+            console.log('[DLNA] HLS URL保存到全局变量:', videoUrl);
+
             return new Promise((resolve, reject) => {
                 this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
                     console.log('HLS manifest 解析完成');
+                    console.log('[DLNA] HLS加载完成后URL状态:', {
+                        originalVideoUrl: this.originalVideoUrl,
+                        currentVideoUrl: this.currentVideoUrl,
+                        videoSrc: this.video.src,
+                        isBlob: this.video.src?.startsWith('blob:')
+                    });
+
+                    // 确保URL被正确保存（重要！）
+                    this.forceSetVideoUrl(videoUrl);
+
+                    // 额外备份URL到多个位置
+                    this.backupVideoUrl(videoUrl);
+
                     this.video.play().then(resolve).catch(reject);
                 });
 
@@ -721,6 +824,11 @@ class VideoPlayer {
             // Safari原生支持
             console.log('使用原生HLS支持');
             this.video.src = videoUrl;
+
+            // 保存到全局变量以便投屏使用
+            window.lastLoadedVideoUrl = videoUrl;
+            console.log('[DLNA] Safari HLS URL保存到全局变量:', videoUrl);
+
             return this.video.play();
         } else {
             throw new Error('浏览器不支持HLS播放，请尝试其他播放源');
@@ -740,6 +848,10 @@ class VideoPlayer {
 
         this.video.src = videoUrl;
 
+        // 保存到全局变量以便投屏使用
+        window.lastLoadedVideoUrl = videoUrl;
+        console.log('[DLNA] 普通视频URL保存到全局变量:', videoUrl);
+
         return new Promise((resolve, reject) => {
             const onLoadedMetadata = () => {
                 console.log('[PLAYER] 视频元数据加载完成:', {
@@ -747,6 +859,10 @@ class VideoPlayer {
                     videoHeight: this.video.videoHeight,
                     duration: this.video.duration
                 });
+
+                // 确保URL被正确保存和备份
+                this.forceSetVideoUrl(videoUrl);
+                this.backupVideoUrl(videoUrl);
 
                 this.video.removeEventListener('loadedmetadata', onLoadedMetadata);
                 this.video.removeEventListener('error', onError);
@@ -822,6 +938,14 @@ class VideoPlayer {
         this.video.addEventListener('loadedmetadata', () => {
             console.log('[PLAYER] 视频元数据加载完成，调整显示');
             this.adjustVideoDisplay();
+
+            // 确保URL在视频加载完成后被正确保存（投屏备用）
+            if (this.currentVideoUrl || this.originalVideoUrl) {
+                const urlToSave = this.originalVideoUrl || this.currentVideoUrl;
+                console.log('[PLAYER] 视频加载完成，重新确认URL保存:', urlToSave);
+                this.forceSetVideoUrl(urlToSave);
+                this.backupVideoUrl(urlToSave);
+            }
         });
 
         // 用于防止双击时重复触发单击事件
@@ -1046,7 +1170,8 @@ class VideoPlayer {
             castVideoBtn.addEventListener('click', async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log('[PLAYER] 投屏按钮被点击');
+                console.log('🚨🚨🚨 [PLAYER] 投屏按钮被点击!!!');
+                console.log('🚨🚨🚨 [PLAYER] 开始执行toggleCasting...');
                 await this.toggleCasting();
             });
         }
@@ -1622,11 +1747,14 @@ class VideoPlayer {
                 const currentRoute = this.allRoutes[this.currentRouteIndex];
                 const currentEpisode = this.allEpisodes.find(ep => ep.index === episodeIndex);
 
-                // 获取当前活跃站点信息
+                // 从视频数据中获取站点信息（由主窗口传递）
                 let siteName = '未知站点';
-                if (window.parent && window.parent.app && window.parent.app.apiService) {
-                    const activeSite = window.parent.app.apiService.getActiveSite();
-                    siteName = activeSite ? activeSite.name : '未知站点';
+                let siteUrl = '';
+                if (this.videoData.siteName) {
+                    siteName = this.videoData.siteName;
+                }
+                if (this.videoData.siteUrl) {
+                    siteUrl = this.videoData.siteUrl;
                 }
 
                 // 更新播放历史
@@ -1637,7 +1765,8 @@ class VideoPlayer {
                     type_name: this.videoData.type_name || '未知类型',
                     current_episode: episodeIndex,
                     episode_name: currentEpisode?.name || `第${episodeIndex}集`,
-                    site_name: siteName
+                    site_name: siteName,
+                    site_url: siteUrl
                 };
 
                 console.log('[PLAYER] 更新播放历史数据:', historyData);
@@ -2078,13 +2207,9 @@ class VideoPlayer {
                     opacity: 1 !important;
                     visibility: visible !important;
                 `;
-                console.log('[PLAYER] 强制显示时间预览元素（红色调试版本）');
-                console.log('[PLAYER] 时间预览父元素:', timePreview.parentElement);
-                console.log('[PLAYER] 时间预览样式:', timePreview.style.cssText);
                 
                 // 检查时间预览的位置
                 const previewRect = timePreview.getBoundingClientRect();
-                console.log('[PLAYER] 时间预览位置和大小:', previewRect);
             }
         }, 2000); // 延长到2秒，确保其他样式加载完成
         */        const updateProgress = (e) => {
@@ -2620,11 +2745,15 @@ class VideoPlayer {
 
     // 投屏功能 - 切换投屏状态
     async toggleCasting() {
+        console.log('⚡⚡⚡ [PLAYER] toggleCasting 方法被调用!!!');
+        console.log('⚡⚡⚡ [PLAYER] 当前投屏状态:', this.isCasting);
         try {
             if (this.isCasting) {
+                console.log('⚡⚡⚡ [PLAYER] 当前正在投屏，停止投屏');
                 // 当前正在投屏，停止投屏
                 await this.stopCasting();
             } else {
+                console.log('⚡⚡⚡ [PLAYER] 当前未投屏，开始投屏');
                 // 当前未投屏，开始投屏
                 await this.startCasting();
             }
@@ -2636,6 +2765,7 @@ class VideoPlayer {
 
     // 开始投屏
     async startCasting() {
+        console.log('💥💥💥 [PLAYER] startCasting 方法被调用!!!');
         console.log('[PLAYER] 显示投屏设备选择对话框...');
 
         try {
@@ -2688,7 +2818,6 @@ class VideoPlayer {
         const modal = document.getElementById('cast-device-modal');
         const closeBtn = document.getElementById('cast-modal-close');
         const cancelBtn = document.getElementById('cast-cancel-btn');
-        const manualBtn = document.getElementById('btn-manual-cast');
         const refreshBtn = document.getElementById('btn-refresh-devices');
         const backdrop = modal?.querySelector('.cast-modal-backdrop');
 
@@ -2705,14 +2834,6 @@ class VideoPlayer {
         // 背景点击关闭
         if (backdrop) {
             backdrop.onclick = () => this.hideCastDeviceModal();
-        }
-
-        // 手动投屏按钮
-        if (manualBtn) {
-            manualBtn.onclick = async () => {
-                this.hideCastDeviceModal();
-                await this.startManualCasting();
-            };
         }
 
         // 刷新设备按钮
@@ -2829,18 +2950,6 @@ class VideoPlayer {
                         console.warn('[PLAYER] Presentation API 失败:', error);
                     }
                 }
-            }
-
-            // 3. 添加手动投屏选项
-            if (devices.length === 0) {
-                devices.push({
-                    id: 'manual_cast',
-                    name: '手动投屏 (系统默认)',
-                    type: '系统投屏',
-                    icon: '🖥️',
-                    status: 'available',
-                    protocol: 'system'
-                });
             }
 
             console.log(`[PLAYER] 设备发现完成，找到 ${devices.length} 个设备:`, devices);
@@ -3047,6 +3156,8 @@ class VideoPlayer {
 
     // 选择投屏设备
     async selectCastDevice(device) {
+        console.log('🔥🔥🔥 [PLAYER] selectCastDevice 方法被调用!!!');
+        console.log('🔥🔥🔥 [PLAYER] 选择的设备:', device);
         console.log('[PLAYER] 选择投屏设备:', device);
 
         // 更新UI选中状态
@@ -3089,17 +3200,176 @@ class VideoPlayer {
 
     // 连接到投屏设备
     async connectToCastDevice(device) {
+        console.log('🚀🚀🚀 [PLAYER] connectToCastDevice 方法被调用!!!');
+        console.log('🚀🚀🚀 [PLAYER] 设备信息:', device);
         console.log('[PLAYER] 连接到投屏设备:', device);
 
         try {
             this.hideCastDeviceModal();
             this.showNotification(`正在连接到 ${device.name}...`, 'info');
 
-            // 获取当前视频信息
-            const currentUrl = this.video?.src || this.video?.currentSrc;
-            if (!currentUrl) {
-                throw new Error('没有正在播放的视频');
+            // 详细调试：检查所有可能的URL源
+            console.log('🔍🔍🔍 [PLAYER] URL调试开始 - 检查所有可能的URL源:');
+            console.log('  - this.originalVideoUrl:', this.originalVideoUrl);
+            console.log('  - this.currentVideoUrl:', this.currentVideoUrl);
+            console.log('  - this.lastPlayedUrl:', this.lastPlayedUrl);
+            console.log('  - this.videoData?.currentPlayUrl:', this.videoData?.currentPlayUrl);
+            console.log('  - this.video?.src:', this.video?.src);
+            console.log('  - this.video?.currentSrc:', this.video?.currentSrc);
+            console.log('  - window.currentPlayingUrl:', window.currentPlayingUrl);
+            console.log('  - this.videoData 完整对象:', this.videoData);
+
+            // 在投屏前强制检测和保存当前播放的URL
+            console.log('🚨🚨🚨 [PLAYER] 投屏前强制URL检测和保存开始...');
+
+            // 检查是否有正在播放的视频
+            if (this.video && !this.video.paused && this.video.currentTime > 0) {
+                console.log('✅ [PLAYER] 检测到正在播放的视频，尝试获取真实URL...');
+
+                // 尝试从HLS.js获取真实URL
+                if (window.hls && window.hls.url) {
+                    const hlsUrl = window.hls.url;
+                    console.log('🎯 [PLAYER] 从HLS.js获取到URL:', hlsUrl);
+                    this.forceSetVideoUrl(hlsUrl);
+                }
+
+                // 尝试从全局变量获取
+                if (window.lastLoadedVideoUrl) {
+                    console.log('🎯 [PLAYER] 从window.lastLoadedVideoUrl获取到URL:', window.lastLoadedVideoUrl);
+                    this.forceSetVideoUrl(window.lastLoadedVideoUrl);
+                }
+
+                // 尝试从localStorage获取最近的URL备份
+                if (this.videoData && this.videoData.vod_id) {
+                    const backupKey = `video_url_backup_${this.videoData.vod_id}`;
+                    const backupUrl = localStorage.getItem(backupKey);
+                    if (backupUrl) {
+                        console.log('🎯 [PLAYER] 从localStorage备份获取到URL:', backupUrl);
+                        this.forceSetVideoUrl(backupUrl);
+                    }
+                }
             }
+
+            // 尝试多种方式获取视频URL
+            let currentUrl = null;
+
+            // 方法1：使用保存的原始URL
+            if (this.originalVideoUrl && this.originalVideoUrl.trim()) {
+                currentUrl = this.originalVideoUrl;
+            }
+
+            // 方法2：使用当前视频URL
+            else if (this.currentVideoUrl && this.currentVideoUrl.trim()) {
+                currentUrl = this.currentVideoUrl;
+                console.log('[PLAYER] ✅ 方法2成功：使用currentVideoUrl =', currentUrl);
+            }
+
+            // 方法3：从视频数据获取
+            else if (this.videoData && this.videoData.currentPlayUrl) {
+                currentUrl = this.videoData.currentPlayUrl;
+                console.log('[PLAYER] ✅ 方法3成功：使用videoData.currentPlayUrl =', currentUrl);
+            }
+
+            // 方法4：使用最后播放的URL备份
+            else if (this.lastPlayedUrl && this.lastPlayedUrl.trim()) {
+                currentUrl = this.lastPlayedUrl;
+                console.log('[PLAYER] ✅ 方法4成功：使用lastPlayedUrl =', currentUrl);
+            }
+
+            // 方法5：从video元素获取（排除blob URL）
+            else if (this.video) {
+                const videoSrc = this.video.src || this.video.currentSrc;
+                if (videoSrc && !videoSrc.startsWith('blob:') && !videoSrc.startsWith('mediasource:')) {
+                    currentUrl = videoSrc;
+                    console.log('[PLAYER] ✅ 方法5成功：使用video.src（非blob） =', currentUrl);
+                } else {
+                    console.log('[PLAYER] ❌ 方法5失败：video.src是blob或无效 =', videoSrc);
+                }
+            }
+
+            // 方法6：从全局变量获取备份
+            else if (window.currentPlayingUrl && window.currentPlayingUrl.trim()) {
+                currentUrl = window.currentPlayingUrl;
+                console.log('[PLAYER] ✅ 方法6成功：使用window.currentPlayingUrl =', currentUrl);
+            }
+
+            // 方法7：从video元素的data属性获取
+            else if (this.video && this.video.dataset.originalUrl) {
+                currentUrl = this.video.dataset.originalUrl;
+                console.log('[PLAYER] ✅ 方法7成功：使用video.dataset.originalUrl =', currentUrl);
+            }
+
+            console.log('[PLAYER] URL获取结果:');
+            console.log('  - originalVideoUrl:', this.originalVideoUrl);
+            console.log('  - currentVideoUrl:', this.currentVideoUrl);
+            console.log('  - lastPlayedUrl:', this.lastPlayedUrl);
+            console.log('  - videoData.currentPlayUrl:', this.videoData?.currentPlayUrl);
+            console.log('  - video.src:', this.video?.src);
+            console.log('  - video.currentSrc:', this.video?.currentSrc);
+            console.log('  - 最终使用:', currentUrl);
+
+            if (!currentUrl) {
+                console.error('[PLAYER] ❌ URL获取失败 - 所有URL源都为空:');
+                console.error('  - originalVideoUrl:', this.originalVideoUrl);
+                console.error('  - currentVideoUrl:', this.currentVideoUrl);
+                console.error('  - videoData:', this.videoData);
+                console.error('  - video.src:', this.video?.src);
+                console.error('  - video.currentSrc:', this.video?.currentSrc);
+
+                // 尝试应急方案：从localStorage备份获取URL
+                if (this.videoData && this.videoData.vod_id) {
+                    console.log('[PLAYER] 尝试从localStorage备份获取URL...');
+                    const backupKey = `video_url_backup_${this.videoData.vod_id}`;
+                    const backupUrl = localStorage.getItem(backupKey);
+                    if (backupUrl) {
+                        currentUrl = backupUrl;
+                        console.log('[PLAYER] ✅ 应急方案成功：从localStorage备份获取URL =', currentUrl);
+                    }
+                }
+
+                // 最后的应急方案：尝试从DOM中获取当前播放的剧集URL
+                if (!currentUrl) {
+                    console.log('[PLAYER] 尝试从DOM获取当前剧集URL...');
+                    const currentEpisodeBtn = document.querySelector('.episode-btn.current-episode');
+                    if (currentEpisodeBtn && currentEpisodeBtn.dataset.url) {
+                        currentUrl = currentEpisodeBtn.dataset.url;
+                        console.log('[PLAYER] ✅ 最终应急方案成功：从DOM获取URL =', currentUrl);
+
+                        // 立即保存这个URL
+                        this.forceSetVideoUrl(currentUrl);
+                    }
+                }
+
+                if (!currentUrl) {
+                    throw new Error('没有正在播放的视频，或当前播放的不是直接视频链接。请确保视频已完全加载后再尝试投屏。');
+                }
+            }
+
+            // 检查URL类型是否支持投屏
+            if (!this.isDirectVideoFile(currentUrl)) {
+                console.warn('[PLAYER] ⚠️ 检测到网页播放器，无法直接投屏');
+                console.warn('  当前URL:', currentUrl);
+                console.warn('  URL类型: 网页链接');
+
+                // 尝试检查是否是iframe播放模式
+                const webPageContainer = document.getElementById('webpage-player-container');
+                const isUsingWebPage = webPageContainer && webPageContainer.style.display !== 'none';
+
+                if (isUsingWebPage) {
+                    throw new Error('当前使用网页播放器，无法投屏。请使用支持直接视频链接的播放源。');
+                } else {
+                    // 可能是其他类型的非直接视频URL
+                    throw new Error('当前视频格式不支持投屏。仅支持直接视频文件（.mp4、.m3u8等）。');
+                }
+            }
+
+            // 进一步验证URL的有效性
+            if (!currentUrl.startsWith('http://') && !currentUrl.startsWith('https://')) {
+                console.error('[PLAYER] ❌ URL格式无效，不是有效的HTTP/HTTPS地址:', currentUrl);
+                throw new Error('视频URL格式无效，投屏需要完整的HTTP/HTTPS地址');
+            }
+
+            console.log('[PLAYER] ✅ URL类型检查通过，支持投屏:', currentUrl);
 
             const currentTime = this.video?.currentTime || 0;
 
@@ -3157,28 +3427,113 @@ class VideoPlayer {
 
     // 连接DLNA设备
     async connectDLNADevice(device, mediaUrl, metadata) {
-        console.log('[PLAYER] 使用DLNA协议投屏...');
+        console.log('🎯🎯🎯 [PLAYER] connectDLNADevice 方法被调用!!!');
+
+        // 🔥 修复：如果传入的mediaUrl为空，直接使用保存的原始URL
+        if (!mediaUrl && this.originalVideoUrl) {
+            mediaUrl = this.originalVideoUrl;
+            console.log('🎯🎯🎯 [PLAYER] 使用保存的originalVideoUrl:', mediaUrl);
+        } else if (!mediaUrl && this.currentVideoUrl) {
+            mediaUrl = this.currentVideoUrl;
+            console.log('🎯🎯🎯 [PLAYER] 使用保存的currentVideoUrl:', mediaUrl);
+        }
+
+        console.log('🎯🎯🎯 [PLAYER] 最终mediaUrl:', mediaUrl);
+        console.log('🎯🎯🎯 [PLAYER] mediaUrl类型:', typeof mediaUrl);
+        console.log('[PLAYER] 使用DLNA协议投屏到设备:', device.name);
+        console.log('[PLAYER] 设备地址:', device.address);
+        console.log('[PLAYER] 媒体URL:', mediaUrl);
 
         try {
             if (!window.electron || !window.electron.ipcRenderer) {
                 throw new Error('DLNA功能需要桌面版支持');
             }
 
+            // 在调用IPC前再次验证URL
+            if (!mediaUrl) {
+                console.error('[PLAYER] ❌ 致命错误: mediaUrl为空，无法投屏');
+                throw new Error('媒体URL为空，无法投屏');
+            }
+
+            // 显示详细的连接进度
+            this.showNotification(`正在连接 ${device.name}...`, 'info');
+
+            // 调用主进程进行DLNA投屏
+            console.log('[PLAYER] 调用主进程DLNA投屏...');
+            console.log('[PLAYER] IPC调用参数:', {
+                deviceId: device.id,
+                mediaUrl: mediaUrl,
+                metadata: metadata
+            });
+
             const result = await window.electron.ipcRenderer.invoke('cast-to-dlna-device', device.id, mediaUrl, metadata);
+
+            console.log('[PLAYER] DLNA投屏结果:', result);
 
             if (result.success) {
                 console.log('[PLAYER] DLNA投屏成功:', result.message);
+
+                // 如果有警告信息，显示给用户
+                if (result.warning) {
+                    this.showNotification(`${result.message}，但${result.warning}`, 'warning');
+                }
+
                 return true;
             } else {
-                throw new Error(result.error || 'DLNA投屏失败');
+                // 根据错误类型提供更友好的错误信息
+                let userFriendlyError = this.translateDLNAError(result.error);
+                console.error('[PLAYER] DLNA投屏失败:', result.error);
+                throw new Error(userFriendlyError);
             }
 
         } catch (error) {
-            console.error('[PLAYER] DLNA投屏失败:', error);
-            throw error;
+            console.error('[PLAYER] DLNA投屏过程出错:', error);
+
+            // 转换为用户友好的错误信息
+            let userFriendlyError = this.translateDLNAError(error.message);
+            throw new Error(userFriendlyError);
         }
     }
 
+    // 将技术错误信息转换为用户友好的错误信息
+    translateDLNAError(errorMessage) {
+        if (!errorMessage) return '未知错误';
+
+        const message = errorMessage.toLowerCase();
+
+        if (message.includes('timeout') || message.includes('超时')) {
+            return '设备响应超时，请检查设备是否正常工作';
+        }
+
+        if (message.includes('econnrefused') || message.includes('connection refused')) {
+            return '无法连接到设备，请检查设备是否开启DLNA功能';
+        }
+
+        if (message.includes('network') || message.includes('网络')) {
+            return '网络连接失败，请检查设备和电脑是否在同一网络';
+        }
+
+        if (message.includes('不支持') || message.includes('not support')) {
+            return '设备不支持此媒体格式或功能';
+        }
+
+        if (message.includes('unauthorized') || message.includes('auth')) {
+            return '设备拒绝连接，可能需要授权';
+        }
+
+        if (message.includes('soap') || message.includes('upnp')) {
+            return '设备协议不兼容，请尝试其他投屏方式';
+        }
+
+        if (message.includes('设备不存在') || message.includes('device not found')) {
+            return '设备已离线，请刷新设备列表';
+        }
+
+        // 如果没有匹配的模式，返回简化的原始错误
+        return errorMessage.length > 50 ? '投屏失败，请重试或尝试其他投屏方式' : errorMessage;
+    }
+
+    // 运行DLNA诊断
     // 连接系统投屏
     async connectSystemCasting(mediaUrl, currentTime, metadata) {
         console.log('[PLAYER] 使用系统投屏...');
@@ -3246,41 +3601,7 @@ class VideoPlayer {
         }
     }
 
-    // 手动投屏（直接使用系统功能）
-    async startManualCasting() {
-        console.log('[PLAYER] 开始手动投屏...');
-
-        try {
-            const currentUrl = this.video?.src || this.video?.currentSrc;
-            if (!currentUrl) {
-                throw new Error('没有正在播放的视频');
-            }
-
-            const currentTime = this.video?.currentTime || 0;
-
-            if (await this.trySystemCasting()) {
-                this.isCasting = true;
-                const castBtn = document.getElementById('cast-video');
-                if (castBtn) {
-                    castBtn.classList.add('casting');
-                    castBtn.title = '停止投屏 (手动模式)';
-                }
-
-                // 暂停本地播放
-                if (this.video && !this.video.paused) {
-                    this.video.pause();
-                }
-
-                this.showNotification('手动投屏已开始', 'success');
-            } else {
-                throw new Error('手动投屏失败');
-            }
-
-        } catch (error) {
-            console.error('[PLAYER] 手动投屏失败:', error);
-            this.showNotification('手动投屏失败: ' + error.message, 'error');
-        }
-    }    // 停止投屏
+    // 停止投屏
     async stopCasting() {
         console.log('[PLAYER] 停止投屏...');
 
@@ -3591,6 +3912,43 @@ ${description ? `💡 简介：${description}` : ''}
                 }
             }, 300);
         }, 3000);
+    }
+
+    // 更新投屏按钮状态
+    updateCastButtonState() {
+        const castBtn = document.getElementById('cast-video');
+        if (!castBtn) return;
+
+        const currentUrl = this.originalVideoUrl || this.currentVideoUrl || this.video?.src || this.video?.currentSrc;
+        const canCast = currentUrl && this.isDirectVideoFile(currentUrl);
+
+        if (canCast) {
+            // 可以投屏
+            castBtn.disabled = false;
+            castBtn.style.opacity = '1';
+            castBtn.title = '投屏到设备';
+            castBtn.classList.remove('disabled');
+        } else {
+            // 无法投屏
+            castBtn.disabled = true;
+            castBtn.style.opacity = '0.5';
+
+            if (!currentUrl) {
+                castBtn.title = '没有正在播放的视频';
+            } else if (!this.isDirectVideoFile(currentUrl)) {
+                castBtn.title = '当前播放模式不支持投屏（仅支持直接视频文件）';
+            } else {
+                castBtn.title = '投屏不可用';
+            }
+
+            castBtn.classList.add('disabled');
+        }
+
+        console.log('[PLAYER] 投屏按钮状态更新:', {
+            currentUrl: currentUrl,
+            canCast: canCast,
+            isDirectVideo: currentUrl ? this.isDirectVideoFile(currentUrl) : false
+        });
     }
 
     // 销毁播放器
