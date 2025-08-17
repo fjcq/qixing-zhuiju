@@ -643,7 +643,7 @@ class DLNAClient extends EventEmitter {
                 );
             }
 
-            // 如果没有找到服务，尝试使用正确的控制URL（基于设备描述XML）
+            // 如果没有找到服务，尝试重新获取设备描述并解析服务
             if (!avTransportService) {
                 console.log('[DLNA] 未找到AVTransport服务，尝试获取设备描述并解析服务');
 
@@ -651,18 +651,19 @@ class DLNAClient extends EventEmitter {
                 const freshDeviceInfo = await this.fetchDeviceDescription(device.location);
                 if (freshDeviceInfo && freshDeviceInfo.services) {
                     device.services = freshDeviceInfo.services;
+                    console.log('[DLNA] 重新获取的服务列表:', freshDeviceInfo.services);
 
                     avTransportService = freshDeviceInfo.services.find(service =>
                         service.serviceType && service.serviceType.includes('AVTransport')
                     );
                 }
 
-                // 如果还是没有找到，使用默认路径
+                // 如果还是没有找到，使用基于实际设备XML的默认控制URL
                 if (!avTransportService) {
-                    console.log('[DLNA] 仍未找到AVTransport服务，使用默认路径');
+                    console.log('[DLNA] 仍未找到AVTransport服务，使用基于设备XML的控制URL');
                     avTransportService = {
                         serviceType: 'urn:schemas-upnp-org:service:AVTransport:1',
-                        controlURL: '_urn:schemas-upnp-org:service:AVTransport_control'
+                        controlURL: '/control/AVTransport1'  // 基于实际XML的正确路径
                     };
                 }
             }
