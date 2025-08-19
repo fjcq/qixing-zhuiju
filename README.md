@@ -7,21 +7,41 @@
 ### 开发环境
 
 ```bash
-npm install         # 安装依赖
-npm start           # 启动开发服务器
-# 或者使用
-dev.bat             # Windows 批处理启动
+# 使用pnpm（推荐，项目已迁移）
+pnpm install       # 安装依赖
+pnpm start         # 启动开发服务器
+
+# Windows批处理启动（智能检测npm/pnpm）
+dev.bat            # 开发启动器
 ```
 
 ### 编译发布
 
 ```bash
-npm run pack        # 推荐：使用electron-packager编译
-npm run dist        # electron-builder编译（可能遇到代码签名问题）
-# 或者使用批处理工具
-build.bat          # 完整编译（推荐）
-quick-build.bat    # 快速编译
+# 使用pnpm（推荐）
+pnpm run pack      # 推荐：使用electron-packager编译
+pnpm run dist      # electron-builder编译
 ```
+
+#### 智能编译器（Windows批处理，自动检测包管理器）
+
+```powershell
+# 交互式菜单（推荐）
+.\build.bat
+
+# 或直接指定模式
+.\build.bat quick    # 快速编译
+.\build.bat full     # 完整编译（包含环境检测）
+.\build.bat portable # 便携版Node.js编译
+.\build.bat test     # 环境兼容性测试
+```
+
+#### 编译模式说明
+
+- **快速编译**: 适合日常开发，直接使用pnpm run pack
+- **完整编译**: 包含完整的环境检测和多种编译方式尝试，适合首次编译或遇到问题时使用
+- **便携版编译**: 兼容便携版Node.js环境，支持自定义Node.js路径
+- **环境测试**: 全面检测编译环境的兼容性
 
 ## 📦 编译输出
 
@@ -137,9 +157,27 @@ dist/七星追剧-win32-x64/七星追剧.exe
 ### 编译步骤
 
 1. **环境准备**：确保已安装 Node.js 16+ 和项目依赖
-2. **执行编译**：运行 `build.bat` 或 `npm run pack` 进行编译
+2. **执行编译**：运行 `build.bat` 选择编译模式，或直接使用 `pnpm run pack`
 3. **文件打包**：将 `dist/七星追剧-win32-x64/` 整个文件夹打包
 4. **用户分发**：用户解压后即可直接运行
+
+### 🔧 便携版Node.js支持
+
+针对使用便携版Node.js的用户，可以使用 `build.bat` 的便携版编译模式：
+
+#### 使用方法
+
+1. 运行 `build.bat`
+2. 选择 `[3] 便携版Node.js编译`
+3. 输入便携版Node.js的安装路径
+4. 等待自动编译完成
+
+#### 特性优势
+
+- ✅ **自动路径检测** - 支持便携版Node.js路径输入
+- ✅ **环境隔离** - 创建独立的pnpm缓存和配置
+- ✅ **兼容性测试** - 内置环境检测功能
+- ✅ **智能fallback** - 多种编译方式自动切换
 
 > 📋 详细版本更新历史请参考 [CHANGELOG.md](CHANGELOG.md)
 
@@ -147,16 +185,19 @@ dist/七星追剧-win32-x64/七星追剧.exe
 
 ### 批处理脚本
 
-- `build.bat` - 完整编译工具，包含环境检查和详细提示
-- `quick-build.bat` - 快速编译，适合频繁测试
-- `dev.bat` - 开发模式启动，等同于 npm start
+- `dev.bat` - 智能开发启动器，自动检测运行环境（VS Code/独立终端）
+- `build.bat` - 智能编译器，集成多种编译模式：
+  - 快速编译（推荐）
+  - 完整编译（环境检测）
+  - 便携版Node.js编译
+  - 环境兼容性测试
 
 ### 开发模式
 
 ```bash
-npm run dev        # 开发模式（支持调试）
-npm start         # 标准启动
-dev.bat          # Windows批处理启动
+pnpm run dev      # 开发模式（支持调试）
+pnpm start        # 标准启动
+dev.bat          # Windows批处理启动（智能检测npm/pnpm）
 ```
 
 ### 调试功能

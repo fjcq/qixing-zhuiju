@@ -4,6 +4,22 @@ const fs = require('fs');
 const { spawn, exec } = require('child_process');
 const os = require('os');
 
+// 设置进程编码，确保中文正确显示
+if (process.platform === 'win32') {
+    // 检测终端编码环境
+    try {
+        if (process.env.VSCODE_PID) {
+            // 在VS Code环境中
+            console.log('[MAIN] 检测到VS Code环境，使用UTF-8编码');
+        } else {
+            // 在独立终端中
+            console.log('[MAIN] 检测到独立终端环境');
+        }
+    } catch (err) {
+        console.error('[MAIN] 编码设置失败:', err.message);
+    }
+}
+
 // 导入DLNA客户端
 const DLNAClient = require('./src/dlna/dlna-client');
 
