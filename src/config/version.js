@@ -1,14 +1,14 @@
 // 版本配置文件 - 统一管理应用版本号
 // 修改这里的版本号会自动同步到所有使用的地方
 
-const APP_VERSION = 'v1.2.9';
-const APP_VERSION_NUMBER = '1.2.9'; // 不带v前缀的版本号
+const APP_VERSION = 'v1.3.0';
+const APP_VERSION_NUMBER = '1.3.0'; // 不带v前缀的版本号
 
 // 版本信息对象
 const VERSION_INFO = {
     version: APP_VERSION,
     versionNumber: APP_VERSION_NUMBER,
-    releaseDate: '2025-08-17',
+    releaseDate: '2025-08-20',
     codeName: '最新版本'
 };
 
