@@ -412,6 +412,9 @@ class VideoPlayer {
             this.updateVideoInfo();
             this.updateEpisodeList();
 
+            // 通知主窗口更新当前集数
+            this.notifyMainWindowEpisodeChange(episodeIndex, episodeUrl);
+
             // 设置弹幕房间
             this.setupDanmakuRoom(episodeUrl);
 
@@ -437,6 +440,33 @@ class VideoPlayer {
         } catch (error) {
             console.error('播放失败:', error);
             this.showError('视频加载失败，请重试');
+        }
+    }
+
+    // 通知主窗口当前集数变化
+    notifyMainWindowEpisodeChange(episodeIndex, episodeUrl) {
+        try {
+            if (window.electron && window.electron.ipcRenderer && this.videoData) {
+                // 查找当前集数信息
+                const currentRoute = this.allRoutes[this.currentRouteIndex];
+                const currentEpisode = this.allEpisodes.find(ep => ep.index === episodeIndex);
+
+                const updateData = {
+                    videoId: this.videoData.vod_id,
+                    episodeIndex: episodeIndex - 1, // 转换为从0开始的索引，与详情页面保持一致
+                    episodeName: currentEpisode?.name || `第${episodeIndex}集`,
+                    routeIndex: this.currentRouteIndex,
+                    routeName: currentRoute?.name || '未知线路',
+                    episodeUrl: episodeUrl
+                };
+
+                console.log('[PLAYER] 通知主窗口集数变化:', updateData);
+
+                // 发送集数更新通知到主进程，然后转发到主窗口
+                window.electron.ipcRenderer.invoke('player-episode-changed', updateData);
+            }
+        } catch (error) {
+            console.error('[PLAYER] 通知主窗口集数变化失败:', error);
         }
     }
 

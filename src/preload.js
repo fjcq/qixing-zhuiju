@@ -29,7 +29,8 @@ contextBridge.exposeInMainWorld('electron', {
                 'stop-dlna-casting',
                 'read-clipboard',
                 'write-clipboard',
-                'player-log'
+                'player-log',
+                'player-episode-changed'
             ];
             if (validChannels.includes(channel)) {
                 return ipcRenderer.invoke(channel, data);
@@ -39,7 +40,8 @@ contextBridge.exposeInMainWorld('electron', {
             const validChannels = [
                 'player-closed',
                 'video-progress',
-                'video-data'
+                'video-data',
+                'episode-changed'
             ];
             if (validChannels.includes(channel)) {
                 ipcRenderer.on(channel, (event, ...args) => func(...args));

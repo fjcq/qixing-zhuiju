@@ -92,6 +92,9 @@ class QixingZhuijuApp {
             // 初始化剪切板检测
             this.initializeClipboardDetection();
 
+            // 初始化播放器集数同步监听
+            this.initializePlayerEpisodeSync();
+
             console.log('应用初始化完成');
         } catch (error) {
             console.error('应用初始化失败:', error);
@@ -836,7 +839,54 @@ class QixingZhuijuApp {
             console.log('[APP] 页面加载后主动检测一次剪切板内容...');
             this.checkClipboardForShare(false);
         }, 500);
-    }    // 检测剪切板中的分享内容
+    }
+
+    // 初始化播放器集数同步监听
+    initializePlayerEpisodeSync() {
+        console.log('[APP] 初始化播放器集数同步监听...');
+
+        // 监听播放器窗口发送的集数变化事件
+        if (window.electron && window.electron.ipcRenderer) {
+            window.electron.ipcRenderer.on('episode-changed', (updateData) => {
+                console.log('[APP] 收到播放器集数变化通知:', updateData);
+                this.handlePlayerEpisodeChanged(updateData);
+            });
+
+            console.log('[APP] 播放器集数同步监听已启用');
+        } else {
+            console.warn('[APP] Electron IPC不可用，无法启用播放器集数同步');
+        }
+    }
+
+    // 处理播放器集数变化
+    handlePlayerEpisodeChanged(updateData) {
+        try {
+            console.log('[APP] 处理播放器集数变化:', updateData);
+
+            // 检查当前是否在详情页面，且是同一个视频
+            if (this.currentPage === 'detail' &&
+                this.componentService.currentVideoData &&
+                this.componentService.currentVideoData.vod_id === updateData.videoId) {
+
+                console.log('[APP] 当前正在查看此视频详情页，同步更新集数显示');
+
+                // 通知组件服务更新当前集数显示
+                this.componentService.syncCurrentEpisode(updateData);
+
+                // 可选：显示一个小提示告诉用户播放器切换了集数
+                this.componentService.showNotification(
+                    `播放器已切换到：${updateData.episodeName}`,
+                    'info'
+                );
+            } else {
+                console.log('[APP] 当前不在对应视频详情页，忽略集数同步');
+            }
+        } catch (error) {
+            console.error('[APP] 处理播放器集数变化失败:', error);
+        }
+    }
+
+    // 检测剪切板中的分享内容
     async checkClipboardForShare(forceCheck = false) {
         try {
             // 读取剪切板内容

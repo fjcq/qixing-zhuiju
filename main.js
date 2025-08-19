@@ -763,6 +763,24 @@ class QixingZhuiju {
 
             return true;
         });
+
+        // 播放器集数变化通知
+        ipcMain.handle('player-episode-changed', async (event, updateData) => {
+            try {
+                console.log('[MAIN] 播放器集数变化通知:', updateData);
+
+                // 转发集数更新通知到主窗口
+                if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+                    this.mainWindow.webContents.send('episode-changed', updateData);
+                    console.log('[MAIN] 已转发集数更新通知到主窗口');
+                }
+
+                return { success: true };
+            } catch (error) {
+                console.error('[MAIN] 处理播放器集数变化通知失败:', error);
+                return { success: false, error: error.message };
+            }
+        });
     }
 
     // 系统投屏功能 (已移除)

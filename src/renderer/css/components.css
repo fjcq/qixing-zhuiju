@@ -951,6 +951,59 @@
     }
 }
 
+/* 当前正在播放的集数样式 */
+.episode-btn.current-playing {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    border-color: #e74c3c;
+    color: white;
+    font-weight: bold;
+    position: relative;
+    box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.4), 0 2px 12px rgba(231, 76, 60, 0.3);
+    animation: currentPlayingPulse 1.5s ease-in-out infinite;
+}
+
+.episode-btn.current-playing::after {
+    content: '▶';
+    position: absolute;
+    top: 2px;
+    right: 4px;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.9);
+    animation: playIconBlink 2s ease-in-out infinite;
+}
+
+.episode-btn.current-playing:hover {
+    background: linear-gradient(135deg, #f14f3f, #e74c3c);
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.5), 0 4px 16px rgba(231, 76, 60, 0.4);
+}
+
+@keyframes currentPlayingPulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.4), 0 2px 12px rgba(231, 76, 60, 0.3);
+    }
+
+    50% {
+        box-shadow: 0 0 0 4px rgba(231, 76, 60, 0.2), 0 2px 12px rgba(231, 76, 60, 0.3);
+    }
+}
+
+@keyframes playIconBlink {
+
+    0%,
+    50%,
+    100% {
+        opacity: 1;
+    }
+
+    25%,
+    75% {
+        opacity: 0.4;
+    }
+}
+
 /* 空状态 */
 .empty-state {
     text-align: center;

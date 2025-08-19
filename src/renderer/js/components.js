@@ -1048,6 +1048,85 @@ class ComponentService {
         console.log('[COMPONENTS] 页面切换完成:', pageName);
     }
 
+    // 同步播放器当前集数到详情页面显示
+    syncCurrentEpisode(updateData) {
+        try {
+            console.log('[COMPONENTS] 同步当前集数显示:', updateData);
+
+            // 确保当前在显示对应的视频详情
+            if (!this.currentVideoData || this.currentVideoData.vod_id !== updateData.videoId) {
+                console.log('[COMPONENTS] 当前显示的不是对应视频，跳过同步');
+                return;
+            }
+
+            // 更新选集按钮的视觉状态
+            this.updateEpisodeButtonStates(updateData.routeIndex, updateData.episodeIndex);
+
+            // 如果需要切换线路，先切换线路
+            if (updateData.routeIndex !== this.currentActiveRoute) {
+                console.log('[COMPONENTS] 切换线路:', this.currentActiveRoute, '->', updateData.routeIndex);
+                this.switchToRoute(updateData.routeIndex);
+            }
+
+            console.log('[COMPONENTS] 集数同步完成');
+        } catch (error) {
+            console.error('[COMPONENTS] 同步当前集数失败:', error);
+        }
+    }
+
+    // 更新集数按钮的视觉状态
+    updateEpisodeButtonStates(routeIndex, episodeIndex) {
+        try {
+            // 移除所有按钮的当前播放状态
+            const allEpisodeButtons = document.querySelectorAll('.episode-btn');
+            allEpisodeButtons.forEach(btn => {
+                btn.classList.remove('current-playing');
+            });
+
+            // 添加当前播放的集数状态
+            const currentButton = document.querySelector(
+                `.episode-btn[data-route="${routeIndex}"][data-episode="${episodeIndex}"]`
+            );
+
+            if (currentButton) {
+                currentButton.classList.add('current-playing');
+                console.log('[COMPONENTS] 已标记当前播放集数:', episodeIndex + 1);
+
+                // 滚动到当前播放的集数（如果需要）
+                currentButton.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'nearest',
+                    inline: 'center'
+                });
+            } else {
+                console.warn('[COMPONENTS] 未找到对应的集数按钮:', routeIndex, episodeIndex);
+            }
+        } catch (error) {
+            console.error('[COMPONENTS] 更新集数按钮状态失败:', error);
+        }
+    }
+
+    // 切换到指定线路
+    switchToRoute(routeIndex) {
+        try {
+            // 更新线路标签状态
+            const routeTabs = document.querySelectorAll('.route-tab');
+            routeTabs.forEach((tab, index) => {
+                tab.classList.toggle('active', index === routeIndex);
+            });
+
+            // 更新当前活跃线路
+            this.currentActiveRoute = routeIndex;
+
+            // 重新加载剧集列表
+            this.loadRouteEpisodes(routeIndex);
+
+            console.log('[COMPONENTS] 已切换到线路:', routeIndex);
+        } catch (error) {
+            console.error('[COMPONENTS] 切换线路失败:', error);
+        }
+    }
+
     // 显示通知
     showNotification(message, type = 'info') {
         const notification = document.createElement('div');
