@@ -939,7 +939,30 @@ class VideoPlayer {
             }
 
             console.error('视频播放错误:', e);
-            this.showError('视频播放出现错误');
+            const error = this.video.error;
+            let errorMessage = '视频播放出现错误';
+            
+            // 提供更具体的错误信息
+            if (error) {
+                switch (error.code) {
+                    case error.MEDIA_ERR_ABORTED:
+                        errorMessage = '视频加载被用户中断';
+                        break;
+                    case error.MEDIA_ERR_NETWORK:
+                        errorMessage = '网络错误导致视频加载失败，请检查网络连接';
+                        break;
+                    case error.MEDIA_ERR_DECODE:
+                        errorMessage = '视频解码错误，可能是视频文件损坏';
+                        break;
+                    case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                        errorMessage = '视频格式不受支持，请尝试其他播放源';
+                        break;
+                    default:
+                        errorMessage = `视频播放错误: ${error.message || '未知错误'}`;
+                }
+            }
+            
+            this.showError(errorMessage);
         });
 
         // 视频加载事件
@@ -1833,8 +1856,31 @@ class VideoPlayer {
         if (loading) loading.classList.add('hidden');
         if (error) {
             error.classList.remove('hidden');
-            const errorMsg = error.querySelector('p');
+            const errorMsg = error.querySelector('#error-message');
             if (errorMsg) errorMsg.textContent = message;
+        }
+    }
+    
+    // 隐藏错误信息
+    hideError() {
+        const error = document.getElementById('player-error');
+        if (error) error.classList.add('hidden');
+    }
+    
+    // 重试视频播放
+    retryVideo() {
+        this.hideError();
+        this.showLoading();
+        
+        // 如果有当前视频URL，尝试重新加载
+        if (this.currentVideoUrl || this.originalVideoUrl) {
+            const urlToRetry = this.originalVideoUrl || this.currentVideoUrl;
+            console.log('尝试重新加载视频:', urlToRetry);
+            this.loadVideo(urlToRetry).catch(err => {
+                this.showError('重试失败，请尝试其他播放源');
+            });
+        } else {
+            this.showError('没有可用的视频源，请尝试其他剧集或播放源');
         }
     }
 

@@ -63,7 +63,7 @@ if exist "dist" (
 )
 
 echo [2/2] 开始编译...
-%PKG_MANAGER% run pack
+%PKG_MANAGER% run build
 
 if %ERRORLEVEL% EQU 0 (
     echo.
@@ -71,10 +71,11 @@ if %ERRORLEVEL% EQU 0 (
     echo ✅ 快速编译成功完成！
     echo ========================================
     echo.
-    echo 输出位置: %CD%\dist\七星追剧-win32-x64\
-    echo 主程序: 七星追剧.exe
+    echo 输出位置: %CD%\dist\
+    echo 安装程序: 七星追剧 Setup *.exe
+    echo 便携版目录: win-unpacked
     echo.
-    echo 现在可以打包发布 七星追剧-win32-x64 文件夹
+    echo 现在可以使用安装程序或便携版目录
     echo ========================================
 ) else (
     echo.
@@ -125,24 +126,24 @@ if not exist "node_modules" (
     echo ✅ node_modules 目录存在
 )
 
-if not exist "node_modules\.bin\electron-packager.cmd" (
-    if not exist "node_modules\.bin\electron-packager" (
-        echo ❌ 未找到 electron-packager，正在安装...
+if not exist "node_modules\.bin\electron-builder.cmd" (
+    if not exist "node_modules\.bin\electron-builder" (
+        echo ❌ 未找到 electron-builder，正在安装...
         if "%PKG_MANAGER%"=="pnpm" (
-            %PKG_MANAGER% add electron-packager -D
+            %PKG_MANAGER% add electron-builder -D
         ) else (
-            %PKG_MANAGER% install electron-packager --save-dev
+            %PKG_MANAGER% install electron-builder --save-dev
         )
         if %ERRORLEVEL% NEQ 0 (
-            echo ❌ electron-packager 安装失败
+            echo ❌ electron-builder 安装失败
             echo 按任意键退出...
             if not "%1"=="auto" pause
             exit /b 1
         )
-        echo ✅ electron-packager 安装完成
+        echo ✅ electron-builder 安装完成
     )
 ) else (
-    echo ✅ electron-packager 已安装
+    echo ✅ electron-builder 已安装
 )
 
 echo [3/6] 清理旧的构建文件...
@@ -158,8 +159,8 @@ set CSC_KEY_PASSWORD=
 echo ✅ 环境变量已设置（跳过代码签名）
 
 echo [5/6] 开始编译...
-echo 尝试方式1: npx electron-packager...
-npx electron-packager . 七星追剧 --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon.ico 2>build_error.log
+echo 尝试方式1: %PKG_MANAGER% run build...
+%PKG_MANAGER% run build 2>build_error.log
 
 if %ERRORLEVEL% EQU 0 (
     echo.
@@ -167,29 +168,11 @@ if %ERRORLEVEL% EQU 0 (
     echo ✅ 完整编译成功完成！
     echo ========================================
     echo.
-    echo 输出位置: %CD%\dist\七星追剧-win32-x64\
-    echo 主程序: 七星追剧.exe
+    echo 输出位置: %CD%\dist\
+    echo 安装程序: 七星追剧 Setup *.exe
+    echo 便携版目录: win-unpacked
     echo.
-    echo 现在可以打包发布 七星追剧-win32-x64 文件夹
-    echo ========================================
-    goto cleanup
-) else (
-    echo ❌ npx 方式失败，尝试其他方式...
-)
-
-echo 尝试方式2: %PKG_MANAGER% run pack...
-%PKG_MANAGER% run pack 2>>build_error.log
-
-if %ERRORLEVEL% EQU 0 (
-    echo.
-    echo ========================================
-    echo ✅ 完整编译成功完成！
-    echo ========================================
-    echo.
-    echo 输出位置: %CD%\dist\七星追剧-win32-x64\
-    echo 主程序: 七星追剧.exe
-    echo.
-    echo 现在可以打包发布 七星追剧-win32-x64 文件夹
+    echo 现在可以使用安装程序或便携版目录
     echo ========================================
     goto cleanup
 ) else (
@@ -205,8 +188,8 @@ if %ERRORLEVEL% EQU 0 (
     )
     echo 建议：
     echo 1. 检查Node.js和npm版本兼容性
-    echo 2. 删除node_modules后重新%PKG_MANAGER% install
-    echo 3. 尝试便携版编译模式
+    echo 2. 删除node_modules后重新%PKG_MANAGER% install --force
+    echo 3. 检查electron-builder配置是否正确
     echo 4. 以管理员身份运行
     echo ========================================
     goto cleanup
@@ -282,11 +265,7 @@ if not exist "node_modules" (
 )
 
 echo [5/5] 便携版编译...
-if exist "node_modules\electron-packager\bin\electron-packager.js" (
-    node "node_modules\electron-packager\bin\electron-packager.js" . 七星追剧 --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon.ico
-) else (
-    %PKG_MANAGER% run pack
-)
+%PKG_MANAGER% run build
 
 if %ERRORLEVEL% EQU 0 (
     echo.
@@ -294,8 +273,9 @@ if %ERRORLEVEL% EQU 0 (
     echo ✅ 便携版编译成功完成！
     echo ========================================
     echo.
-    echo 输出位置: %CD%\dist\七星追剧-win32-x64\
-    echo 主程序: 七星追剧.exe
+    echo 输出位置: %CD%\dist\
+    echo 安装程序: 七星追剧 Setup *.exe
+    echo 便携版目录: win-unpacked
     echo.
     echo 编译环境: 便携版Node.js兼容模式
     echo ========================================
@@ -350,15 +330,15 @@ if not exist "node_modules" (
     set TEST3=PASS
 )
 
-echo [测试4] electron-packager...
-if exist "node_modules\.bin\electron-packager.cmd" (
-    echo ✅ electron-packager已安装
+echo [测试4] electron-builder...
+if exist "node_modules\.bin\electron-builder.cmd" (
+    echo ✅ electron-builder已安装
     set TEST4=PASS
-) else if exist "node_modules\.bin\electron-packager" (
-    echo ✅ electron-packager已安装
+) else if exist "node_modules\.bin\electron-builder" (
+    echo ✅ electron-builder已安装
     set TEST4=PASS
 ) else (
-    echo ❌ electron-packager未安装
+    echo ❌ electron-builder未安装
     set TEST4=FAIL
 )
 
@@ -377,7 +357,7 @@ echo === 测试结果汇总 ===
 echo 1. Node.js环境: %TEST1%
 echo 2. %PKG_MANAGER%环境: %TEST2%
 echo 3. 项目依赖: %TEST3%
-echo 4. electron-packager: %TEST4%
+echo 4. electron-builder: %TEST4%
 echo 5. npx可用性: %TEST5%
 echo.
 
@@ -392,6 +372,7 @@ if %FAIL_COUNT% EQU 0 (
     echo ✅ 环境完全兼容，建议使用快速编译
 ) else (
     echo ❌ 发现 %FAIL_COUNT% 个问题
+    if "%TEST4%"=="FAIL" echo 建议安装electron-builder: %PKG_MANAGER% add electron-builder -D
     if "%TEST5%"=="FAIL" echo 建议使用便携版编译模式
 )
 

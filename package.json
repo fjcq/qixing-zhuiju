@@ -46,7 +46,12 @@
         "electron-packager": "^17.1.2"
     },
     "dependencies": {
+        "asynckit": "^0.4.0",
         "axios": "^1.5.0",
+        "combined-stream": "^1.0.8",
+        "delayed-stream": "^1.0.0",
+        "follow-redirects": "^1.15.11",
+        "form-data": "^4.0.4",
         "hls.js": "^1.4.12",
         "ws": "^8.14.2"
     },
@@ -72,7 +77,7 @@
             "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
         ],
         "win": {
-            "target": "dir",
+            "target": ["nsis", "dir"],
             "icon": "assets/icon.ico"
         },
         "nsis": {

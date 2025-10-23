@@ -222,7 +222,15 @@
 
             <!-- 错误状态 -->
             <div id="player-error" class="player-error hidden">
-                <p>视频加载失败，请重试</p>
+                <p id="error-message">视频加载失败，请重试</p>
+                <div class="error-tips">
+                    <p>💡 建议：</p>
+                    <ul>
+                        <li>检查网络连接</li>
+                        <li>尝试其他播放线路</li>
+                        <li>刷新页面后重试</li>
+                    </ul>
+                </div>
                 <button id="retry-btn" class="btn-retry">重试</button>
             </div>
 
@@ -387,6 +395,18 @@
         // 确保DOM完全加载后初始化播放器
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🌟🌟🌟 [PLAYER] DOM加载完成，开始初始化播放器 🌟🌟🌟');
+
+            // 为重试按钮添加事件监听
+            const retryBtn = document.getElementById('retry-btn');
+            if (retryBtn) {
+                retryBtn.addEventListener('click', () => {
+                    if (window.videoPlayer && window.videoPlayer.retryVideo) {
+                        window.videoPlayer.retryVideo();
+                    } else {
+                        console.error('播放器实例未初始化，无法重试');
+                    }
+                });
+            }
 
             // 立即测试关键元素是否存在
             console.log('🔍 [PLAYER-TEST] 开始检查关键DOM元素...');

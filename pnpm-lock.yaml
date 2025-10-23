@@ -4,13 +4,30 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+packageExtensionsChecksum: sha256-OSkoSghPZL7nBsQ8ER2V9P8TAwN14n7Vu1GEG0+rOIk=
+
 importers:
 
   .:
     dependencies:
+      asynckit:
+        specifier: ^0.4.0
+        version: 0.4.0
       axios:
         specifier: ^1.5.0
         version: 1.11.0
+      combined-stream:
+        specifier: ^1.0.8
+        version: 1.0.8
+      delayed-stream:
+        specifier: ^1.0.0
+        version: 1.0.0
+      follow-redirects:
+        specifier: ^1.15.11
+        version: 1.15.11
+      form-data:
+        specifier: ^4.0.4
+        version: 4.0.4
       hls.js:
         specifier: ^1.4.12
         version: 1.6.10
@@ -26,7 +43,7 @@ importers:
         version: 24.13.3(electron-builder-squirrel-windows@24.13.3)
       electron-packager:
         specifier: ^17.1.2
-        version: 17.1.2
+        version: 17.1.2(electron@27.3.11)
 
 packages:
 
@@ -440,6 +457,8 @@ packages:
     engines: {node: '>= 14.17.5'}
     deprecated: Please use @electron/packager moving forward. There is no API change, just a package name change
     hasBin: true
+    peerDependencies:
+      electron: '*'
 
   electron-publish@24.13.1:
     resolution: {integrity: sha512-2ZgdEqJ8e9D17Hwp5LEq5mLQPjqU3lv/IALvgp+4W8VeNhryfGhYEQC/PgDPMrnWUp+l60Ou5SJLsu+k4mhQ8A==}
@@ -1857,7 +1876,7 @@ snapshots:
       - electron-builder-squirrel-windows
       - supports-color
 
-  electron-packager@17.1.2:
+  electron-packager@17.1.2(electron@27.3.11):
     dependencies:
       '@electron/asar': 3.4.1
       '@electron/get': 2.0.3
@@ -1866,6 +1885,7 @@ snapshots:
       '@electron/universal': 1.5.1
       cross-spawn-windows-exe: 1.2.0
       debug: 4.4.1
+      electron: 27.3.11
       extract-zip: 2.0.1
       filenamify: 4.3.0
       fs-extra: 11.3.1
