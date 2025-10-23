@@ -472,7 +472,6 @@ class QixingZhuiju {
                 preload: path.join(__dirname, 'src', 'preload.js')
             },
             icon: path.join(__dirname, 'assets', 'icon.png'),
-            parent: this.mainWindow,
             show: false,
             frame: false,  // 取消标题栏
             transparent: true,  // 启用透明窗口
