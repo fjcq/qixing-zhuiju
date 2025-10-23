@@ -299,6 +299,7 @@ video::-webkit-media-controls-overlay-enclosure,
         opacity: 0;
         transform: translateX(-50%) translateY(-20px);
     }
+
     to {
         opacity: 1;
         transform: translateX(-50%) translateY(0);
@@ -310,6 +311,7 @@ video::-webkit-media-controls-overlay-enclosure,
     opacity: 0.6;
     pointer-events: none;
 }
+
 video::-webkit-media-controls-overlay-play-button,
 video::-webkit-media-controls-enclosure,
 .video-js .vjs-control-bar,
@@ -399,18 +401,13 @@ video::-webkit-media-controls {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    pointer-events: none;
+    pointer-events: auto;
 }
 
 /* 移除自动hover显示，只通过JS控制 */
 .player-overlay:hover,
 .player-overlay.show {
     opacity: 1;
-}
-
-/* 让子元素可以接收鼠标事件 */
-.player-overlay>* {
-    pointer-events: auto;
 }
 
 /* 右上角控制按钮区域 - 正常显示/隐藏逻辑 */
@@ -597,55 +594,86 @@ body .player-container .player-overlay.show .top-right-controls {
     display: inline-block;
 }
 
-/* 可收纳的选集面板 */
+/* 可收纳的选集面板 - 简化版本 */
 .episode-panel {
     position: absolute;
     bottom: 0;
     left: 0;
     right: 0;
-    background: rgba(26, 26, 26, 0.95);
-    backdrop-filter: blur(20px);
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    background: #1a1a1a;
+    border-top: 1px solid #333;
     z-index: 200;
-    transform: translateY(100%);
-    transition: transform 0.3s ease;
-    max-height: 40vh;
+    display: none;
+    max-height: 70vh;
+    /* 限制最大高度为视口高度的70% */
+    /* 点击外部区域自动关闭需要添加事件监听 */
+}
+
+.new-close-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: #ffffff;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+}
+
+.new-close-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.1);
+}
+
+.new-close-btn:active {
+    transform: scale(0.95);
+}
+
+.close-icon {
+    line-height: 1;
+    display: inline-block;
+}
+
+.episode-panel.show {
     display: flex;
     flex-direction: column;
 }
 
-.episode-panel.show {
-    transform: translateY(0);
-}
-
+/* 选集面板顶部标题样式 */
 .episode-panel-header {
+    position: sticky;
+    top: 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 15px 20px 10px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 15px 20px;
+    background: rgba(30, 30, 30, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(64, 64, 64, 0.5);
+    z-index: 10;
 }
 
 .episode-panel-header h4 {
     margin: 0;
     font-size: 16px;
+    font-weight: 600;
     color: #ffffff;
 }
 
-.btn-panel-close {
-    background: none;
-    border: none;
-    color: #999;
-    cursor: pointer;
-    padding: 5px;
-    border-radius: 4px;
-    transition: all 0.3s ease;
-}
 
-.btn-panel-close:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
-}
+
+
+
+
+
+
 
 .episode-list {
     flex: 1;
@@ -696,6 +724,12 @@ body .player-container .player-overlay.show .top-right-controls {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
     gap: 10px;
+    padding: 15px 20px 20px;
+    overflow-y: auto;
+    flex: 1;
+    /* 占满剩余空间 */
+    max-height: 100%;
+    box-sizing: border-box;
 }
 
 .episode-item {
@@ -836,8 +870,10 @@ body .player-container .player-overlay.show .top-right-controls {
         font-size: 12px;
     }
 
-    .episode-panel-header {
-        padding: 12px 15px 8px;
+    .new-close-btn {
+        width: 24px;
+        height: 24px;
+        font-size: 16px;
     }
 
     .episode-list {
@@ -847,6 +883,7 @@ body .player-container .player-overlay.show .top-right-controls {
     .episodes {
         grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
         gap: 8px;
+        padding: 12px 15px 15px;
     }
 
     .episode-item {
@@ -1062,51 +1099,65 @@ body.fullscreen-mode .player-overlay .btn-control .icon,
 
 /* 播放器容器的鼠标控制 */
 .player-container {
-    cursor: default;
+    cursor: default !important;
     transition: cursor 0.3s ease;
+    pointer-events: auto;
 }
 
 /* 鼠标不活动时隐藏光标（窗口模式和全屏模式统一） */
 body:not(.mouse-active) .player-container {
-    cursor: none;
+    cursor: none !important;
 }
 
-body:not(.mouse-active) .player-container * {
-    cursor: none !important;
+/* 修复：确保视频元素始终可接收鼠标事件 */
+.player-container video {
+    cursor: inherit !important;
+    pointer-events: auto !important;
 }
 
 /* 鼠标活动时显示光标 */
 body.mouse-active .player-container {
-    cursor: default;
+    cursor: default !important;
 }
 
 body.mouse-active .player-container * {
-    cursor: inherit;
+    cursor: inherit !important;
+    pointer-events: auto !important;
 }
 
 /* 全屏模式下的body样式 */
 body.fullscreen-mode {
-    cursor: none;
+    cursor: default !important;
     transition: cursor 0.3s ease;
+    pointer-events: auto;
 }
 
 body.fullscreen-mode * {
-    cursor: inherit;
+    cursor: inherit !important;
+    pointer-events: auto;
 }
 
 /* 全屏模式下鼠标移动时显示指针 */
 body.fullscreen-mode.mouse-active {
-    cursor: default;
+    cursor: default !important;
 }
 
 body.fullscreen-mode.mouse-active * {
-    cursor: inherit;
+    cursor: inherit !important;
 }
 
 /* 全屏模式下鼠标悬停时显示指针 */
 body.fullscreen-mode .player-overlay,
 body.fullscreen-mode .player-overlay * {
     cursor: pointer !important;
+    pointer-events: auto !important;
+}
+
+/* 确保视频区域始终可以接收鼠标事件 */
+#webpage-player-container,
+#webpage-player-container * {
+    cursor: inherit !important;
+    pointer-events: auto !important;
 }
 
 /* 全屏状态下的弹幕输入容器 */
@@ -1143,6 +1194,9 @@ body.fullscreen-mode .episode-panel {
     background: rgba(30, 30, 30, 0.95) !important;
     backdrop-filter: blur(20px) !important;
     -webkit-backdrop-filter: blur(20px) !important;
+    display: flex;
+    flex-direction: column;
+    /* 移除标题区域，直接显示选集列表 */
 }
 
 /* 全屏状态下显示的选集面板 */
@@ -1273,9 +1327,13 @@ body.fullscreen-mode .player-error,
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.25);
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
-    min-width: 420px;
+    min-width: 480px;
+    /* 增加最小宽度确保内容不被挤压 */
     max-width: 85%;
     /* 确保在不同分辨率下都有合适的位置 */
+    width: 480px;
+    /* 固定宽度确保元素排版稳定 */
+    box-sizing: border-box;
 }
 
 /* 隐藏状态的弹幕面板 */
@@ -1286,7 +1344,9 @@ body.fullscreen-mode .player-error,
 .danmaku-input-panel {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 15px;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 /* 弹幕面板头部 */
@@ -1310,9 +1370,16 @@ body.fullscreen-mode .player-error,
     border: none;
     color: #ffffff;
     cursor: pointer;
-    padding: 4px;
+    padding: 6px;
     border-radius: 4px;
     transition: background-color 0.3s ease;
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
 }
 
 .btn-close-panel:hover {
@@ -1412,11 +1479,15 @@ body.fullscreen-mode .player-error,
     display: flex;
     gap: 10px;
     align-items: center;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 #danmaku-color,
 #danmaku-size {
-    padding: 6px 8px;
+    padding: 6px 10px;
     border: none;
     border-radius: 4px;
     background: rgba(255, 255, 255, 0.1);
@@ -1426,6 +1497,8 @@ body.fullscreen-mode .player-error,
     border: 1px solid rgba(255, 255, 255, 0.2);
     cursor: pointer;
     transition: all 0.3s ease;
+    min-width: 80px;
+    flex-shrink: 0;
 }
 
 #danmaku-color:hover,

@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('electron', {
                 'window-close',
                 'window-minimize',
                 'window-maximize',
+                'window-set-title',
                 'toggle-always-on-top',
                 'open-external-url',
                 'start-system-casting',
@@ -61,7 +62,8 @@ contextBridge.exposeInMainWorld('electron', {
         close: () => ipcRenderer.invoke('window-close'),
         minimize: () => ipcRenderer.invoke('window-minimize'),
         maximize: () => ipcRenderer.invoke('window-maximize'),
-        toggleAlwaysOnTop: () => ipcRenderer.invoke('toggle-always-on-top')
+        toggleAlwaysOnTop: () => ipcRenderer.invoke('toggle-always-on-top'),
+        setTitle: (title) => ipcRenderer.invoke('window-set-title', title)
     },
     // 剪切板API
     clipboard: {

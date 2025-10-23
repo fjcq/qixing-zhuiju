@@ -454,7 +454,12 @@ class QixingZhuiju {
         console.log('[MAIN] 创建播放器窗口:', videoData?.title || '未知视频');
 
         if (this.playerWindow) {
-            console.log('[MAIN] 播放器窗口已存在，聚焦现有窗口');
+            console.log('[MAIN] 播放器窗口已存在，发送新视频数据并聚焦窗口');
+            // 发送新的视频数据到现有播放器窗口
+            if (videoData) {
+                console.log('[MAIN] 发送新视频数据到播放器窗口:', videoData.title);
+                this.playerWindow.webContents.send('video-data', videoData);
+            }
             this.playerWindow.focus();
             return;
         }
@@ -516,6 +521,15 @@ class QixingZhuiju {
         // 播放器窗口错误处理
         this.playerWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
             console.error('[MAIN] 播放器页面加载失败:', errorCode, errorDescription, validatedURL);
+        });
+        
+        // 监听窗口标题更新事件
+        ipcMain.handle('window-set-title', (event, title) => {
+            if (this.playerWindow && title) {
+                this.playerWindow.setTitle(title);
+                return { success: true };
+            }
+            return { success: false, error: '窗口不存在或标题无效' };
         });
     }
 

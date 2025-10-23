@@ -197,7 +197,7 @@ class VideoPlayer {
                         el.style.display = 'none !important';
                         el.style.visibility = 'hidden !important';
                         el.style.opacity = '0 !important';
-                        el.style.pointerEvents = 'none !important';
+                        // 移除pointer-events设置，避免影响其他元素
                         el.setAttribute('hidden', 'true');
                     }
                 });
@@ -259,39 +259,65 @@ class VideoPlayer {
     updateVideoInfo() {
         const titleElement = document.getElementById('video-title');
         const episodeElement = document.getElementById('video-episode');
+        const customTitlebarElement = document.querySelector('.titlebar-title');
 
-        if (titleElement && this.videoData) {
-            titleElement.textContent = this.videoData.vod_name || '未知视频';
+        // 获取视频标题
+        const videoTitle = this.videoData?.vod_name || '未知视频';
+        
+        // 获取集数信息
+        let episodeText = '';
+        if (this.allEpisodes.length > 0) {
+            // 有剧集数据，查找当前集数
+            const currentEpisode = this.allEpisodes.find(ep => ep.index === this.currentEpisodeIndex);
+            if (currentEpisode && currentEpisode.name) {
+                // 找到当前集数且有名称，使用真实名称
+                episodeText = currentEpisode.name;
+            } else {
+                // 有剧集数据但找不到当前集数
+                episodeText = '未知集数';
+            }
+        } else {
+            // 没有剧集数据，使用默认名称或从videoData中获取
+            if (this.videoData && this.videoData.episode_name) {
+                // 如果videoData中有episode_name，使用它
+                episodeText = this.videoData.episode_name;
+            } else if (this.videoData && this.videoData.vod_remarks) {
+                // 如果有备注信息（通常包含集数信息），使用它
+                episodeText = this.videoData.vod_remarks;
+            } else {
+                // 都没有的话，使用通用的"正片"
+                episodeText = '正片';
+            }
+        }
+
+        // 获取站点名称
+        const siteName = this.videoData?.siteName || this.videoData?.site_name || '未知站点';
+        
+        // 获取线路名称（优先使用别名）
+        const currentRoute = this.allRoutes[this.currentRouteIndex];
+        const originalRouteName = currentRoute?.name || '未知线路';
+        const routeName = this.storageService ? this.storageService.getRouteAlias(originalRouteName) : originalRouteName;
+
+        // 更新UI元素
+        if (titleElement) {
+            titleElement.textContent = videoTitle;
         }
 
         if (episodeElement) {
-            let episodeText = '';
-
-            if (this.allEpisodes.length > 0) {
-                // 有剧集数据，查找当前集数
-                const currentEpisode = this.allEpisodes.find(ep => ep.index === this.currentEpisodeIndex);
-                if (currentEpisode && currentEpisode.name) {
-                    // 找到当前集数且有名称，使用真实名称
-                    episodeText = currentEpisode.name;
-                } else {
-                    // 有剧集数据但找不到当前集数
-                    episodeText = '未知集数';
-                }
-            } else {
-                // 没有剧集数据，使用默认名称或从videoData中获取
-                if (this.videoData && this.videoData.episode_name) {
-                    // 如果videoData中有episode_name，使用它
-                    episodeText = this.videoData.episode_name;
-                } else if (this.videoData && this.videoData.vod_remarks) {
-                    // 如果有备注信息（通常包含集数信息），使用它
-                    episodeText = this.videoData.vod_remarks;
-                } else {
-                    // 都没有的话，使用通用的"正片"
-                    episodeText = '正片';
-                }
-            }
-
             episodeElement.textContent = episodeText;
+        }
+
+        // 构建新的窗口标题: "当前剧名 - 第几集 （站点名 - 线路名）"
+        const newTitle = `${videoTitle} - ${episodeText} （${siteName} - ${routeName}）`;
+        
+        // 更新自定义标题栏
+        if (customTitlebarElement) {
+            customTitlebarElement.textContent = newTitle;
+        }
+
+        // 更新窗口标题（通过IPC）
+        if (window.electron && window.electron.window && window.electron.window.setTitle) {
+            window.electron.window.setTitle(newTitle);
         }
 
         // 更新集数控制按钮状态
@@ -1028,8 +1054,7 @@ class VideoPlayer {
 
         // 单击切换播放/暂停 - 使用延迟处理避免与双击冲突
         this.video.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            // 移除preventDefault和stopPropagation，允许点击事件正常传递
 
             // 如果是双击的一部分，忽略这次单击
             if (this.doubleClickFlag) {
@@ -1320,21 +1345,34 @@ class VideoPlayer {
 
         // 点击播放器区域隐藏选集面板
         const playerContainer = document.querySelector('.player-container');
-        if (playerContainer) {
-            playerContainer.addEventListener('click', (e) => {
-                console.log('[PLAYER] 播放器容器被点击:', {
-                    target: e.target.tagName,
-                    targetId: e.target.id,
-                    targetClass: e.target.className,
-                    clientX: e.clientX,
-                    clientY: e.clientY
-                });
-
-                if (e.target === playerContainer || e.target === this.video) {
+        const episodePanel = document.getElementById('episode-panel');
+        
+        // 修改后的全局点击事件监听 - 更安全地处理外部点击关闭选集面板
+        document.addEventListener('click', (e) => {
+            // 检查是否有标题栏相关按钮被点击，如果是则不处理
+            if (e.target.closest('#minimize-btn') || 
+                e.target.closest('#maximize-btn') || 
+                e.target.closest('#close-btn')) {
+                return; // 跳过标题栏按钮的处理
+            }
+            
+            // 检查面板是否显示
+            if (episodePanel && episodePanel.classList.contains('show')) {
+                // 检查点击目标是否在选局面板内
+                if (!episodePanel.contains(e.target) && 
+                    e.target.id !== 'toggle-episodes' && 
+                    !e.target.closest('#toggle-episodes') &&
+                    !e.target.closest('.episode-item')) {
+                    // 仅在确实需要关闭面板时记录日志
+                    console.log('[PLAYER] 点击外部区域，自动关闭选集面板');
                     this.hideEpisodePanel();
+                    // 不使用e.preventDefault()，允许其他元素正常响应点击
                 }
-            });
-        }
+            }
+        });
+        
+        // 移除不必要的事件冒泡阻止，让浏览器正常处理事件传播
+        // 选集面板内部的点击处理由各个元素自己的监听器负责
 
         // 设置自定义播放控制栏事件
         this.setupPlaybackControls();
@@ -2467,14 +2505,60 @@ class VideoPlayer {
         const playerContainer = document.querySelector('.player-container');
         const overlay = document.getElementById('player-overlay');
 
-        if (!playerContainer || !overlay) return;
+        if (!playerContainer) {
+            console.log('[PLAYER] 未找到播放器容器 .player-container');
+            return;
+        }
+        if (!overlay) {
+            console.log('[PLAYER] 未找到控制栏 #player-overlay');
+        }
+        
+        // 确保所有控制元素都能接收点击事件
+        const ensureClickable = (elements) => {
+            elements.forEach(selector => {
+                const element = document.querySelector(selector);
+                if (element) {
+                    element.style.pointerEvents = 'auto';
+                    element.style.cursor = 'pointer';
+                    element.style.zIndex = '1000';
+                    console.log(`[PLAYER] 确保元素可点击: ${selector}`);
+                }
+            });
+        };
+        
+        // 确保player-overlay和所有控制按钮可点击
+        if (overlay) {
+            overlay.style.pointerEvents = 'auto';
+            overlay.style.zIndex = '1000';
+        }
+        
+        // 确保所有控制按钮可点击
+        ensureClickable([
+            '#play-pause-btn',
+            '#fullscreen-btn',
+            '#volume-btn',
+            '#toggle-episodes',
+            '#toggle-danmaku',
+            '#toggle-always-on-top',
+            '#toggle-cast',
+            '#toggle-share',
+            '#playback-speed',
+            '.top-right-controls',
+            '#progress-bar',
+            '#volume-bar',
+            '.episode-item',
+            '.route-option'
+        ]);
 
         let hideTimer = null;
 
         const showOverlay = () => {
+            console.log('[PLAYER] 显示控制栏和鼠标');
             // 始终显示鼠标和控制栏（全屏和窗口模式统一）
             document.body.classList.add('mouse-active');
-            overlay.classList.add('show');
+            if (overlay) {
+                overlay.classList.add('show');
+            }
 
             if (hideTimer) {
                 clearTimeout(hideTimer);
@@ -2482,7 +2566,9 @@ class VideoPlayer {
 
             // 3秒后自动隐藏
             hideTimer = setTimeout(() => {
-                if (!overlay.matches(':hover')) {
+                // 只有当鼠标确实不在控制栏上时才隐藏
+                if (overlay && !overlay.matches(':hover')) {
+                    console.log('[PLAYER] 自动隐藏控制栏和鼠标');
                     document.body.classList.remove('mouse-active');
                     overlay.classList.remove('show');
                 }
@@ -2494,26 +2580,44 @@ class VideoPlayer {
                 clearTimeout(hideTimer);
             }
             // 如果鼠标不在控制栏上，立即隐藏
-            if (!overlay.matches(':hover')) {
+            if (overlay && !overlay.matches(':hover')) {
+                console.log('[PLAYER] 隐藏控制栏和鼠标');
                 document.body.classList.remove('mouse-active');
                 overlay.classList.remove('show');
             }
         };
 
-        playerContainer.addEventListener('mousemove', showOverlay);
-        playerContainer.addEventListener('mouseleave', hideOverlay);
-        overlay.addEventListener('mouseenter', () => {
-            if (hideTimer) {
-                clearTimeout(hideTimer);
-            }
-        });
-        overlay.addEventListener('mouseleave', () => {
-            // 鼠标离开控制栏后，3秒后隐藏
-            hideTimer = setTimeout(() => {
-                document.body.classList.remove('mouse-active');
-                overlay.classList.remove('show');
-            }, 3000);
-        });
+        // 增强鼠标事件监听 - 使用捕获阶段确保不会被阻止
+        playerContainer.addEventListener('mousemove', showOverlay, true);
+        playerContainer.addEventListener('mouseenter', showOverlay, true);
+        playerContainer.addEventListener('mouseleave', hideOverlay, true);
+        
+        // 为视频元素也添加鼠标事件监听
+        const videoElement = playerContainer.querySelector('video');
+        if (videoElement) {
+            console.log('[PLAYER] 为视频元素添加鼠标事件监听');
+            videoElement.addEventListener('mousemove', showOverlay, true);
+            videoElement.addEventListener('mouseenter', showOverlay, true);
+        }
+
+        if (overlay) {
+            overlay.addEventListener('mouseenter', () => {
+                if (hideTimer) {
+                    clearTimeout(hideTimer);
+                }
+            });
+            overlay.addEventListener('mouseleave', () => {
+                // 鼠标离开控制栏后，3秒后隐藏
+                hideTimer = setTimeout(() => {
+                    document.body.classList.remove('mouse-active');
+                    overlay.classList.remove('show');
+                }, 3000);
+            });
+        }
+
+        // 确保页面加载时默认显示鼠标
+        document.body.classList.add('mouse-active');
+        console.log('[PLAYER] 悬浮控制栏初始化完成，默认显示鼠标');
 
         console.log('[PLAYER] 悬浮控制栏初始化完成');
     }    // 设置全屏状态监听器
@@ -2591,10 +2695,40 @@ class VideoPlayer {
     toggleEpisodePanel() {
         const panel = document.getElementById('episode-panel');
         if (panel) {
+            console.log('[PLAYER] 切换选集面板 - 当前状态:', panel.classList.contains('show'));
+            
+            // 直接切换show类，而不是通过调用show/hide方法
             if (panel.classList.contains('show')) {
-                this.hideEpisodePanel();
+                panel.classList.remove('show');
+                // 确保transform样式被正确应用
+                panel.style.transform = '';
+                // 重置z-index和position，避免与其他元素冲突
+                panel.style.zIndex = '';
+                panel.style.position = '';
+                console.log('[PLAYER] 选集面板已隐藏');
             } else {
-                this.showEpisodePanel();
+                panel.classList.add('show');
+                // 确保transform样式被正确应用
+                panel.style.transform = '';
+                
+                // 检查是否是全屏状态，如果是则提升z-index
+                const isFullscreen = document.fullscreenElement ||
+                    document.webkitFullscreenElement ||
+                    document.mozFullScreenElement ||
+                    document.msFullscreenElement ||
+                    document.body.classList.contains('fullscreen-mode');
+
+                if (isFullscreen) {
+                    console.log('[PLAYER] 全屏状态下显示选集面板');
+                    panel.style.zIndex = '99999';
+                    panel.style.position = 'fixed';
+                } else {
+                    console.log('[PLAYER] 非全屏状态下显示选集面板，设置高z-index确保在进度条上方');
+                    panel.style.zIndex = '99999';
+                    panel.style.position = 'absolute';
+                }
+                
+                console.log('[PLAYER] 选集面板已显示');
             }
         }
     }
@@ -2603,7 +2737,10 @@ class VideoPlayer {
     showEpisodePanel() {
         const panel = document.getElementById('episode-panel');
         if (panel) {
+            console.log('[PLAYER] 显示选集面板');
             panel.classList.add('show');
+            // 确保transform样式被正确应用
+            panel.style.transform = '';
 
             // 检查是否是全屏状态，如果是则提升z-index
             const isFullscreen = document.fullscreenElement ||
@@ -2617,11 +2754,10 @@ class VideoPlayer {
                 panel.style.zIndex = '99999';
                 panel.style.position = 'fixed';
             } else {
-                panel.style.zIndex = '';
-                panel.style.position = '';
+                console.log('[PLAYER] 非全屏状态下显示选集面板，设置高z-index确保在进度条上方');
+                panel.style.zIndex = '99999';
+                panel.style.position = 'absolute';
             }
-
-            console.log('[PLAYER] 选集面板已显示');
         } else {
             console.error('[PLAYER] 未找到选集面板元素');
         }
@@ -2631,7 +2767,13 @@ class VideoPlayer {
     hideEpisodePanel() {
         const panel = document.getElementById('episode-panel');
         if (panel) {
+            console.log('[PLAYER] 隐藏选集面板');
             panel.classList.remove('show');
+            // 确保transform样式被正确应用
+            panel.style.transform = '';
+            // 重置z-index和position，避免与其他元素冲突
+            panel.style.zIndex = '';
+            panel.style.position = '';
         }
     }
 
