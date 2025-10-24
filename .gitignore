@@ -102,3 +102,4 @@ test-*.js
 
 # Copilot 指令文件（不推送到远程仓库）
 .github/copilot-instructions.md
+.trae/
