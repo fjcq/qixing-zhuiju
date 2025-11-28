@@ -404,6 +404,15 @@ video::-webkit-media-controls {
     pointer-events: auto;
 }
 
+/* 确保当player-overlay隐藏时，其所有子元素也隐藏 */
+.player-overlay:not(.show) .overlay-footer,
+.player-overlay:not(.show) .playback-controls,
+.player-overlay:not(.show) .top-right-controls {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
 /* 移除自动hover显示，只通过JS控制 */
 .player-overlay:hover,
 .player-overlay.show {

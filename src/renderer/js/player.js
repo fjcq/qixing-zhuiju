@@ -263,7 +263,7 @@ class VideoPlayer {
 
         // 获取视频标题
         const videoTitle = this.videoData?.vod_name || '未知视频';
-        
+
         // 获取集数信息
         let episodeText = '';
         if (this.allEpisodes.length > 0) {
@@ -292,7 +292,7 @@ class VideoPlayer {
 
         // 获取站点名称
         const siteName = this.videoData?.siteName || this.videoData?.site_name || '未知站点';
-        
+
         // 获取线路名称（优先使用别名）
         const currentRoute = this.allRoutes[this.currentRouteIndex];
         const originalRouteName = currentRoute?.name || '未知线路';
@@ -309,7 +309,7 @@ class VideoPlayer {
 
         // 构建新的窗口标题: "当前剧名 - 第几集 （站点名 - 线路名）"
         const newTitle = `${videoTitle} - ${episodeText} （${siteName} - ${routeName}）`;
-        
+
         // 更新自定义标题栏
         if (customTitlebarElement) {
             customTitlebarElement.textContent = newTitle;
@@ -967,7 +967,7 @@ class VideoPlayer {
             console.error('视频播放错误:', e);
             const error = this.video.error;
             let errorMessage = '视频播放出现错误';
-            
+
             // 提供更具体的错误信息
             if (error) {
                 switch (error.code) {
@@ -987,7 +987,7 @@ class VideoPlayer {
                         errorMessage = `视频播放错误: ${error.message || '未知错误'}`;
                 }
             }
-            
+
             this.showError(errorMessage);
         });
 
@@ -1346,21 +1346,21 @@ class VideoPlayer {
         // 点击播放器区域隐藏选集面板
         const playerContainer = document.querySelector('.player-container');
         const episodePanel = document.getElementById('episode-panel');
-        
+
         // 修改后的全局点击事件监听 - 更安全地处理外部点击关闭选集面板
         document.addEventListener('click', (e) => {
             // 检查是否有标题栏相关按钮被点击，如果是则不处理
-            if (e.target.closest('#minimize-btn') || 
-                e.target.closest('#maximize-btn') || 
+            if (e.target.closest('#minimize-btn') ||
+                e.target.closest('#maximize-btn') ||
                 e.target.closest('#close-btn')) {
                 return; // 跳过标题栏按钮的处理
             }
-            
+
             // 检查面板是否显示
             if (episodePanel && episodePanel.classList.contains('show')) {
                 // 检查点击目标是否在选局面板内
-                if (!episodePanel.contains(e.target) && 
-                    e.target.id !== 'toggle-episodes' && 
+                if (!episodePanel.contains(e.target) &&
+                    e.target.id !== 'toggle-episodes' &&
                     !e.target.closest('#toggle-episodes') &&
                     !e.target.closest('.episode-item')) {
                     // 仅在确实需要关闭面板时记录日志
@@ -1370,7 +1370,7 @@ class VideoPlayer {
                 }
             }
         });
-        
+
         // 移除不必要的事件冒泡阻止，让浏览器正常处理事件传播
         // 选集面板内部的点击处理由各个元素自己的监听器负责
 
@@ -1541,12 +1541,10 @@ class VideoPlayer {
                 overlay.classList.add('show');
                 document.body.classList.add('mouse-active');
 
-                // 3秒后自动隐藏
+                // 3秒后自动隐藏，无论鼠标是否在控制栏上
                 setTimeout(() => {
-                    if (!overlay.matches(':hover')) {
-                        overlay.classList.remove('show');
-                        document.body.classList.remove('mouse-active');
-                    }
+                    overlay.classList.remove('show');
+                    document.body.classList.remove('mouse-active');
                 }, 3000);
             }
         }
@@ -1898,18 +1896,18 @@ class VideoPlayer {
             if (errorMsg) errorMsg.textContent = message;
         }
     }
-    
+
     // 隐藏错误信息
     hideError() {
         const error = document.getElementById('player-error');
         if (error) error.classList.add('hidden');
     }
-    
+
     // 重试视频播放
     retryVideo() {
         this.hideError();
         this.showLoading();
-        
+
         // 如果有当前视频URL，尝试重新加载
         if (this.currentVideoUrl || this.originalVideoUrl) {
             const urlToRetry = this.originalVideoUrl || this.currentVideoUrl;
@@ -2512,7 +2510,7 @@ class VideoPlayer {
         if (!overlay) {
             console.log('[PLAYER] 未找到控制栏 #player-overlay');
         }
-        
+
         // 确保所有控制元素都能接收点击事件
         const ensureClickable = (elements) => {
             elements.forEach(selector => {
@@ -2525,13 +2523,13 @@ class VideoPlayer {
                 }
             });
         };
-        
+
         // 确保player-overlay和所有控制按钮可点击
         if (overlay) {
             overlay.style.pointerEvents = 'auto';
             overlay.style.zIndex = '1000';
         }
-        
+
         // 确保所有控制按钮可点击
         ensureClickable([
             '#play-pause-btn',
@@ -2564,14 +2562,11 @@ class VideoPlayer {
                 clearTimeout(hideTimer);
             }
 
-            // 3秒后自动隐藏
+            // 3秒后自动隐藏，无论鼠标是否在控制栏上
             hideTimer = setTimeout(() => {
-                // 只有当鼠标确实不在控制栏上时才隐藏
-                if (overlay && !overlay.matches(':hover')) {
-                    console.log('[PLAYER] 自动隐藏控制栏和鼠标');
-                    document.body.classList.remove('mouse-active');
-                    overlay.classList.remove('show');
-                }
+                console.log('[PLAYER] 自动隐藏控制栏和鼠标');
+                document.body.classList.remove('mouse-active');
+                overlay.classList.remove('show');
             }, 3000);
         };
 
@@ -2579,19 +2574,17 @@ class VideoPlayer {
             if (hideTimer) {
                 clearTimeout(hideTimer);
             }
-            // 如果鼠标不在控制栏上，立即隐藏
-            if (overlay && !overlay.matches(':hover')) {
-                console.log('[PLAYER] 隐藏控制栏和鼠标');
-                document.body.classList.remove('mouse-active');
-                overlay.classList.remove('show');
-            }
+            // 立即隐藏控制栏和鼠标，无论鼠标是否在控制栏上
+            console.log('[PLAYER] 隐藏控制栏和鼠标');
+            document.body.classList.remove('mouse-active');
+            overlay.classList.remove('show');
         };
 
         // 增强鼠标事件监听 - 使用捕获阶段确保不会被阻止
         playerContainer.addEventListener('mousemove', showOverlay, true);
         playerContainer.addEventListener('mouseenter', showOverlay, true);
         playerContainer.addEventListener('mouseleave', hideOverlay, true);
-        
+
         // 为视频元素也添加鼠标事件监听
         const videoElement = playerContainer.querySelector('video');
         if (videoElement) {
@@ -2600,20 +2593,8 @@ class VideoPlayer {
             videoElement.addEventListener('mouseenter', showOverlay, true);
         }
 
-        if (overlay) {
-            overlay.addEventListener('mouseenter', () => {
-                if (hideTimer) {
-                    clearTimeout(hideTimer);
-                }
-            });
-            overlay.addEventListener('mouseleave', () => {
-                // 鼠标离开控制栏后，3秒后隐藏
-                hideTimer = setTimeout(() => {
-                    document.body.classList.remove('mouse-active');
-                    overlay.classList.remove('show');
-                }, 3000);
-            });
-        }
+        // 移除overlay的鼠标事件监听器，确保无论鼠标是否在控制栏上，控制元素都会在3秒后自动隐藏
+        // 鼠标移动时会触发playerContainer的mousemove事件，恢复显示控制元素
 
         // 确保页面加载时默认显示鼠标
         document.body.classList.add('mouse-active');
@@ -2657,12 +2638,10 @@ class VideoPlayer {
                 if (overlay) {
                     overlay.classList.add('show');
                     document.body.classList.add('mouse-active');
-                    // 3秒后自动隐藏（如果鼠标不在控制栏上）
+                    // 3秒后自动隐藏，无论鼠标是否在控制栏上
                     setTimeout(() => {
-                        if (!overlay.matches(':hover')) {
-                            overlay.classList.remove('show');
-                            document.body.classList.remove('mouse-active');
-                        }
+                        overlay.classList.remove('show');
+                        document.body.classList.remove('mouse-active');
                     }, 3000);
                 }
             } else {
@@ -2696,7 +2675,7 @@ class VideoPlayer {
         const panel = document.getElementById('episode-panel');
         if (panel) {
             console.log('[PLAYER] 切换选集面板 - 当前状态:', panel.classList.contains('show'));
-            
+
             // 直接切换show类，而不是通过调用show/hide方法
             if (panel.classList.contains('show')) {
                 panel.classList.remove('show');
@@ -2710,7 +2689,7 @@ class VideoPlayer {
                 panel.classList.add('show');
                 // 确保transform样式被正确应用
                 panel.style.transform = '';
-                
+
                 // 检查是否是全屏状态，如果是则提升z-index
                 const isFullscreen = document.fullscreenElement ||
                     document.webkitFullscreenElement ||
@@ -2727,7 +2706,7 @@ class VideoPlayer {
                     panel.style.zIndex = '99999';
                     panel.style.position = 'absolute';
                 }
-                
+
                 console.log('[PLAYER] 选集面板已显示');
             }
         }
