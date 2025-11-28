@@ -1219,6 +1219,15 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
+/* 拖拽中的站点项样式 */
+.site-item.dragging {
+    opacity: 0.5;
+    border-color: #0078d4;
+    box-shadow: 0 4px 20px rgba(0, 120, 212, 0.4);
+    transform: rotate(2deg);
+    cursor: grabbing;
+}
+
 .site-info {
     width: 100%;
 }

@@ -659,8 +659,13 @@ class QixingZhuijuApp {
             if (sites.length > 0) {
                 sites.forEach(site => {
                     const siteElement = this.componentService.createSiteItem(site);
+                    // 设置站点项为可拖拽
+                    siteElement.draggable = true;
                     siteList.appendChild(siteElement);
                 });
+
+                // 添加拖拽事件监听器
+                this.setupDragAndDrop(siteList);
             } else {
                 siteList.innerHTML = `
                     <div class="empty-state">
@@ -742,6 +747,94 @@ class QixingZhuijuApp {
                 this.loadSettings();
                 break;
         }
+    }
+
+    // 设置拖拽排序功能
+    setupDragAndDrop(siteList) {
+        // 移除可能存在的旧事件监听器
+        const newSiteList = siteList.cloneNode(true);
+        siteList.replaceWith(newSiteList);
+
+        // 为每个站点项添加拖拽事件
+        const siteItems = newSiteList.querySelectorAll('.site-item');
+        siteItems.forEach(item => {
+            // 拖拽开始事件
+            item.addEventListener('dragstart', (e) => {
+                e.target.classList.add('dragging');
+                // 设置拖拽数据
+                e.dataTransfer.setData('text/plain', e.target.dataset.siteId);
+            });
+
+            // 拖拽结束事件
+            item.addEventListener('dragend', (e) => {
+                e.target.classList.remove('dragging');
+            });
+        });
+
+        // 拖拽进入事件
+        newSiteList.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const afterElement = this.getDragAfterElement(newSiteList, e.clientY);
+            const draggable = document.querySelector('.dragging');
+            if (draggable && afterElement == null) {
+                newSiteList.appendChild(draggable);
+            } else if (draggable) {
+                newSiteList.insertBefore(draggable, afterElement);
+            }
+        });
+
+        // 拖拽放置事件
+        newSiteList.addEventListener('drop', (e) => {
+            e.preventDefault();
+            // 更新站点顺序
+            this.updateSiteOrder(newSiteList);
+        });
+    }
+
+    // 获取拖拽位置后的元素
+    getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.site-item:not(.dragging)')];
+
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    // 更新站点顺序
+    updateSiteOrder(siteList) {
+        const siteItems = siteList.querySelectorAll('.site-item');
+        const sites = this.apiService.getSites();
+        const newOrder = [];
+
+        // 创建站点ID到站点对象的映射
+        const siteMap = {};
+        sites.forEach(site => {
+            siteMap[site.id] = site;
+        });
+
+        // 按照新的顺序构建站点列表
+        siteItems.forEach(item => {
+            const siteId = item.dataset.siteId;
+            if (siteMap[siteId]) {
+                newOrder.push(siteMap[siteId]);
+            }
+        });
+
+        // 保存新的站点顺序
+        this.apiService.saveSites(newOrder);
+        // 更新站点下拉框
+        this.loadSiteSelector();
+        // 重新加载设置页面
+        setTimeout(() => {
+            this.loadSettings();
+        }, 100);
     }
 
     // 检查是否有搜索结果
