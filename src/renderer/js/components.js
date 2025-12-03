@@ -1346,52 +1346,24 @@ class ComponentService {
 
     // 智能搜索：在所有站点中查找视频
     async smartSearchInAllSites(history) {
-        this.showNotification(`视频ID ${history.vod_id} 在当前站点不存在，正在其他站点搜索...`, 'info');
+        // 不同站点的视频ID不通用，不应该在其他站点搜索相同的视频ID
+        // 而是应该提示用户该视频在对应站点不存在，建议手动搜索
+        this.showNotification(`该视频在站点"${this.apiService.getActiveSite()?.name || '当前站点'}"中已不存在`, 'warning');
+        this.showNotification('建议手动搜索该视频名称，或检查站点配置是否正确', 'info');
 
-        const allSites = this.apiService.getSites();
-        const currentSite = this.apiService.getActiveSite();
-
-        for (const site of allSites) {
-            if (site.id === currentSite?.id) continue; // 跳过当前站点
-
-            try {
-                // 切换到目标站点
-                this.apiService.setActiveSite(site.id);
-
-                // 尝试获取视频详情
-                const response = await this.apiService.getVideoDetail(history.vod_id);
-
-                if (response && response.list && response.list.length > 0) {
-                    // 找到了！
-                    this.showNotification(`在站点"${site.name}"中找到了该视频！`, 'success');
-
-                    // 更新历史记录中的站点信息
-                    this.updateHistorySiteInfo(history.vod_id, site);
-
-                    // 直接显示视频详情，不再调用可能导致循环的方法
-                    setTimeout(() => {
-                        this.showVideoDetail(history.vod_id).then(() => {
-                            // 如果有播放进度信息，继续播放指定集数
-                            if (history.current_episode && history.episode_name) {
-                                setTimeout(() => {
-                                    this.continueFromHistory(history);
-                                }, 500);
-                            }
-                        }).catch(error => {
-                            console.error('[ERROR] 智能搜索后仍无法获取视频详情:', error);
-                            this.showNotification('获取视频详情失败，请手动搜索', 'error');
-                        });
-                    }, 1000);
-                    return;
+        // 可选：显示一个提示对话框，让用户选择是否要手动搜索
+        setTimeout(() => {
+            if (confirm(`该视频在站点"${this.apiService.getActiveSite()?.name || '当前站点'}"中已不存在，是否要手动搜索该视频名称？`)) {
+                // 切换到搜索页面
+                window.app.switchToPage('search');
+                // 填充搜索输入框
+                const searchInput = document.getElementById('search-input');
+                if (searchInput) {
+                    searchInput.value = history.vod_name;
+                    searchInput.focus();
                 }
-            } catch (error) {
-                console.log(`在站点"${site.name}"中未找到视频:`, error);
             }
-        }
-
-        // 所有站点都没找到
-        this.showNotification(`很抱歉，在所有${allSites.length}个站点中都未找到该视频`, 'error');
-        this.showNotification('建议手动搜索该视频名称', 'info');
+        }, 1000);
     }
 
     // 更新历史记录中的站点信息
@@ -1470,6 +1442,13 @@ class ComponentService {
                 // 确保有可用的路线数据
                 const routesData = this.currentRoutes || [];
 
+                // 获取实际的播放进度（秒），而不仅仅是百分比
+                const watchProgress = this.storageService.getWatchProgress(
+                    history.vod_id,
+                    history.current_episode
+                );
+                console.log('[COMPONENTS] 播放进度信息:', watchProgress);
+
                 // 调用playVideo方法，传递播放进度
                 this.playVideo(
                     this.currentVideoData,
@@ -1477,7 +1456,7 @@ class ComponentService {
                     episodeIndex,
                     episodeUrl,
                     routesData,
-                    history.progress, // 传递播放进度
+                    watchProgress.currentTime, // 传递实际播放时间（秒）
                     true // forceUseActiveSite = true，强制使用当前活跃站点信息
                 );
             }, 800);

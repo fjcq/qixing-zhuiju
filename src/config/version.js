@@ -8,7 +8,7 @@ const APP_VERSION_NUMBER = '1.3.3'; // 不带v前缀的版本号
 const VERSION_INFO = {
     version: APP_VERSION,
     versionNumber: APP_VERSION_NUMBER,
-    releaseDate: '2025-12-03',
+    releaseDate: '2025-12-04',
     codeName: '最新版本'
 };
 
