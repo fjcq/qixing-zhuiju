@@ -148,11 +148,37 @@ class QixingZhuijuApp {
             });
         }
 
+        // 多站点搜索相关事件
+        const multiSearchBtn = document.getElementById('multi-search-btn');
+        const multiSearchInput = document.getElementById('multi-search-input');
+        const clearSearchHistoryBtn = document.getElementById('clear-search-history-btn');
+
+        if (multiSearchBtn) {
+            multiSearchBtn.addEventListener('click', () => this.performMultiSearch());
+        }
+
+        if (multiSearchInput) {
+            multiSearchInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.performMultiSearch();
+                }
+            });
+        }
+
+        if (clearSearchHistoryBtn) {
+            clearSearchHistoryBtn.addEventListener('click', () => this.clearSearchHistory());
+        }
+
         // 返回按钮事件
         const backBtn = document.getElementById('back-btn');
         if (backBtn) {
             backBtn.addEventListener('click', () => {
-                this.switchToPage('home');
+                // 如果组件服务记录了来源页面，返回来源页面，否则返回首页
+                if (window.app && window.app.componentService && window.app.componentService.previousPage) {
+                    this.switchToPage(window.app.componentService.previousPage);
+                } else {
+                    this.switchToPage('home');
+                }
             });
         }
 
@@ -241,6 +267,11 @@ class QixingZhuijuApp {
                             console.log('[APP] 加载推荐视频');
                             await this.loadRecommendedVideos();
                         }
+                        break;
+                    case 'search':
+                        console.log('[APP] 加载搜索页面');
+                        // 加载搜索历史
+                        this.loadSearchHistory();
                         break;
                     case 'history':
                         console.log('[APP] 加载播放历史页面');
@@ -592,6 +623,323 @@ class QixingZhuijuApp {
         const pagination = document.getElementById('pagination');
         if (pagination) {
             pagination.innerHTML = '';
+        }
+    }
+
+    // 保存搜索历史
+    saveSearchHistory(keyword) {
+        if (!keyword || keyword.trim() === '') return;
+
+        // 从localStorage获取现有历史记录
+        const history = JSON.parse(localStorage.getItem('SEARCH_HISTORY') || '[]');
+
+        // 移除重复的关键词
+        const filteredHistory = history.filter(item => item !== keyword);
+
+        // 添加到历史记录开头
+        filteredHistory.unshift(keyword);
+
+        // 限制历史记录数量为20条
+        const limitedHistory = filteredHistory.slice(0, 20);
+
+        // 保存到localStorage
+        localStorage.setItem('SEARCH_HISTORY', JSON.stringify(limitedHistory));
+
+        // 如果当前在搜索页面，更新显示
+        if (this.currentPage === 'search') {
+            this.loadSearchHistory();
+        }
+    }
+
+    // 加载搜索历史
+    loadSearchHistory() {
+        const historyList = document.getElementById('search-history-list');
+        if (!historyList) return;
+
+        // 从localStorage获取历史记录
+        const history = JSON.parse(localStorage.getItem('SEARCH_HISTORY') || '[]');
+
+        if (history.length === 0) {
+            historyList.innerHTML = '<div class="empty-history">暂无搜索历史</div>';
+            return;
+        }
+
+        // 创建历史关键词元素，添加清除按钮
+        const historyHtml = history.map(keyword => `
+            <div class="history-keyword" data-keyword="${keyword}">
+                <span class="keyword-text">${keyword}</span>
+                <button class="keyword-remove" title="删除此历史记录">×</button>
+            </div>
+        `).join('');
+
+        historyList.innerHTML = historyHtml;
+
+        // 添加点击事件
+        const historyKeywords = document.querySelectorAll('.history-keyword');
+        historyKeywords.forEach(item => {
+            // 关键词点击事件
+            const keywordText = item.querySelector('.keyword-text');
+            if (keywordText) {
+                keywordText.addEventListener('click', () => {
+                    const keyword = item.dataset.keyword;
+                    if (keyword) {
+                        const multiSearchInput = document.getElementById('multi-search-input');
+                        if (multiSearchInput) {
+                            multiSearchInput.value = keyword;
+                            this.performMultiSearch();
+                        }
+                    }
+                });
+            }
+
+            // 清除按钮点击事件
+            const removeBtn = item.querySelector('.keyword-remove');
+            if (removeBtn) {
+                removeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation(); // 阻止冒泡，避免触发关键词点击事件
+                    const keyword = item.dataset.keyword;
+                    if (keyword) {
+                        this.removeSearchHistory(keyword);
+                    }
+                });
+            }
+        });
+    }
+
+    // 移除单个搜索历史
+    removeSearchHistory(keyword) {
+        // 从localStorage获取现有历史记录
+        const history = JSON.parse(localStorage.getItem('SEARCH_HISTORY') || '[]');
+
+        // 移除指定关键词
+        const filteredHistory = history.filter(item => item !== keyword);
+
+        // 保存到localStorage
+        localStorage.setItem('SEARCH_HISTORY', JSON.stringify(filteredHistory));
+
+        // 更新显示
+        this.loadSearchHistory();
+    }
+
+    // 清空搜索历史
+    clearSearchHistory() {
+        // 确认清空
+        if (confirm('确定要清空所有搜索历史吗？')) {
+            localStorage.removeItem('SEARCH_HISTORY');
+            this.loadSearchHistory();
+            this.componentService.showNotification('搜索历史已清空', 'success');
+        }
+    }
+
+    // 执行多站点搜索
+    async performMultiSearch() {
+        try {
+            const multiSearchInput = document.getElementById('multi-search-input');
+            const keyword = multiSearchInput?.value?.trim() || '';
+
+            if (!keyword) {
+                this.componentService.showNotification('请输入搜索关键词', 'warning');
+                return;
+            }
+
+            console.log('[APP] 执行多站点搜索:', { keyword });
+
+            // 保存搜索历史
+            this.saveSearchHistory(keyword);
+
+            // 显示加载状态
+            const multiLoading = document.getElementById('multi-search-loading');
+            if (multiLoading) {
+                multiLoading.classList.remove('hidden');
+            }
+
+            // 获取视频网格
+            const multiVideoGrid = document.getElementById('multi-video-grid');
+            if (multiVideoGrid) {
+                multiVideoGrid.innerHTML = '';
+            }
+
+            // 获取所有可用站点
+            const sites = this.apiService.getSites();
+            if (sites.length === 0) {
+                this.displayMultiEmptyResults('没有可用的站点，请先配置站点');
+                this.hideMultiLoading();
+                return;
+            }
+
+            // 记录当前搜索的关键词，用于返回逻辑
+            this.currentMultiSearchKeyword = keyword;
+
+            // 逐个站点搜索，实时显示结果
+            let totalVideos = 0;
+
+            // 保存原始活动站点，搜索完成后恢复
+            const originalActiveSite = this.apiService.getActiveSite();
+
+            // 按顺序搜索每个站点，确保站点切换的正确性
+            for (const site of sites) {
+                try {
+                    // 切换到当前站点
+                    this.apiService.setActiveSite(site.id);
+
+                    // 执行搜索
+                    const response = await this.apiService.searchVideos(keyword, 1, '');
+
+                    if (response && response.list && Array.isArray(response.list)) {
+                        // 批量获取视频详情 - 现在是基于正确的活动站点
+                        const videoIds = response.list.map(video => video.vod_id);
+                        let detailsList = [];
+
+                        try {
+                            detailsList = await this.apiService.getMultipleVideoDetails(videoIds);
+                            console.log(`[APP] 获取${site.name}站点视频详情成功，数量:`, detailsList.length);
+                        } catch (detailError) {
+                            console.warn(`[APP] 获取${site.name}站点视频详情失败，使用基本信息:`, detailError);
+                        }
+
+                        // 合并基本信息和详情信息，并添加站点信息
+                        const enhancedVideos = response.list.map(basicVideo => {
+                            // 查找对应的详情
+                            const detailVideo = detailsList.find(detail => detail.vod_id == basicVideo.vod_id);
+
+                            // 确保海报URL正确 - 优先使用详情中的完整海报URL
+                            let finalPosterUrl = basicVideo.vod_pic || '';
+
+                            // 如果有详情，优先使用详情中的海报URL
+                            if (detailVideo && detailVideo.vod_pic) {
+                                finalPosterUrl = detailVideo.vod_pic;
+                            }
+
+                            // 清理海报URL，确保格式正确
+                            if (finalPosterUrl) {
+                                finalPosterUrl = finalPosterUrl.trim();
+                                if (!finalPosterUrl.startsWith('http')) {
+                                    if (finalPosterUrl.startsWith('//')) {
+                                        finalPosterUrl = 'https:' + finalPosterUrl;
+                                    } else {
+                                        finalPosterUrl = 'https:' + finalPosterUrl;
+                                    }
+                                }
+                            }
+
+                            const enhancedVideo = {
+                                ...basicVideo,
+                                ...detailVideo,
+                                vod_pic: finalPosterUrl,
+                                vod_name: detailVideo?.vod_name || basicVideo.vod_name,
+                                vod_remarks: detailVideo?.vod_remarks || basicVideo.vod_remarks,
+                                // 添加站点信息
+                                siteId: site.id,
+                                siteName: site.name
+                            };
+                            return enhancedVideo;
+                        });
+
+                        // 实时显示当前站点的搜索结果
+                        if (enhancedVideos.length > 0) {
+                            totalVideos += enhancedVideos.length;
+                            this.displayMultiSearchResultsBatch(enhancedVideos);
+                        }
+                    }
+                } catch (error) {
+                    console.error(`[APP] 搜索${site.name}站点失败:`, error);
+                }
+            }
+
+            // 恢复原始活动站点
+            if (originalActiveSite) {
+                this.apiService.setActiveSite(originalActiveSite.id);
+            }
+
+            // 如果没有搜索到任何视频，显示空结果
+            if (totalVideos === 0) {
+                this.displayMultiEmptyResults('没有找到相关内容');
+            }
+
+            // 隐藏加载状态
+            this.hideMultiLoading();
+
+        } catch (error) {
+            console.error('[APP] 多站点搜索失败:', error);
+            this.componentService.showNotification(`多站点搜索失败: ${error.message}`, 'error');
+            this.displayMultiEmptyResults('搜索失败，请稍后重试');
+            this.hideMultiLoading();
+        }
+    }
+
+    // 批量显示多站点搜索结果
+    displayMultiSearchResultsBatch(videos) {
+        const multiVideoGrid = document.getElementById('multi-video-grid');
+        if (!multiVideoGrid) {
+            console.error('[APP] 找不到multi-video-grid元素');
+            return;
+        }
+
+        if (videos && videos.length > 0) {
+            videos.forEach((video, index) => {
+                try {
+                    const card = this.componentService.createVideoCard(video);
+                    if (card) {
+                        multiVideoGrid.appendChild(card);
+                    } else {
+                        console.error(`[APP] 第${index + 1}个卡片创建失败`);
+                    }
+                } catch (error) {
+                    console.error(`[APP] 创建第${index + 1}个卡片时出错:`, error);
+                }
+            });
+        }
+    }
+
+    // 显示多站点搜索结果
+    displayMultiSearchResults(videos) {
+        const multiVideoGrid = document.getElementById('multi-video-grid');
+        if (!multiVideoGrid) {
+            console.error('[APP] 找不到multi-video-grid元素');
+            return;
+        }
+
+        multiVideoGrid.innerHTML = '';
+
+        if (videos && videos.length > 0) {
+            console.log(`[APP] 多站点搜索到视频数量:`, videos.length);
+
+            videos.forEach((video, index) => {
+                try {
+                    const card = this.componentService.createVideoCard(video);
+                    if (card) {
+                        multiVideoGrid.appendChild(card);
+                    } else {
+                        console.error(`[APP] 第${index + 1}个卡片创建失败`);
+                    }
+                } catch (error) {
+                    console.error(`[APP] 创建第${index + 1}个卡片时出错:`, error);
+                }
+            });
+        } else {
+            this.displayMultiEmptyResults('没有找到相关内容');
+        }
+    }
+
+    // 显示多站点空结果
+    displayMultiEmptyResults(message = '没有找到相关内容') {
+        const multiVideoGrid = document.getElementById('multi-video-grid');
+        if (!multiVideoGrid) return;
+
+        multiVideoGrid.innerHTML = `
+            <div class="empty-state">
+                <i>🔍</i>
+                <h3>${message}</h3>
+                <p>尝试使用其他关键词搜索</p>
+            </div>
+        `;
+    }
+
+    // 隐藏多站点加载状态
+    hideMultiLoading() {
+        const multiLoading = document.getElementById('multi-search-loading');
+        if (multiLoading) {
+            multiLoading.classList.add('hidden');
         }
     }
 

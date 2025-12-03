@@ -59,6 +59,12 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a href="#" data-page="search">
+                            <i class="icon-search"></i>
+                            <span>搜索</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a href="#" data-page="history">
                             <i class="icon-history"></i>
                             <span>播放历史</span>
@@ -124,6 +130,33 @@
                         <div id="loading" class="loading hidden">加载中...</div>
                         <div id="video-grid" class="video-grid"></div>
                         <div id="pagination" class="pagination"></div>
+                    </div>
+                </div>
+
+                <!-- 搜索页面内容 -->
+                <div id="search-page" class="page">
+                    <!-- 固定搜索栏 -->
+                    <div class="fixed-search-header">
+                        <div class="search-section">
+                            <div class="search-box full-width">
+                                <input type="text" id="multi-search-input" placeholder="搜索所有站点影片...">
+                                <button id="multi-search-btn">搜索</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 搜索历史区域 -->
+                    <div id="search-history" class="search-history">
+                        <div class="history-header">
+                            <button id="clear-search-history-btn" class="clear-history-btn">清空历史</button>
+                        </div>
+                        <div id="search-history-list" class="history-keywords"></div>
+                    </div>
+
+                    <!-- 滚动内容区域 -->
+                    <div class="scrollable-content">
+                        <div id="multi-search-loading" class="loading hidden">正在搜索所有站点...</div>
+                        <div id="multi-video-grid" class="video-grid"></div>
                     </div>
                 </div>
 

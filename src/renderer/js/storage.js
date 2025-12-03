@@ -20,37 +20,62 @@ class StorageService {
 
     // 添加播放历史
     addPlayHistory(videoData) {
-        let history = this.getPlayHistory();
+        try {
+            // 验证输入数据
+            if (!videoData || !videoData.vod_id) {
+                return;
+            }
 
-        // 移除重复项
-        history = history.filter(item => item.vod_id !== videoData.vod_id);
+            let history = this.getPlayHistory();
 
-        // 添加到历史记录开头
-        const historyItem = {
-            vod_id: videoData.vod_id,
-            vod_name: videoData.vod_name,
-            vod_pic: videoData.vod_pic,
-            type_name: videoData.type_name,
-            current_episode: videoData.current_episode || 1,
-            episode_name: videoData.episode_name || '第1集',
-            watch_time: Date.now(),
-            site_name: videoData.site_name || '未知站点',
-            site_url: videoData.site_url || '', // 新增：保存站点API地址
-            progress: videoData.progress || 0,
-            play_duration: videoData.play_duration || 0 // 添加播放时长字段
-        };
+            // 移除重复项
+            history = history.filter(item => item.vod_id !== videoData.vod_id);
 
-        console.log('[STORAGE] 创建的历史记录项:', historyItem);
-        console.log('[STORAGE] 历史记录项的站点名称:', historyItem.site_name);
-        history.unshift(historyItem);
+            // 获取站点名称 - 从站点URL或传入的站点名称
+            let siteName = '未知站点';
+            const siteUrl = videoData.site_url || '';
 
-        // 限制历史记录数量（最多保留100条）
-        if (history.length > 100) {
-            history = history.slice(0, 100);
+            // 如果有站点URL，尝试从已保存的站点中获取名称
+            if (siteUrl) {
+                // 从localStorage获取站点列表 - 使用正确的键名
+                const sites = JSON.parse(localStorage.getItem('video_sites') || '[]');
+                const site = sites.find(s => s.url === siteUrl);
+                if (site && site.name) {
+                    siteName = site.name;
+                }
+            }
+
+            // 如果直接传入了站点名称，优先使用
+            if (videoData.siteName) {
+                siteName = videoData.siteName;
+            }
+
+            // 添加到历史记录开头
+            const historyItem = {
+                vod_id: videoData.vod_id,
+                vod_name: videoData.vod_name,
+                vod_pic: videoData.vod_pic,
+                type_name: videoData.type_name,
+                current_episode: videoData.current_episode || 1,
+                episode_name: videoData.episode_name || '第1集',
+                watch_time: Date.now(),
+                site_name: siteName,
+                site_url: siteUrl,
+                progress: videoData.progress || 0,
+                play_duration: videoData.play_duration || 0
+            };
+
+            history.unshift(historyItem);
+
+            // 限制历史记录数量（最多保留100条）
+            if (history.length > 100) {
+                history = history.slice(0, 100);
+            }
+
+            localStorage.setItem(this.STORAGE_KEYS.PLAY_HISTORY, JSON.stringify(history));
+        } catch (error) {
+            console.error('[STORAGE] 添加播放历史失败:', error);
         }
-
-        localStorage.setItem(this.STORAGE_KEYS.PLAY_HISTORY, JSON.stringify(history));
-        console.log('播放历史已保存，总数:', history.length);
     }
 
     // 删除播放历史项

@@ -201,6 +201,10 @@ body {
     content: '🏠';
 }
 
+.icon-search::before {
+    content: '🔍';
+}
+
 .icon-history::before {
     content: '📺';
 }
@@ -402,6 +406,67 @@ body {
     overflow-y: auto;
     padding: 20px;
     scroll-behavior: smooth;
+    padding-top: 20px;
+}
+
+/* 搜索页面滚动内容区域 */
+#search-page .scrollable-content {
+    margin-top: 180px;
+    /* 为搜索历史区域留出空间 */
+}
+
+/* 搜索历史样式调整 */
+.search-history {
+    position: absolute;
+    top: 60px;
+    /* 放在搜索栏下方 */
+    left: 0;
+    right: 0;
+    margin: 15px 20px;
+    padding: 15px;
+    background: rgba(0, 0, 0, 0.9);
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    z-index: 90;
+}
+
+/* 历史关键词项 */
+.history-keyword {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #ddd;
+    font-size: 13px;
+    border-radius: 16px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 关键词清除按钮 */
+.keyword-remove {
+    margin-left: 8px;
+    padding: 2px 6px;
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+}
+
+.keyword-remove:hover {
+    background: rgba(255, 87, 34, 0.8);
+    transform: scale(1.2);
 }
 
 /* 其他页面的内容容器 */
@@ -689,6 +754,109 @@ body {
     justify-content: center;
     min-height: 40px;
     /* 减少最小高度 */
+}
+
+/* 视频站点信息样式 */
+.video-card .video-site {
+    margin: 2px 0;
+    font-size: 12px;
+    color: #aaa;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+    opacity: 0.8;
+}
+
+/* 搜索历史样式 */
+.search-history {
+    margin-top: 15px;
+    padding: 15px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.history-header {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+/* 调整搜索历史区域样式 */
+.search-history {
+    padding: 12px 15px;
+    margin: 10px 20px;
+    top: 65px;
+}
+
+/* 调整关键词间距 */
+.history-keywords {
+    gap: 6px;
+}
+
+.clear-history-btn {
+    background: transparent;
+    border: none;
+    color: #888;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+}
+
+.clear-history-btn:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.history-keywords {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.history-keyword {
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #ddd;
+    font-size: 13px;
+    border-radius: 16px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.history-keyword:hover {
+    background: rgba(0, 120, 212, 0.8);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 120, 212, 0.3);
+}
+
+.empty-history {
+    color: #888;
+    font-size: 13px;
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+}
+
+/* 搜索框全宽样式 */
+.search-box.full-width {
+    flex: 1;
+    margin-right: 0;
+}
+
+.search-box.full-width input {
+    width: calc(100% - 120px);
+}
+
+.search-box.full-width button {
+    width: 100px;
 }
 
 /* 片名样式 - 单行显示，悬停走马灯效果 */

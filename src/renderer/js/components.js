@@ -403,11 +403,24 @@ class ComponentService {
         card.className = 'video-card';
         card.dataset.videoId = video.vod_id;
 
-        // 处理图片URL
-        let posterUrl = video.vod_pic || '';
+        // 处理图片URL - 加强逻辑，支持更多可能的字段名和格式
+        let posterUrl = video.vod_pic || video.pic || video.img || video.image || '';
 
-        if (posterUrl && !posterUrl.startsWith('http')) {
-            posterUrl = 'https:' + posterUrl;
+        // 清理海报URL，确保格式正确
+        if (posterUrl) {
+            // 去除可能的空格
+            posterUrl = posterUrl.trim();
+
+            // 处理各种URL格式
+            if (!posterUrl.startsWith('http')) {
+                // 有些站点可能返回//开头的URL
+                if (posterUrl.startsWith('//')) {
+                    posterUrl = 'https:' + posterUrl;
+                } else {
+                    // 有些站点可能直接返回图片路径
+                    posterUrl = 'https:' + posterUrl;
+                }
+            }
         }
 
         // 视频基本信息
@@ -453,11 +466,16 @@ class ComponentService {
                         <span class="video-title-text">${videoTitle}</span>
                     </div>
                 </h3>
+                ${video.siteName ? `<p class="video-site">来源：${video.siteName}</p>` : ''}
             </div>
         `;
 
         // 添加点击事件
         card.addEventListener('click', () => {
+            // 如果视频有站点ID，先切换到对应站点
+            if (video.siteId) {
+                this.apiService.setActiveSite(video.siteId);
+            }
             this.showVideoDetail(video.vod_id);
         });
 
@@ -613,6 +631,10 @@ class ComponentService {
 
             // 显示加载状态
             detailContent.innerHTML = '<div class="loading">加载详情中...</div>';
+
+            // 记录来源页面，用于返回逻辑
+            this.previousPage = this.getCurrentPage();
+            console.log('[COMPONENTS] 来源页面:', this.previousPage);
 
             // 只有在当前页面不是详情页时才切换页面
             if (this.getCurrentPage() !== 'detail') {
@@ -926,7 +948,7 @@ class ComponentService {
 
             try {
                 // 方法1：从localStorage直接获取，这是最可靠的
-                const sitesFromStorage = JSON.parse(localStorage.getItem('VIDEO_SITES') || '[]');
+                const sitesFromStorage = JSON.parse(localStorage.getItem('video_sites') || '[]');
                 const activeFromStorage = sitesFromStorage.find(site => site.active);
 
                 if (activeFromStorage && activeFromStorage.name) {
@@ -945,7 +967,7 @@ class ComponentService {
                     }
                 }
             } catch (error) {
-                console.error('[DEBUG] 获取站点信息时出错:', error);
+                console.error('[COMPONENTS] 获取站点信息时出错:', error);
             }
 
             // 在通知中显示获取到的站点信息
@@ -962,8 +984,10 @@ class ComponentService {
                 type_name: videoData.type_name || '未知类型',
                 current_episode: episodeIndex + 1,
                 episode_name: currentEpisode?.name || `第${episodeIndex + 1}集`,
-                site_url: currentSiteInfo?.url || null  // 只保存站点URL作为唯一标识
+                site_url: currentSiteInfo?.url || null,  // 只保存站点URL作为唯一标识
+                siteName: siteName  // 同时传递站点名称，确保可靠
             };
+
             this.storageService.addPlayHistory(historyData);
 
             // 检查Electron环境
