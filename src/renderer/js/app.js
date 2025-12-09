@@ -1368,17 +1368,9 @@ class QixingZhuijuApp {
                 this.handleSharedContent(shareData);
             } else {
                 console.log('[APP] 剪切板内容不是分享码');
-                // 如果是用户主动按Ctrl+V但不是分享码，给出提示
-                if (forceCheck) {
-                    this.componentService.showNotification('剪切板中没有检测到有效的分享码', 'info');
-                }
             }
         } catch (error) {
             console.debug('[APP] 剪切板读取失败:', error.message);
-            // 如果是用户主动按Ctrl+V但读取失败，给出提示
-            if (forceCheck) {
-                this.componentService.showNotification('无法读取剪切板内容，请检查权限设置', 'warning');
-            }
         }
     }
 
