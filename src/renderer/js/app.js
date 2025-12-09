@@ -828,9 +828,10 @@ class QixingZhuijuApp {
                                 vod_pic: finalPosterUrl,
                                 vod_name: detailVideo?.vod_name || basicVideo.vod_name,
                                 vod_remarks: detailVideo?.vod_remarks || basicVideo.vod_remarks,
-                                // 添加站点信息
+                                // 添加站点信息 - 这些信息在播放时用于确定视频来源
                                 siteId: site.id,
-                                siteName: site.name
+                                siteName: site.name,
+                                siteUrl: site.url // 添加站点URL，方便后续使用
                             };
                             return enhancedVideo;
                         });

@@ -943,27 +943,38 @@ class ComponentService {
             const currentRoute = allRoutes[routeIndex];
             const currentEpisode = currentRoute.episodes[episodeIndex];
 
-            // 简化站点信息获取逻辑
+            // 获取站点信息 - 优先使用视频数据中的站点信息（如果有），否则使用当前活跃站点
             let siteName = '未知站点';
+            let siteUrl = null;
+            let activeSite = null;
 
             try {
-                // 方法1：从localStorage直接获取，这是最可靠的
-                const sitesFromStorage = JSON.parse(localStorage.getItem('video_sites') || '[]');
-                const activeFromStorage = sitesFromStorage.find(site => site.active);
+                // 1. 首先检查视频数据中是否包含站点信息（全站搜索的视频会有）
+                if (videoData.siteId && videoData.siteName) {
+                    console.log('[COMPONENTS] 使用视频数据中的站点信息:', videoData.siteName);
+                    siteName = videoData.siteName;
 
-                if (activeFromStorage && activeFromStorage.name) {
-                    siteName = activeFromStorage.name;
+                    // 根据siteId获取完整站点信息
+                    const sites = this.apiService.getSites();
+                    const videoSite = sites.find(site => site.id === videoData.siteId);
+                    if (videoSite) {
+                        siteUrl = videoSite.url;
+                        activeSite = videoSite;
+                    }
                 } else {
-                    // 方法2：通过apiService获取
-                    const activeSite = this.apiService.getActiveSite();
+                    // 2. 从localStorage或apiService获取当前活跃站点
+                    const sitesFromStorage = JSON.parse(localStorage.getItem('video_sites') || '[]');
+                    activeSite = sitesFromStorage.find(site => site.active);
+
+                    if (!activeSite) {
+                        activeSite = this.apiService.getActiveSite();
+                    }
+
                     if (activeSite && activeSite.name) {
                         siteName = activeSite.name;
+                        siteUrl = activeSite.url;
                     } else {
-                        // 方法3：使用第一个可用站点
-                        const allSites = this.apiService.getSites();
-                        if (allSites.length > 0 && allSites[0].name) {
-                            siteName = allSites[0].name;
-                        }
+                        console.error('[COMPONENTS] 无法获取有效站点信息');
                     }
                 }
             } catch (error) {
@@ -973,10 +984,7 @@ class ComponentService {
             // 在通知中显示获取到的站点信息
             this.showNotification(`正在播放 - 当前站点：${siteName}`, 'info');
 
-            // 获取当前站点信息
-            const currentSiteInfo = this.apiService.getActiveSite();
-
-            // 添加到播放历史 - 只保存必要的站点标识信息
+            // 添加到播放历史 - 保存视频原始站点信息，确保历史记录正确
             const historyData = {
                 vod_id: videoData.vod_id,
                 vod_name: videoData.vod_name,
@@ -984,8 +992,8 @@ class ComponentService {
                 type_name: videoData.type_name || '未知类型',
                 current_episode: episodeIndex + 1,
                 episode_name: currentEpisode?.name || `第${episodeIndex + 1}集`,
-                site_url: currentSiteInfo?.url || null,  // 只保存站点URL作为唯一标识
-                siteName: siteName  // 同时传递站点名称，确保可靠
+                site_url: siteUrl,  // 保存视频原始站点URL
+                siteName: siteName  // 保存视频原始站点名称
             };
 
             this.storageService.addPlayHistory(historyData);
