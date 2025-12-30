@@ -1100,44 +1100,76 @@ class QixingZhuijuApp {
 
     // 设置拖拽排序功能
     setupDragAndDrop(siteList) {
-        // 移除可能存在的旧事件监听器
-        const newSiteList = siteList.cloneNode(true);
-        siteList.replaceWith(newSiteList);
-
         // 为每个站点项添加拖拽事件
-        const siteItems = newSiteList.querySelectorAll('.site-item');
+        const siteItems = siteList.querySelectorAll('.site-item');
         siteItems.forEach(item => {
+            // 移除可能存在的旧拖拽事件监听器
+            const newItem = item.cloneNode(true);
+            item.replaceWith(newItem);
+
             // 拖拽开始事件
-            item.addEventListener('dragstart', (e) => {
+            newItem.addEventListener('dragstart', (e) => {
                 e.target.classList.add('dragging');
                 // 设置拖拽数据
                 e.dataTransfer.setData('text/plain', e.target.dataset.siteId);
             });
 
             // 拖拽结束事件
-            item.addEventListener('dragend', (e) => {
+            newItem.addEventListener('dragend', (e) => {
                 e.target.classList.remove('dragging');
             });
-        });
 
-        // 拖拽进入事件
-        newSiteList.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            const afterElement = this.getDragAfterElement(newSiteList, e.clientY);
-            const draggable = document.querySelector('.dragging');
-            if (draggable && afterElement == null) {
-                newSiteList.appendChild(draggable);
-            } else if (draggable) {
-                newSiteList.insertBefore(draggable, afterElement);
+            // 重新绑定原始事件监听器
+            const siteId = newItem.dataset.siteId;
+            const site = this.apiService.getSites().find(s => s.id === siteId);
+
+            if (site) {
+                const testBtn = newItem.querySelector('.btn-test');
+                const editBtn = newItem.querySelector('.btn-edit');
+                const activateBtn = newItem.querySelector('.btn-activate');
+                const deleteBtn = newItem.querySelector('.btn-delete');
+
+                testBtn?.addEventListener('click', () => window.app.componentService.testSiteConnection(site));
+                editBtn?.addEventListener('click', () => window.app.componentService.showEditSiteModal(site));
+                activateBtn?.addEventListener('click', () => window.app.componentService.activateSite(site.id));
+                deleteBtn?.addEventListener('click', () => window.app.componentService.confirmDeleteSite(site));
             }
         });
 
-        // 拖拽放置事件
-        newSiteList.addEventListener('drop', (e) => {
+        // 移除并重新添加拖拽进入事件监听器
+        const oldDragoverListeners = siteList.__dragoverListeners || [];
+        oldDragoverListeners.forEach(listener => {
+            siteList.removeEventListener('dragover', listener);
+        });
+
+        const dragoverListener = (e) => {
+            e.preventDefault();
+            const afterElement = this.getDragAfterElement(siteList, e.clientY);
+            const draggable = document.querySelector('.dragging');
+            if (draggable && afterElement == null) {
+                siteList.appendChild(draggable);
+            } else if (draggable) {
+                siteList.insertBefore(draggable, afterElement);
+            }
+        };
+
+        siteList.addEventListener('dragover', dragoverListener);
+        siteList.__dragoverListeners = [...(siteList.__dragoverListeners || []), dragoverListener];
+
+        // 移除并重新添加拖拽放置事件监听器
+        const oldDropListeners = siteList.__dropListeners || [];
+        oldDropListeners.forEach(listener => {
+            siteList.removeEventListener('drop', listener);
+        });
+
+        const dropListener = (e) => {
             e.preventDefault();
             // 更新站点顺序
-            this.updateSiteOrder(newSiteList);
-        });
+            this.updateSiteOrder(siteList);
+        };
+
+        siteList.addEventListener('drop', dropListener);
+        siteList.__dropListeners = [...(siteList.__dropListeners || []), dropListener];
     }
 
     // 获取拖拽位置后的元素

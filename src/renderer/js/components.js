@@ -1660,21 +1660,39 @@ class ComponentService {
         item.className = 'route-alias-item';
         item.dataset.route = routeName;
 
-        item.innerHTML = `
-            <div class="route-alias-info">
-                <div class="route-alias-original">原名称: ${routeName}</div>
-                <div class="route-alias-display">显示为: ${alias}</div>
-            </div>
-            <div class="route-alias-actions">
-                <button class="btn-edit btn-edit-alias" data-route="${routeName}">编辑</button>
-                <button class="btn-delete btn-remove-alias" data-route="${routeName}">删除</button>
-            </div>
-        `;
+        // 使用DOM API创建元素，确保能正确获取按钮元素
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'route-alias-info';
+        
+        const originalDiv = document.createElement('div');
+        originalDiv.className = 'route-alias-original';
+        originalDiv.textContent = `原名称: ${routeName}`;
+        infoDiv.appendChild(originalDiv);
+        
+        const displayDiv = document.createElement('div');
+        displayDiv.className = 'route-alias-display';
+        displayDiv.textContent = `显示为: ${alias}`;
+        infoDiv.appendChild(displayDiv);
+        
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'route-alias-actions';
+        
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn-edit btn-edit-alias';
+        editBtn.dataset.route = routeName;
+        editBtn.textContent = '编辑';
+        actionsDiv.appendChild(editBtn);
+        
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn-delete btn-remove-alias';
+        removeBtn.dataset.route = routeName;
+        removeBtn.textContent = '删除';
+        actionsDiv.appendChild(removeBtn);
+        
+        item.appendChild(infoDiv);
+        item.appendChild(actionsDiv);
 
         // 添加事件监听
-        const editBtn = item.querySelector('.btn-edit-alias');
-        const removeBtn = item.querySelector('.btn-remove-alias');
-
         editBtn.addEventListener('click', () => {
             this.editRouteAlias(routeName, alias);
         });
