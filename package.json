@@ -50,6 +50,7 @@
         "axios": "^1.5.0",
         "combined-stream": "^1.0.8",
         "delayed-stream": "^1.0.0",
+        "electron-updater": "^6.6.2",
         "follow-redirects": "^1.15.11",
         "form-data": "^4.0.4",
         "hls.js": "^1.4.12",
@@ -85,14 +86,22 @@
         },
         "nsis": {
             "oneClick": false,
-            "allowToChangeInstallationDirectory": true
+            "allowToChangeInstallationDirectory": true,
+            "perMachine": true,
+            "include": "build/installer.nsh"
         },
         "forceCodeSigning": false,
-        "publish": null,
+        "publish": {
+            "provider": "generic",
+            "url": "http://localhost:3000/",
+            "channel": "latest"
+        },
         "compression": "store",
         "beforePack": null,
         "afterPack": null,
         "beforeBuild": null,
-        "afterSign": null
+        "afterSign": null,
+        "autoUpdaterName": "七星追剧自动更新",
+        "publishAutoUpdate": true
     }
 }
