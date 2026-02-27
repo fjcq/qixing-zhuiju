@@ -383,6 +383,73 @@ function setupIPC(qixingApp) {
             return { success: false, error: error.message };
         }
     });
+
+    // 获取远程内容 - 用于TVBOX配置加载
+    ipcMain.handle('fetch-remote-content', async (event, url) => {
+        console.log('[MAIN] 收到获取远程内容请求:', url);
+        try {
+            // 安全检查：验证URL格式
+            if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+                return { success: false, error: '无效的URL格式' };
+            }
+
+            const https = require('https');
+            const http = require('http');
+            const urlObj = new URL(url);
+            const protocol = urlObj.protocol === 'https:' ? https : http;
+
+            return new Promise((resolve, reject) => {
+                const timeout = 15000;
+                const timer = setTimeout(() => {
+                    reject(new Error('请求超时'));
+                }, timeout);
+
+                const options = {
+                    hostname: urlObj.hostname,
+                    port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+                    path: urlObj.pathname + urlObj.search,
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'application/json, text/plain, */*',
+                        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                        'Connection': 'keep-alive'
+                    }
+                };
+
+                const req = protocol.request(options, (res) => {
+                    let data = '';
+                    res.setEncoding('utf8');
+
+                    res.on('data', (chunk) => {
+                        data += chunk;
+                    });
+
+                    res.on('end', () => {
+                        clearTimeout(timer);
+                        if (res.statusCode >= 200 && res.statusCode < 300) {
+                            console.log('[MAIN] 远程内容获取成功, 大小:', data.length);
+                            resolve({ success: true, data: data, statusCode: res.statusCode });
+                        } else {
+                            console.error('[MAIN] 远程内容获取失败, 状态码:', res.statusCode);
+                            resolve({ success: false, error: `HTTP错误: ${res.statusCode}`, statusCode: res.statusCode });
+                        }
+                    });
+                });
+
+                req.on('error', (e) => {
+                    clearTimeout(timer);
+                    console.error('[MAIN] 远程内容获取失败:', e.message);
+                    resolve({ success: false, error: e.message });
+                });
+
+                req.end();
+            });
+        } catch (error) {
+            console.error('[MAIN] 获取远程内容失败:', error);
+            return { success: false, error: error.message };
+        }
+    });
 }
 
 module.exports = {

@@ -47,11 +47,12 @@ class ComponentService {
             <div class="site-info">
                 <div class="site-header">
                     <h4 class="site-name">${site.name}</h4>
-                    <span class="site-type">${site.type.toUpperCase()}</span>
+                    <span class="site-type">${site.type ? site.type.toUpperCase() : 'UNKNOWN'}</span>
                     <span class="site-status ${statusClass}">${statusText}</span>
                 </div>
                 <div class="site-details">
-                    <p class="site-url">${site.url}</p>
+                    <p class="site-url">${site.url || site.api || '无URL'}</p>
+                    ${site.ruleType ? `<p class="site-rule-type">规则类型: ${site.ruleType}</p>` : ''}
                     ${site.blockedRoutes ? `<p class="site-blocked-routes">屏蔽线路: ${site.blockedRoutes}</p>` : ''}
                     <div class="site-actions">
                         <button class="btn-test" data-site-id="${site.id}" title="测试API连接和数据格式">
@@ -1922,7 +1923,7 @@ class ComponentService {
                             <i>💡</i> 
                             支持以下格式的配置文件：<br>
                             • 七星追剧导出的 .json 配置文件（完整导入）<br>
-                            • 主站信息格式的 JSON 文件（仅提取站点名称和API地址，统一设置为JSON格式）
+                            • 主站信息格式的 JSON 文件（仅提取站点名称和API地址）
                         </p>
                     </div>
                 </div>
@@ -1971,6 +1972,7 @@ class ComponentService {
         const confirmImportBtn = document.getElementById('confirm-import-btn');
         const cancelImportBtn = document.getElementById('cancel-import-btn');
 
+        // 文件选择事件
         selectFileBtn.addEventListener('click', () => {
             fileInput.click();
         });

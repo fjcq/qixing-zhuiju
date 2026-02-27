@@ -2233,3 +2233,203 @@
     margin: 20px 0;
     font-weight: 500;
 }
+
+/* TVBOX导入相关样式 */
+.import-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 10px;
+}
+
+.import-tab {
+    padding: 10px 20px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px 8px 0 0;
+    color: #888;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.import-tab:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.import-tab.active {
+    color: #fff;
+    background: linear-gradient(135deg, #0078d4, #106ebe);
+    border-color: #0078d4;
+}
+
+.import-tab-content {
+    animation: fadeIn 0.3s ease;
+}
+
+.import-tab-content.hidden {
+    display: none;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.import-url-section {
+    padding: 10px 0;
+}
+
+.url-input-wrapper {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.url-input-wrapper input {
+    flex: 1;
+    padding: 12px 15px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.url-input-wrapper input:focus {
+    outline: none;
+    border-color: #0078d4;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.url-input-wrapper input::placeholder {
+    color: #666;
+}
+
+.url-info {
+    margin-top: 10px;
+}
+
+.tvbox-preview {
+    margin-top: 20px;
+    padding: 15px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.tvbox-preview::-webkit-scrollbar {
+    width: 5px;
+}
+
+.tvbox-preview::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
+}
+
+.tvbox-preview::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 3px;
+}
+
+.tvbox-preview.hidden {
+    display: none;
+}
+
+.config-preview {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    color: #ccc;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 15px;
+    border-radius: 6px;
+    max-height: 300px;
+    overflow-y: auto;
+    margin: 0;
+}
+
+.loading-spinner {
+    text-align: center;
+    padding: 30px;
+    color: #0078d4;
+    font-size: 14px;
+}
+
+.loading-spinner::before {
+    content: '';
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #0078d4;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 10px;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.error-message {
+    color: #f44336;
+    padding: 15px;
+    background: rgba(244, 67, 54, 0.1);
+    border-radius: 6px;
+    text-align: left;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
+    font-size: 13px;
+    line-height: 1.6;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.repo-selection {
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.repo-selection h5 {
+    margin: 0 0 15px 0;
+    font-size: 14px;
+    color: #fff;
+}
+
+.repo-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.repo-list .radio-item {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 15px;
+}
+
+.repo-list .radio-item small {
+    display: block;
+    margin-top: 5px;
+    color: #666;
+    font-size: 11px;
+    word-break: break-all;
+}

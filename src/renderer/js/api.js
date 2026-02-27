@@ -119,7 +119,13 @@ class ApiService {
     buildApiUrl(params = {}) {
         if (!this.currentSite) return '';
 
-        const url = new URL(this.currentSite.url);
+        const siteUrl = this.currentSite.url || this.currentSite.api;
+        if (!siteUrl) {
+            console.error('[API] 站点缺少URL或API地址:', this.currentSite.name);
+            return '';
+        }
+
+        const url = new URL(siteUrl);
         Object.keys(params).forEach(key => {
             if (params[key] !== undefined && params[key] !== '') {
                 url.searchParams.set(key, params[key]);

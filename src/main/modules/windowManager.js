@@ -51,16 +51,26 @@ async function createMainWindow(qixingApp) {
         throw error;
     }
 
-    // 显示窗口
+    // 显示窗口 - 使用多种方式确保窗口显示
     qixingApp.mainWindow.once('ready-to-show', () => {
         if (isDev) console.log('[MAIN] 主窗口准备显示');
         qixingApp.mainWindow.show();
+        qixingApp.mainWindow.focus();
         if (isDev) console.log('[MAIN] 主窗口已显示');
 
         if (isDev) {
             qixingApp.mainWindow.webContents.openDevTools();
         }
     });
+
+    // 备用显示机制：如果3秒后ready-to-show还没触发，强制显示
+    setTimeout(() => {
+        if (qixingApp.mainWindow && !qixingApp.mainWindow.isVisible()) {
+            console.log('[MAIN] 备用显示机制触发');
+            qixingApp.mainWindow.show();
+            qixingApp.mainWindow.focus();
+        }
+    }, 3000);
 
     // 窗口关闭事件
     qixingApp.mainWindow.on('closed', () => {

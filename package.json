@@ -54,6 +54,7 @@
         "follow-redirects": "^1.15.11",
         "form-data": "^4.0.4",
         "hls.js": "^1.4.12",
+        "iconv-lite": "^0.7.2",
         "ws": "^8.14.2"
     },
     "build": {
@@ -100,8 +101,6 @@
         "beforePack": null,
         "afterPack": null,
         "beforeBuild": null,
-        "afterSign": null,
-        "autoUpdaterName": "七星追剧自动更新",
-        "publishAutoUpdate": true
+        "afterSign": null
     }
 }

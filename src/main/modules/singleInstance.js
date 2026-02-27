@@ -1,6 +1,7 @@
 const { app, BrowserWindow } = require('electron');
 const os = require('os');
 const { exec } = require('child_process');
+const iconv = require('iconv-lite');
 
 // 清理残余进程
 function cleanupOrphanedProcesses() {
@@ -42,14 +43,15 @@ function cleanupWindowsProcesses() {
         ];
 
         commands.forEach(cmd => {
-            exec(cmd, { timeout: 5000 }, (error, stdout, stderr) => {
-                if (!error && stdout && stdout.trim()) {
-                    console.log(`[MAIN] 进程查询结果: ${stdout.trim()}`);
+            exec(cmd, { timeout: 5000, encoding: 'buffer' }, (error, stdout, stderr) => {
+                const stdoutStr = iconv.decode(stdout, 'gbk');
+                if (!error && stdoutStr && stdoutStr.trim()) {
+                    console.log(`[MAIN] 进程查询结果: ${stdoutStr.trim()}`);
 
                     // 解析CSV输出
-                    const lines = stdout.split('\n');
+                    const lines = stdoutStr.split('\n');
                     lines.forEach(line => {
-                        if (line.trim() && !line.includes('INFO:')) {
+                        if (line.trim() && !line.includes('信息:') && !line.includes('INFO:')) {
                             // CSV格式: "进程名","PID","会话名","会话号","内存使用"
                             const match = line.match(/"([^"]+)","(\d+)"/);
                             if (match) {

@@ -31,7 +31,8 @@ contextBridge.exposeInMainWorld('electron', {
                 'read-clipboard',
                 'write-clipboard',
                 'player-log',
-                'player-episode-changed'
+                'player-episode-changed',
+                'fetch-remote-content'
             ];
             if (validChannels.includes(channel)) {
                 return ipcRenderer.invoke(channel, data);
@@ -90,6 +91,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
             return result;
         } catch (error) {
             console.error('[PRELOAD] IPC外部链接打开失败:', error);
+            return { success: false, error: error.message };
+        }
+    },
+    // 获取远程内容 - 用于TVBOX配置加载
+    fetchRemoteContent: async (url) => {
+        console.log('[PRELOAD] 尝试获取远程内容:', url);
+        try {
+            const result = await ipcRenderer.invoke('fetch-remote-content', url);
+            console.log('[PRELOAD] 远程内容获取结果:', result ? '成功' : '失败');
+            return result;
+        } catch (error) {
+            console.error('[PRELOAD] 远程内容获取失败:', error);
             return { success: false, error: error.message };
         }
     }

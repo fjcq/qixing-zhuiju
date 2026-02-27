@@ -422,7 +422,7 @@ class StorageService {
                     if (options.overwriteSites) {
                         localStorage.setItem(this.STORAGE_KEYS.VIDEO_SITES, JSON.stringify(importData.sites));
                         results.imported.push(`站点配置 (${importData.sites.length} 个站点)`);
-                        console.log('[STORAGE] 覆盖模式保存站点数据:', importData.sites);
+                        console.log('[STORAGE] 覆盖模式保存站点数据:', importData.sites.length, '个站点');
                     } else {
                         // 合并站点，避免重复
                         const existingSites = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.VIDEO_SITES) || '[]');
@@ -436,7 +436,7 @@ class StorageService {
                     const savedSites = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.VIDEO_SITES) || '[]');
                     console.log('[STORAGE] 验证保存结果，站点总数:', savedSites.length);
                     savedSites.forEach(site => {
-                        console.log(`[STORAGE] 验证站点: ${site.name} (id: ${site.id}, active: ${site.active}, type: ${site.type})`);
+                        console.log(`[STORAGE] 验证站点: ${site.name} (url: ${site.url}, type: ${site.type}, active: ${site.active})`);
                     });
                 } catch (error) {
                     results.errors.push('站点配置导入失败: ' + error.message);
@@ -527,10 +527,30 @@ class StorageService {
     // 合并站点数据，避免重复
     mergeSites(existingSites, newSites) {
         const mergedSites = [...existingSites];
-        const existingUrls = new Set(existingSites.map(site => site.url));
+        
+        // 创建已存在的站点标识集合
+        const existingKeys = new Set();
+        existingSites.forEach(site => {
+            // 使用 url 或 api 作为唯一标识
+            const key = site.url || site.api || site.id;
+            if (key) existingKeys.add(key);
+        });
 
         newSites.forEach((newSite, index) => {
-            if (!existingUrls.has(newSite.url)) {
+            // 使用 url 或 api 作为唯一标识
+            const newKey = newSite.url || newSite.api || newSite.id;
+            
+            // 如果新站点没有 url 字段但有 api 字段，则设置 url
+            if (!newSite.url && newSite.api) {
+                newSite.url = newSite.api;
+            }
+            
+            // 如果新站点没有 url 也没有 api，但有 ext（规则配置URL）
+            if (!newSite.url && newSite.ext && typeof newSite.ext === 'string' && newSite.ext.startsWith('http')) {
+                newSite.url = newSite.ext;
+            }
+            
+            if (!newKey || !existingKeys.has(newKey)) {
                 // 确保新站点有正确的字段和ID格式
                 if (!newSite.id || typeof newSite.id !== 'string') {
                     newSite.id = `merged_${Date.now()}_${index}`;
@@ -539,6 +559,9 @@ class StorageService {
                     newSite.active = false;
                 }
                 mergedSites.push(newSite);
+                console.log(`[STORAGE] 合并站点: ${newSite.name} (url: ${newSite.url}, type: ${newSite.type})`);
+            } else {
+                console.log(`[STORAGE] 跳过重复站点: ${newSite.name} (key: ${newKey})`);
             }
         });
 
@@ -623,8 +646,6 @@ class StorageService {
             console.log('[STORAGE] 检测到主站信息格式，开始转换...');
             return this.convertMainSiteFormat(data);
         }
-
-        // 其他格式检测可以在这里添加
 
         return data; // 如果不是特殊格式，返回原数据
     }

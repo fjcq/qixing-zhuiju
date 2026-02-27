@@ -1038,7 +1038,27 @@ body {
     padding: 20px;
     max-width: 500px;
     width: 90%;
+    max-height: 85vh;
+    overflow-y: auto;
     position: relative;
+}
+
+.modal-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.modal-content::-webkit-scrollbar-track {
+    background: #1a1a1a;
+    border-radius: 3px;
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 3px;
+}
+
+.modal-content::-webkit-scrollbar-thumb:hover {
+    background: #666;
 }
 
 .close {
