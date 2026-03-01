@@ -96,10 +96,9 @@ function validateVideoData(videoData) {
         return { valid: false, error: '无效的视频数据' };
     }
 
-    const sanitized = {};
+    const sanitized = { ...videoData };
     const errors = [];
 
-    // 验证URL
     if (videoData.url) {
         const urlResult = validateMediaUrl(videoData.url);
         if (!urlResult.valid) {
@@ -109,7 +108,6 @@ function validateVideoData(videoData) {
         }
     }
 
-    // 验证标题（可选）
     if (videoData.title !== undefined) {
         if (typeof videoData.title !== 'string') {
             errors.push('标题必须是字符串');
@@ -120,7 +118,6 @@ function validateVideoData(videoData) {
         }
     }
 
-    // 验证海报URL（可选）
     if (videoData.poster !== undefined) {
         if (videoData.poster) {
             const posterResult = validateMediaUrl(videoData.poster);
@@ -132,13 +129,96 @@ function validateVideoData(videoData) {
         }
     }
 
-    // 验证集数索引（可选）
     if (videoData.episodeIndex !== undefined) {
         const index = Number(videoData.episodeIndex);
         if (!Number.isInteger(index) || index < 0) {
             errors.push('集数索引必须是非负整数');
         } else {
             sanitized.episodeIndex = index;
+        }
+    }
+
+    if (videoData.videoData !== undefined && typeof videoData.videoData === 'object') {
+        sanitized.videoData = { ...videoData.videoData };
+
+        if (videoData.videoData.vod_id !== undefined) {
+            sanitized.videoData.vod_id = String(videoData.videoData.vod_id).substring(0, 100);
+        }
+        if (videoData.videoData.vod_name !== undefined) {
+            sanitized.videoData.vod_name = String(videoData.videoData.vod_name).substring(0, 200);
+        }
+        if (videoData.videoData.vod_pic !== undefined) {
+            sanitized.videoData.vod_pic = String(videoData.videoData.vod_pic).substring(0, 500);
+        }
+        if (videoData.videoData.currentRoute !== undefined) {
+            sanitized.videoData.currentRoute = Number(videoData.videoData.currentRoute) || 0;
+        }
+        if (videoData.videoData.currentEpisode !== undefined) {
+            sanitized.videoData.currentEpisode = Number(videoData.videoData.currentEpisode) || 0;
+        }
+        if (videoData.videoData.routes !== undefined && Array.isArray(videoData.videoData.routes)) {
+            const MAX_ROUTES = 50;
+            const MAX_EPISODES_PER_ROUTE = 500;
+            const MAX_EPISODE_NAME_LENGTH = 100;
+            const MAX_EPISODE_URL_LENGTH = 2000;
+
+            sanitized.videoData.routes = videoData.videoData.routes
+                .slice(0, MAX_ROUTES)
+                .map(route => {
+                    if (!route || typeof route !== 'object') {
+                        return null;
+                    }
+
+                    const sanitizedRoute = {};
+
+                    if (route.name !== undefined) {
+                        sanitizedRoute.name = String(route.name).substring(0, 100);
+                    }
+
+                    if (route.episodes !== undefined && Array.isArray(route.episodes)) {
+                        sanitizedRoute.episodes = route.episodes
+                            .slice(0, MAX_EPISODES_PER_ROUTE)
+                            .map(episode => {
+                                if (!episode || typeof episode !== 'object') {
+                                    return null;
+                                }
+
+                                const sanitizedEpisode = {};
+
+                                if (episode.index !== undefined) {
+                                    sanitizedEpisode.index = Number(episode.index) || 0;
+                                }
+                                if (episode.name !== undefined) {
+                                    sanitizedEpisode.name = String(episode.name).substring(0, MAX_EPISODE_NAME_LENGTH);
+                                }
+                                if (episode.url !== undefined) {
+                                    const episodeUrl = String(episode.url);
+                                    if (episodeUrl.length <= MAX_EPISODE_URL_LENGTH) {
+                                        sanitizedEpisode.url = episodeUrl;
+                                    }
+                                }
+
+                                return Object.keys(sanitizedEpisode).length > 0 ? sanitizedEpisode : null;
+                            })
+                            .filter(episode => episode !== null);
+                    }
+
+                    return Object.keys(sanitizedRoute).length > 0 ? sanitizedRoute : null;
+                })
+                .filter(route => route !== null);
+        }
+        if (videoData.videoData.siteName !== undefined) {
+            sanitized.videoData.siteName = String(videoData.videoData.siteName).substring(0, 100);
+        }
+        if (videoData.videoData.siteUrl !== undefined) {
+            sanitized.videoData.siteUrl = String(videoData.videoData.siteUrl).substring(0, 500);
+        }
+    }
+
+    if (videoData.resumeProgress !== undefined) {
+        const progress = Number(videoData.resumeProgress);
+        if (!isNaN(progress) && progress >= 0) {
+            sanitized.resumeProgress = progress;
         }
     }
 

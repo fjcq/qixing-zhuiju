@@ -97,6 +97,15 @@ function setupIPC(qixingApp) {
         }
     });
 
+    ipcMain.handle('window-set-title', (event, title) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        if (window) {
+            window.setTitle(title);
+            return { success: true };
+        }
+        return { success: false };
+    });
+
     ipcMain.handle('toggle-always-on-top', event => {
         const window = BrowserWindow.fromWebContents(event.sender);
         if (window) {

@@ -198,11 +198,6 @@ iframe[src*="player"]::-webkit-media-controls {
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(180deg, 
-        rgba(0, 0, 0, 0.7) 0%, 
-        transparent 30%, 
-        transparent 70%, 
-        rgba(0, 0, 0, 0.7) 100%);
     z-index: 100;
     opacity: 0;
     transition: all var(--duration-normal) var(--ease-out);

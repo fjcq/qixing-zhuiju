@@ -131,7 +131,7 @@ class SettingsController {
         // 拖拽进入事件
         const dragoverListener = e => {
             e.preventDefault();
-            const afterElement = this.getDragAfterElement(siteList, e.clientY);
+            const afterElement = this.getDragAfterElement(siteList, e.clientX, e.clientY);
             const draggable = document.querySelector('.dragging');
             if (draggable) {
                 if (afterElement == null) {
@@ -152,22 +152,27 @@ class SettingsController {
     }
 
     /**
-     * 获取拖拽后的元素位置
+     * 获取拖拽后的元素位置（支持网格布局）
      * @param {HTMLElement} container - 容器元素
+     * @param {number} x - 鼠标X坐标
      * @param {number} y - 鼠标Y坐标
      * @returns {HTMLElement|null} 应该插入在其后的元素
      */
-    getDragAfterElement(container, y) {
+    getDragAfterElement(container, x, y) {
         const draggableElements = [...container.querySelectorAll('.site-item:not(.dragging)')];
 
         return draggableElements.reduce((closest, child) => {
             const box = child.getBoundingClientRect();
-            const offset = y - box.top - box.height / 2;
-            if (offset < 0 && offset > closest.offset) {
-                return { offset, element: child };
+            const offsetX = x - box.left - box.width / 2;
+            const offsetY = y - box.top - box.height / 2;
+            const distance = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+
+            if (distance < closest.distance) {
+                const isAfter = offsetY > 0 || (offsetY === 0 && offsetX > 0);
+                return { distance, element: child, isAfter };
             }
             return closest;
-        }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }, { distance: Number.POSITIVE_INFINITY }).element;
     }
 
     /**

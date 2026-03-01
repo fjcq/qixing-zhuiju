@@ -1175,7 +1175,7 @@ class QixingZhuijuApp {
 
         const dragoverListener = e => {
             e.preventDefault();
-            const afterElement = this.getDragAfterElement(siteList, e.clientY);
+            const afterElement = this.getDragAfterElement(siteList, e.clientX, e.clientY);
             const draggable = document.querySelector('.dragging');
             if (draggable && afterElement == null) {
                 siteList.appendChild(draggable);
@@ -1203,19 +1203,27 @@ class QixingZhuijuApp {
         siteList.__dropListeners = [...(siteList.__dropListeners || []), dropListener];
     }
 
-    // 获取拖拽位置后的元素
-    getDragAfterElement(container, y) {
+    /**
+     * 获取拖拽位置后的元素（支持网格布局）
+     * @param {HTMLElement} container - 容器元素
+     * @param {number} x - 鼠标X坐标
+     * @param {number} y - 鼠标Y坐标
+     * @returns {HTMLElement|null} 应该插入在其后的元素
+     */
+    getDragAfterElement(container, x, y) {
         const draggableElements = [...container.querySelectorAll('.site-item:not(.dragging)')];
 
         return draggableElements.reduce((closest, child) => {
             const box = child.getBoundingClientRect();
-            const offset = y - box.top - box.height / 2;
+            const offsetX = x - box.left - box.width / 2;
+            const offsetY = y - box.top - box.height / 2;
+            const distance = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
 
-            if (offset < 0 && offset > closest.offset) {
-                return { offset, element: child };
+            if (distance < closest.distance) {
+                return { distance, element: child };
             }
             return closest;
-        }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }, { distance: Number.POSITIVE_INFINITY }).element;
     }
 
     // 更新站点顺序

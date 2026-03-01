@@ -12,6 +12,8 @@
         media-src 'self' https: http: blob:;
         connect-src 'self' https: http: wss: ws:;
         font-src 'self' data:;
+        frame-src https: http:;
+        child-src https: http:;
         object-src 'none';
         base-uri 'self';
         form-action 'self';
@@ -388,7 +390,7 @@
 
     </div> <!-- 关闭 player-app -->
 
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="../../node_modules/hls.js/dist/hls.min.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/danmaku.js"></script>
     <script src="js/enhanced-danmaku.js"></script>

@@ -3,6 +3,19 @@
 
 const CHANGELOG_DATA = [
     {
+        version: 'v1.5.1',
+        date: '2026-03-02',
+        items: [
+            ' 修复m3u8视频无法播放：hls.js改为本地加载，解决CSP阻止CDN加载问题',
+            ' 修复网页播放器无法加载：添加frame-src和child-src到CSP配置',
+            ' 修复播放器数据传递错误：完善validateVideoData验证器，保留完整视频数据',
+            ' 修复window-set-title IPC处理程序未注册错误',
+            ' 优化设置页面布局：站点管理和线路设置改为网格布局，支持多列显示',
+            ' 移除播放器悬停变暗效果：提升观看体验',
+            ' 增强安全验证：添加routes数组深度验证，限制数组长度防止内存溢出'
+        ]
+    },
+    {
         version: 'v1.4.0',
         date: '2025-12-31',
         items: [
