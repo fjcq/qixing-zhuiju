@@ -237,7 +237,10 @@
                         <li>刷新页面后重试</li>
                     </ul>
                 </div>
-                <button id="retry-btn" class="btn-retry">重试</button>
+                <div class="error-actions">
+                    <button id="copy-error-btn" class="btn-copy-error">📋 复制错误信息</button>
+                    <button id="retry-btn" class="btn-retry">重试</button>
+                </div>
             </div>
 
             <!-- 投屏设备选择对话框 -->
@@ -390,7 +393,8 @@
 
     </div> <!-- 关闭 player-app -->
 
-    <script src="../../node_modules/hls.js/dist/hls.min.js"></script>
+    <!-- 加载 hls.js 用于 m3u8 视频播放 -->
+    <script src="js/hls.min.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/danmaku.js"></script>
     <script src="js/enhanced-danmaku.js"></script>

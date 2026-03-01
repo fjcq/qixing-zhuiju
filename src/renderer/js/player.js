@@ -1,5 +1,13 @@
 // 播放器页面脚本
 
+// hls.js 通过 script 标签加载，检查全局变量
+let Hls = window.Hls;
+if (typeof Hls !== 'undefined') {
+    console.log('[PLAYER] hls.js 加载成功, 版本:', Hls.version);
+} else {
+    console.error('[PLAYER] hls.js 未找到，m3u8 视频将无法播放');
+}
+
 // 创建cmd控制台日志函数
 const cmdLog = {
     info: (message, ...args) => {
@@ -671,7 +679,14 @@ class VideoPlayer {
 
         // 根据文件类型选择播放方式
         if (videoUrl.includes('.m3u8') || videoUrl.includes('m3u8') || videoUrl.includes('.M3U8')) {
-            await this.loadHLSVideo(videoUrl);
+            try {
+                await this.loadHLSVideo(videoUrl);
+            } catch (error) {
+                console.error('[PLAYER] HLS视频加载失败:', error);
+                // 显示具体的错误信息
+                this.showError(error.message || 'm3u8视频加载失败，请尝试其他播放源');
+                throw error;
+            }
         } else {
             await this.loadDirectVideo(videoUrl);
         }
@@ -887,7 +902,17 @@ class VideoPlayer {
 
             return this.video.play();
         }
-        throw new Error('浏览器不支持HLS播放，请尝试其他播放源');
+        
+        // 提供更详细的错误信息
+        let hlsError = 'HLS播放器初始化失败';
+        if (typeof Hls === 'undefined') {
+            hlsError = 'HLS播放器组件未加载，无法播放m3u8视频。请重启应用或重新安装。';
+            console.error('[PLAYER] Hls 未定义，可能 preload 脚本加载失败');
+        } else if (!Hls.isSupported()) {
+            hlsError = '当前浏览器环境不支持HLS播放，请尝试使用网页播放源。';
+            console.error('[PLAYER] Hls.isSupported() 返回 false');
+        }
+        throw new Error(hlsError);
     }
 
     // 加载普通视频
@@ -980,7 +1005,19 @@ class VideoPlayer {
                         errorMessage = '视频解码错误，可能是视频文件损坏';
                         break;
                     case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                        errorMessage = '视频格式不受支持，请尝试其他播放源';
+                        // 更详细的诊断 - 使用保存的原始URL而不是video.src
+                        const videoSrc = this.originalVideoUrl || this.currentVideoUrl || this.video?.src || 'unknown';
+                        console.error('[PLAYER] MEDIA_ERR_SRC_NOT_SUPPORTED, 视频源:', videoSrc);
+                        if (videoSrc.includes('.m3u8') || videoSrc.includes('m3u8')) {
+                            errorMessage = 'm3u8视频加载失败，HLS播放器可能未正确初始化。请尝试重启应用或使用网页播放源。';
+                        } else if (videoSrc.startsWith('blob:')) {
+                            errorMessage = '视频流加载失败，可能是网络问题或视频源不可用。';
+                        } else if (videoSrc === 'unknown' || !videoSrc) {
+                            errorMessage = '视频源无效，请尝试其他播放源。';
+                        } else {
+                            const ext = videoSrc.split('.').pop()?.split('?')[0] || '未知格式';
+                            errorMessage = `视频格式不受支持 (${ext})，请尝试其他播放源`;
+                        }
                         break;
                     default:
                         errorMessage = `视频播放错误: ${error.message || '未知错误'}`;
@@ -1205,6 +1242,17 @@ class VideoPlayer {
 
             newRetryBtn.addEventListener('click', () => {
                 this.retryCurrentEpisode();
+            });
+        }
+
+        // 复制错误信息按钮
+        const copyErrorBtn = document.getElementById('copy-error-btn');
+        if (copyErrorBtn) {
+            const newCopyErrorBtn = copyErrorBtn.cloneNode(true);
+            copyErrorBtn.parentNode.replaceChild(newCopyErrorBtn, copyErrorBtn);
+
+            newCopyErrorBtn.addEventListener('click', () => {
+                this.copyErrorMessage();
             });
         }
 
@@ -1892,6 +1940,32 @@ class VideoPlayer {
             error.classList.remove('hidden');
             const errorMsg = error.querySelector('#error-message');
             if (errorMsg) errorMsg.textContent = message;
+            
+            // 保存错误信息到 data 属性，方便复制
+            error.dataset.errorMessage = message;
+        }
+    }
+
+    // 复制错误信息
+    copyErrorMessage() {
+        const error = document.getElementById('player-error');
+        const message = error?.dataset?.errorMessage || '无错误信息';
+        
+        if (window.electron && window.electron.clipboard) {
+            window.electron.clipboard.writeText(message).then(() => {
+                this.showNotification('错误信息已复制到剪贴板', 'success');
+            }).catch(err => {
+                console.error('复制失败:', err);
+                this.showNotification('复制失败，请手动复制', 'error');
+            });
+        } else {
+            // 备用方案：使用原生剪贴板 API
+            navigator.clipboard.writeText(message).then(() => {
+                this.showNotification('错误信息已复制到剪贴板', 'success');
+            }).catch(err => {
+                console.error('复制失败:', err);
+                this.showNotification('复制失败，请手动复制', 'error');
+            });
         }
     }
 

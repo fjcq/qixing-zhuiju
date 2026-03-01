@@ -343,6 +343,22 @@ body .player-container .player-overlay.show .top-right-controls {
     background: rgba(40, 167, 69, 0.3);
 }
 
+.btn-copy-error {
+    background: var(--color-primary-glass);
+    border-color: var(--color-primary-border);
+}
+
+.btn-copy-error:hover {
+    background: rgba(0, 123, 255, 0.3);
+}
+
+.error-actions {
+    display: flex;
+    gap: var(--spacing-md);
+    justify-content: center;
+    margin-top: var(--spacing-md);
+}
+
 /* 图标样式 */
 .icon {
     font-size: var(--font-size-lg);

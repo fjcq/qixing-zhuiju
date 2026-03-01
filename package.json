@@ -1,6 +1,6 @@
 {
     "name": "qixing-zhuiju",
-    "version": "1.5.1",
+    "version": "1.5.2",
     "description": "七星追剧 - 播放苹果CMS资源站的影视节目",
     "main": "main.js",
     "scripts": {
@@ -69,8 +69,13 @@
         "electron-updater": "^6.6.2",
         "follow-redirects": "^1.15.11",
         "form-data": "^4.0.4",
+        "fs-extra": "^11.2.0",
+        "graceful-fs": "^4.2.11",
         "hls.js": "^1.4.12",
         "iconv-lite": "^0.7.2",
+        "jsonfile": "^6.1.0",
+        "safer-buffer": "^2.1.2",
+        "universalify": "^2.0.0",
         "ws": "^8.14.2"
     },
     "build": {
