@@ -86,7 +86,7 @@ class DLNAManager {
             this.dlnaClient.removeAllListeners(); // 清除之前的监听器
             console.log('[MAIN] 已清除旧的事件监听器');
 
-            this.dlnaClient.on('deviceFound', (device) => {
+            this.dlnaClient.on('deviceFound', device => {
                 console.log('[MAIN] 发现DLNA设备:', device.name, 'IP:', device.address);
 
                 // 检查是否已存在相同设备（基于ID去重）
@@ -121,7 +121,7 @@ class DLNAManager {
                 console.log(`[MAIN] 当前设备列表总数: ${this.discoveredDevices.length}`);
             });
 
-            this.dlnaClient.on('discoveryComplete', (devices) => {
+            this.dlnaClient.on('discoveryComplete', devices => {
                 console.log(`[MAIN] DLNA设备发现完成事件触发，传入设备数量: ${devices.length}`);
                 console.log(`[MAIN] 当前发现设备列表长度: ${this.discoveredDevices.length}`);
 
@@ -139,7 +139,7 @@ class DLNAManager {
 
             // 等待发现过程完成
             console.log('[MAIN] 等待设备发现完成...');
-            await new Promise((resolve) => {
+            await new Promise(resolve => {
                 const timeout = setTimeout(() => {
                     console.log('[MAIN] 设备发现超时，强制结束');
                     // 更新设备的在线状态
@@ -170,7 +170,6 @@ class DLNAManager {
 
             console.log(`[MAIN] 最终发现 ${this.discoveredDevices.length} 个DLNA设备`);
             return this.discoveredDevices;
-
         } catch (error) {
             console.error('[MAIN] DLNA设备发现失败:', error);
             // 如果发现失败，返回缓存设备
@@ -234,29 +233,27 @@ class DLNAManager {
                 return {
                     success: true,
                     message: `已投屏到 ${device.name}`,
-                    device: device
+                    device
                 };
-            } else {
-                // 详细的错误处理
-                const errorMsg = result.error || '投屏失败';
-                console.error(`[MAIN] DLNA投屏失败: ${errorMsg}`);
-                console.error(`[MAIN] 设备信息: ${device.name} (${device.address})`);
-                console.error(`[MAIN] 媒体URL: ${mediaUrl}`);
-
-                // 根据错误类型提供更有帮助的错误信息
-                if (errorMsg.includes('UPnP错误码: 501')) {
-                    throw new Error('投屏失败：媒体URL为空或无效，请确保视频正在播放且使用直接视频链接（非网页播放器）');
-                } else if (errorMsg.includes('SOAP错误')) {
-                    throw new Error(`设备不支持此操作或媒体格式不兼容: ${errorMsg}`);
-                } else if (errorMsg.includes('网络')) {
-                    throw new Error(`网络连接问题: ${errorMsg}`);
-                } else if (errorMsg.includes('超时')) {
-                    throw new Error(`设备响应超时，请检查设备状态: ${errorMsg}`);
-                } else {
-                    throw new Error(`投屏失败: ${errorMsg}`);
-                }
             }
+            // 详细的错误处理
+            const errorMsg = result.error || '投屏失败';
+            console.error(`[MAIN] DLNA投屏失败: ${errorMsg}`);
+            console.error(`[MAIN] 设备信息: ${device.name} (${device.address})`);
+            console.error(`[MAIN] 媒体URL: ${mediaUrl}`);
 
+            // 根据错误类型提供更有帮助的错误信息
+            if (errorMsg.includes('UPnP错误码: 501')) {
+                throw new Error('投屏失败：媒体URL为空或无效，请确保视频正在播放且使用直接视频链接（非网页播放器）');
+            } else if (errorMsg.includes('SOAP错误')) {
+                throw new Error(`设备不支持此操作或媒体格式不兼容: ${errorMsg}`);
+            } else if (errorMsg.includes('网络')) {
+                throw new Error(`网络连接问题: ${errorMsg}`);
+            } else if (errorMsg.includes('超时')) {
+                throw new Error(`设备响应超时，请检查设备状态: ${errorMsg}`);
+            } else {
+                throw new Error(`投屏失败: ${errorMsg}`);
+            }
         } catch (error) {
             console.error('[MAIN] DLNA投屏失败:', error);
             throw error;
@@ -288,14 +285,12 @@ class DLNAManager {
                     success: true,
                     message: `已暂停 ${device.name} 上的投屏`
                 };
-            } else {
-                console.error(`[MAIN] DLNA投屏暂停失败: ${result.error}`);
-                return {
-                    success: false,
-                    message: result.error
-                };
             }
-
+            console.error(`[MAIN] DLNA投屏暂停失败: ${result.error}`);
+            return {
+                success: false,
+                message: result.error
+            };
         } catch (error) {
             console.error('[MAIN] 暂停DLNA投屏失败:', error);
             return {
@@ -330,14 +325,12 @@ class DLNAManager {
                     success: true,
                     message: `已停止 ${device.name} 上的投屏`
                 };
-            } else {
-                console.error(`[MAIN] DLNA投屏停止失败: ${result.error}`);
-                return {
-                    success: false,
-                    message: result.error
-                };
             }
-
+            console.error(`[MAIN] DLNA投屏停止失败: ${result.error}`);
+            return {
+                success: false,
+                message: result.error
+            };
         } catch (error) {
             console.error('[MAIN] 停止DLNA投屏失败:', error);
             return {
@@ -370,16 +363,14 @@ class DLNAManager {
                 console.log(`[MAIN] DLNA投屏跳转成功: ${device.name}`);
                 return {
                     success: true,
-                    message: `已跳转到指定位置`
-                };
-            } else {
-                console.error(`[MAIN] DLNA投屏跳转失败: ${result.error}`);
-                return {
-                    success: false,
-                    message: result.error
+                    message: '已跳转到指定位置'
                 };
             }
-
+            console.error(`[MAIN] DLNA投屏跳转失败: ${result.error}`);
+            return {
+                success: false,
+                message: result.error
+            };
         } catch (error) {
             console.error('[MAIN] 跳转DLNA投屏失败:', error);
             return {
@@ -414,14 +405,12 @@ class DLNAManager {
                     success: true,
                     message: `已设置音量为 ${volume}`
                 };
-            } else {
-                console.error(`[MAIN] DLNA投屏音量设置失败: ${result.error}`);
-                return {
-                    success: false,
-                    message: result.error
-                };
             }
-
+            console.error(`[MAIN] DLNA投屏音量设置失败: ${result.error}`);
+            return {
+                success: false,
+                message: result.error
+            };
         } catch (error) {
             console.error('[MAIN] 设置DLNA投屏音量失败:', error);
             return {
@@ -456,14 +445,12 @@ class DLNAManager {
                     success: true,
                     positionInfo: result.positionInfo
                 };
-            } else {
-                console.error(`[MAIN] 获取DLNA投屏位置信息失败: ${result.error}`);
-                return {
-                    success: false,
-                    message: result.error
-                };
             }
-
+            console.error(`[MAIN] 获取DLNA投屏位置信息失败: ${result.error}`);
+            return {
+                success: false,
+                message: result.error
+            };
         } catch (error) {
             console.error('[MAIN] 获取DLNA投屏位置信息失败:', error);
             return {
@@ -498,14 +485,12 @@ class DLNAManager {
                     success: true,
                     transportInfo: result.transportInfo
                 };
-            } else {
-                console.error(`[MAIN] 获取DLNA投屏传输状态失败: ${result.error}`);
-                return {
-                    success: false,
-                    message: result.error
-                };
             }
-
+            console.error(`[MAIN] 获取DLNA投屏传输状态失败: ${result.error}`);
+            return {
+                success: false,
+                message: result.error
+            };
         } catch (error) {
             console.error('[MAIN] 获取DLNA投屏传输状态失败:', error);
             return {

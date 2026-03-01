@@ -473,7 +473,7 @@ class ApiService {
 
                     routes.push({
                         name: finalRouteName,
-                        episodes: episodes
+                        episodes
                     });
                     console.log(`[DEBUG] 添加线路: ${finalRouteName}, 剧集数: ${episodes.length}`);
                 }
@@ -486,7 +486,7 @@ class ApiService {
                     const routeName = routeNames[0] || '默认线路';
                     routes.push({
                         name: routeName,
-                        episodes: episodes
+                        episodes
                     });
                     console.log(`[DEBUG] 添加回退线路: ${routeName}, 剧集数: ${episodes.length}`);
                 }
@@ -510,7 +510,7 @@ class ApiService {
 
                 routes.push({
                     name: routeName,
-                    episodes: episodes
+                    episodes
                 });
                 console.log(`[DEBUG] 添加线路: ${routeName}, 剧集数: ${episodes.length}`);
             }
@@ -576,16 +576,15 @@ class ApiService {
             if (isBlocked) {
                 console.log('[DEBUG] 线路被屏蔽:', route.name);
                 return false;
-            } else {
-                console.log('[DEBUG] 线路通过过滤:', route.name);
-                return true;
             }
+            console.log('[DEBUG] 线路通过过滤:', route.name);
+            return true;
         });
 
         console.log(`[DEBUG] 过滤前线路数: ${routes.length}, 过滤后线路数: ${filteredRoutes.length}`);
 
         return filteredRoutes;
-    }    // 从播放数据中提取线路名称
+    } // 从播放数据中提取线路名称
     extractRouteName(playData) {
         // 检查是否有明确的线路标识
         const routePatterns = [
@@ -630,12 +629,11 @@ class ApiService {
                 return 'MP4线路';
             } else if (url.includes('.flv')) {
                 return 'FLV线路';
-            } else {
-                // 使用域名的主要部分作为线路名
-                const mainDomain = hostname.split('.').slice(-2, -1)[0];
-                if (mainDomain && mainDomain.length > 2) {
-                    return `${mainDomain}线路`;
-                }
+            }
+            // 使用域名的主要部分作为线路名
+            const mainDomain = hostname.split('.').slice(-2, -1)[0];
+            if (mainDomain && mainDomain.length > 2) {
+                return `${mainDomain}线路`;
             }
         } catch (error) {
             console.warn('[DEBUG] URL解析失败:', error);
@@ -693,7 +691,7 @@ class ApiService {
     async testSiteConnection(siteUrl, siteType) {
         try {
             // 第一步：测试基本连接
-            const testUrl = siteUrl + (siteUrl.includes('?') ? '&' : '?') + 'ac=list&pg=1';
+            const testUrl = `${siteUrl + (siteUrl.includes('?') ? '&' : '?')}ac=list&pg=1`;
             console.log('[API] 测试站点连接:', testUrl);
 
             const response = await fetch(testUrl, {
@@ -715,7 +713,7 @@ class ApiService {
 
             // 第二步：测试数据格式
             let parsedData;
-            let testResults = {
+            const testResults = {
                 connection: true,
                 format: false,
                 structure: false,
@@ -759,10 +757,9 @@ class ApiService {
                     } else {
                         testResults.message.push('⚠ 没有分类数据');
                     }
-
                 } catch (parseError) {
-                    testResults.message.push('✗ JSON解析失败: ' + parseError.message);
-                    throw new Error('JSON格式错误: ' + parseError.message);
+                    testResults.message.push(`✗ JSON解析失败: ${parseError.message}`);
+                    throw new Error(`JSON格式错误: ${parseError.message}`);
                 }
             } else {
                 // XML格式测试
@@ -785,10 +782,9 @@ class ApiService {
                     } else {
                         testResults.message.push('✗ 没有找到视频数据');
                     }
-
                 } catch (parseError) {
-                    testResults.message.push('✗ XML解析失败: ' + parseError.message);
-                    throw new Error('XML格式错误: ' + parseError.message);
+                    testResults.message.push(`✗ XML解析失败: ${parseError.message}`);
+                    throw new Error(`XML格式错误: ${parseError.message}`);
                 }
             }
 
@@ -797,7 +793,7 @@ class ApiService {
                 if (parsedData && parsedData.list && parsedData.list.length > 0) {
                     const firstVideoId = parsedData.list[0].vod_id;
                     if (firstVideoId) {
-                        const detailUrl = siteUrl + (siteUrl.includes('?') ? '&' : '?') + `ac=detail&ids=${firstVideoId}`;
+                        const detailUrl = `${siteUrl + (siteUrl.includes('?') ? '&' : '?')}ac=detail&ids=${firstVideoId}`;
                         const detailResponse = await fetch(detailUrl, {
                             method: 'GET',
                             headers: {
@@ -824,14 +820,12 @@ class ApiService {
                     message: `连接测试完成\n${successMessage}`,
                     details: testResults
                 };
-            } else {
-                return {
-                    success: false,
-                    message: `数据格式验证失败\n${successMessage}`,
-                    details: testResults
-                };
             }
-
+            return {
+                success: false,
+                message: `数据格式验证失败\n${successMessage}`,
+                details: testResults
+            };
         } catch (error) {
             console.error('[API] 站点测试失败:', error);
             return {

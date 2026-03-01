@@ -19,7 +19,7 @@ class ComponentService {
     setupEventListeners() {
         // 模态框关闭事件
         if (this.modal) {
-            this.modal.addEventListener('click', (e) => {
+            this.modal.addEventListener('click', e => {
                 if (e.target === this.modal) {
                     this.hideModal();
                 }
@@ -27,7 +27,7 @@ class ComponentService {
         }
 
         // ESC键关闭模态框
-        document.addEventListener('keydown', (e) => {
+        document.addEventListener('keydown', e => {
             if (e.key === 'Escape' && this.modal && this.modal.style.display !== 'none') {
                 this.hideModal();
             }
@@ -131,7 +131,7 @@ class ComponentService {
         cancelBtn.addEventListener('click', () => this.hideModal());
         testBtn.addEventListener('click', () => this.testFormSite('add'));
 
-        form.addEventListener('submit', (e) => {
+        form.addEventListener('submit', e => {
             e.preventDefault();
             const formData = new FormData(form);
             const siteData = {
@@ -151,7 +151,7 @@ class ComponentService {
                     window.app.loadSiteSelector();
                 }
             } catch (error) {
-                this.showNotification('添加失败：' + error.message, 'error');
+                this.showNotification(`添加失败：${error.message}`, 'error');
             }
         });
     }
@@ -201,7 +201,7 @@ class ComponentService {
         cancelBtn.addEventListener('click', () => this.hideModal());
         testBtn.addEventListener('click', () => this.testFormSite('edit'));
 
-        form.addEventListener('submit', (e) => {
+        form.addEventListener('submit', e => {
             e.preventDefault();
             const formData = new FormData(form);
             const siteData = {
@@ -221,7 +221,7 @@ class ComponentService {
                     window.app.loadSiteSelector();
                 }
             } catch (error) {
-                this.showNotification('更新失败：' + error.message, 'error');
+                this.showNotification(`更新失败：${error.message}`, 'error');
             }
         });
     }
@@ -323,7 +323,7 @@ class ComponentService {
         } catch (error) {
             this.showNotification(`测试失败：${error.message}`, 'error');
         }
-    }    // 激活站点
+    } // 激活站点
     activateSite(siteId) {
         try {
             this.apiService.setActiveSite(siteId);
@@ -335,7 +335,7 @@ class ComponentService {
                 window.app.loadCategorySelector();
             }
         } catch (error) {
-            this.showNotification('设置失败：' + error.message, 'error');
+            this.showNotification(`设置失败：${error.message}`, 'error');
         }
     }
 
@@ -368,7 +368,7 @@ class ComponentService {
                     window.app.loadSiteSelector();
                 }
             } catch (error) {
-                this.showNotification('删除失败：' + error.message, 'error');
+                this.showNotification(`删除失败：${error.message}`, 'error');
             }
         });
     }
@@ -416,10 +416,10 @@ class ComponentService {
             if (!posterUrl.startsWith('http')) {
                 // 有些站点可能返回//开头的URL
                 if (posterUrl.startsWith('//')) {
-                    posterUrl = 'https:' + posterUrl;
+                    posterUrl = `https:${posterUrl}`;
                 } else {
                     // 有些站点可能直接返回图片路径
-                    posterUrl = 'https:' + posterUrl;
+                    posterUrl = `https:${posterUrl}`;
                 }
             }
         }
@@ -443,11 +443,11 @@ class ComponentService {
         card.innerHTML = `
             <div class="video-poster">
                 ${posterUrl ?
-                `<img src="${posterUrl}" alt="${videoTitle}" 
+        `<img src="${posterUrl}" alt="${videoTitle}" 
                          onerror="console.log('图片加载失败:', this.src); this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjI4MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjNDA0MDQwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPuaaguaXoOa1t+aKpTwvdGV4dD48L3N2Zz4=';"
                          onload="console.log('图片加载成功:', this.src);">` :
-                `<div class="poster-placeholder">暂无海报</div>`
-            }
+        '<div class="poster-placeholder">暂无海报</div>'
+}
                 <!-- 图片覆盖信息层 -->
                 <div class="poster-overlay">
                     <!-- 左上角：类型 -->
@@ -498,7 +498,7 @@ class ComponentService {
 
         let posterUrl = history.vod_pic || '';
         if (posterUrl && !posterUrl.startsWith('http')) {
-            posterUrl = 'https:' + posterUrl;
+            posterUrl = `https:${posterUrl}`;
         }
 
         // 获取播放进度信息
@@ -553,7 +553,7 @@ class ComponentService {
                     <span class="history-separator">•</span>
                     <span class="history-site">${siteName}</span>
                 </p>
-                <p class="history-episode">观看到: ${history.episode_name || '第' + (history.current_episode || 1) + '集'}</p>
+                <p class="history-episode">观看到: ${history.episode_name || `第${history.current_episode || 1}集`}</p>
                 <p class="history-time">观看时间: ${watchTimeText}</p>
                 ${playTimeDisplay ? `<p class="history-duration">${playTimeDisplay}</p>` : ''}
                 ${progressPercentage > 0 ? `
@@ -570,14 +570,14 @@ class ComponentService {
 
         // 添加继续播放事件
         const continueBtn = item.querySelector('.btn-continue');
-        continueBtn.addEventListener('click', (e) => {
+        continueBtn.addEventListener('click', e => {
             e.stopPropagation();
             this.continuePlayback(history);
         });
 
         // 添加删除记录事件
         const removeBtn = item.querySelector('.btn-remove');
-        removeBtn.addEventListener('click', (e) => {
+        removeBtn.addEventListener('click', e => {
             e.stopPropagation();
             this.removeHistoryItem(history.vod_id, item);
         });
@@ -653,11 +653,11 @@ class ComponentService {
             try {
                 response = await this.apiService.getVideoDetail(videoId);
                 const requestTime = Date.now() - startTime;
-                console.log('[COMPONENTS] 获取视频详情完成，耗时:', requestTime + 'ms');
+                console.log('[COMPONENTS] 获取视频详情完成，耗时:', `${requestTime}ms`);
                 console.log('[COMPONENTS] 响应数据:', response);
             } catch (apiError) {
                 console.error('[COMPONENTS] API请求失败:', apiError);
-                throw new Error('网络请求失败: ' + apiError.message);
+                throw new Error(`网络请求失败: ${apiError.message}`);
             }
 
             if (response && response.list && response.list.length > 0) {
@@ -761,8 +761,8 @@ class ComponentService {
                         ${video.vod_tag ? `
                         <div class="detail-tags">
                             ${video.vod_tag.split(',').map(tag =>
-            `<span class="tag">${tag.trim()}</span>`
-        ).join('')}
+        `<span class="tag">${tag.trim()}</span>`
+    ).join('')}
                         </div>
                         ` : ''}
                     </div>
@@ -927,7 +927,7 @@ class ComponentService {
         // 添加剧集按钮点击事件
         const episodeButtons = episodesGrid.querySelectorAll('.episode-btn');
         episodeButtons.forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', e => {
                 const routeIndex = parseInt(e.target.dataset.route);
                 const episodeIndex = parseInt(e.target.dataset.episode);
                 const episodeUrl = e.target.dataset.url;
@@ -993,8 +993,8 @@ class ComponentService {
                 type_name: videoData.type_name || '未知类型',
                 current_episode: episodeIndex + 1,
                 episode_name: currentEpisode?.name || `第${episodeIndex + 1}集`,
-                site_url: siteUrl,  // 保存视频原始站点URL
-                siteName: siteName  // 保存视频原始站点名称
+                site_url: siteUrl, // 保存视频原始站点URL
+                siteName // 保存视频原始站点名称
             };
 
             this.storageService.addPlayHistory(historyData);
@@ -1016,11 +1016,11 @@ class ComponentService {
                     currentEpisode: episodeIndex,
                     routes: allRoutes,
                     // 添加站点信息
-                    siteName: siteName,
+                    siteName,
                     siteUrl: this.apiService.getActiveSite()?.url || 'unknown'
                 },
                 // 添加播放进度信息
-                resumeProgress: resumeProgress
+                resumeProgress
             };
 
             try {
@@ -1031,7 +1031,6 @@ class ComponentService {
                 console.error('[COMPONENTS] IPC调用失败:', ipcError);
                 this.showNotification(`打开播放器失败: ${ipcError.message}`, 'error');
             }
-
         } catch (error) {
             console.error('[COMPONENTS] 播放视频失败:', error);
             this.showNotification('播放失败', 'error');
@@ -1491,9 +1490,8 @@ class ComponentService {
             return `${hours}小时${minutes}分钟${secs}秒`;
         } else if (minutes > 0) {
             return `${minutes}分钟${secs}秒`;
-        } else {
-            return `${secs}秒`;
         }
+        return `${secs}秒`;
     }
 
     // 删除历史记录项
@@ -1555,7 +1553,7 @@ class ComponentService {
             <div class="route-alias-manager">
                 <div class="route-alias-list-modal">
                     ${aliasEntries.length > 0 ?
-                aliasEntries.map(([routeName, alias]) => `
+        aliasEntries.map(([routeName, alias]) => `
                             <div class="route-alias-edit-item" data-route="${routeName}">
                                 <div class="alias-edit-info">
                                     <div class="alias-original-name">原名称: ${routeName}</div>
@@ -1572,9 +1570,9 @@ class ComponentService {
                                             data-route="${routeName}">删除</button>
                                 </div>
                             </div>
-                        `).join('')
-                : '<div class="empty-alias-state"><p>暂无线路别名设置</p><p>在视频播放页面会自动为遇到的线路创建别名设置</p></div>'
-            }
+                        `).join('') :
+        '<div class="empty-alias-state"><p>暂无线路别名设置</p><p>在视频播放页面会自动为遇到的线路创建别名设置</p></div>'
+}
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" id="close-alias-modal">关闭</button>
@@ -1597,7 +1595,7 @@ class ComponentService {
         closeBtn?.addEventListener('click', () => this.hideModal());
 
         saveButtons.forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', e => {
                 const routeName = e.target.dataset.route;
                 const input = document.querySelector(`.alias-input[data-route="${routeName}"]`);
                 const newAlias = input.value.trim();
@@ -1612,7 +1610,7 @@ class ComponentService {
         });
 
         removeButtons.forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', e => {
                 const routeName = e.target.dataset.route;
                 this.confirmRemoveRouteAlias(routeName);
             });
@@ -1664,32 +1662,32 @@ class ComponentService {
         // 使用DOM API创建元素，确保能正确获取按钮元素
         const infoDiv = document.createElement('div');
         infoDiv.className = 'route-alias-info';
-        
+
         const originalDiv = document.createElement('div');
         originalDiv.className = 'route-alias-original';
         originalDiv.textContent = `原名称: ${routeName}`;
         infoDiv.appendChild(originalDiv);
-        
+
         const displayDiv = document.createElement('div');
         displayDiv.className = 'route-alias-display';
         displayDiv.textContent = `显示为: ${alias}`;
         infoDiv.appendChild(displayDiv);
-        
+
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'route-alias-actions';
-        
+
         const editBtn = document.createElement('button');
         editBtn.className = 'btn-edit btn-edit-alias';
         editBtn.dataset.route = routeName;
         editBtn.textContent = '编辑';
         actionsDiv.appendChild(editBtn);
-        
+
         const removeBtn = document.createElement('button');
         removeBtn.className = 'btn-delete btn-remove-alias';
         removeBtn.dataset.route = routeName;
         removeBtn.textContent = '删除';
         actionsDiv.appendChild(removeBtn);
-        
+
         item.appendChild(infoDiv);
         item.appendChild(actionsDiv);
 
@@ -1733,7 +1731,7 @@ class ComponentService {
 
         cancelBtn.addEventListener('click', () => this.hideModal());
 
-        form.addEventListener('submit', (e) => {
+        form.addEventListener('submit', e => {
             e.preventDefault();
             const newAlias = document.getElementById('alias-input').value.trim();
 
@@ -1897,10 +1895,9 @@ class ComponentService {
                     progress: exportProgress
                 }
             });
-
         } catch (error) {
             console.error('[COMPONENTS] 导出失败:', error);
-            this.showNotification('导出失败: ' + error.message, 'error');
+            this.showNotification(`导出失败: ${error.message}`, 'error');
         }
     }
 
@@ -1977,7 +1974,7 @@ class ComponentService {
             fileInput.click();
         });
 
-        fileInput.addEventListener('change', (e) => {
+        fileInput.addEventListener('change', e => {
             const file = e.target.files[0];
             if (file) {
                 selectedFileName.textContent = file.name;
@@ -2008,7 +2005,7 @@ class ComponentService {
             const validation = this.storageService.validateImportData(importData);
 
             if (!validation.isValid) {
-                this.showNotification('文件格式无效: ' + validation.errors.join(', '), 'error');
+                this.showNotification(`文件格式无效: ${validation.errors.join(', ')}`, 'error');
                 return;
             }
 
@@ -2028,10 +2025,9 @@ class ComponentService {
             document.getElementById('confirm-import-btn').disabled = false;
 
             this.currentImportData = finalImportData;
-
         } catch (error) {
             console.error('[COMPONENTS] 文件验证失败:', error);
-            this.showNotification('文件读取失败: ' + error.message, 'error');
+            this.showNotification(`文件读取失败: ${error.message}`, 'error');
         }
     }
 
@@ -2178,10 +2174,9 @@ class ComponentService {
                 window.app.loadSiteSelector();
                 window.app.loadCategorySelector();
             }
-
         } catch (error) {
             console.error('[COMPONENTS] 导入失败:', error);
-            this.showNotification('导入失败: ' + error.message, 'error');
+            this.showNotification(`导入失败: ${error.message}`, 'error');
         }
     }
 
@@ -2247,8 +2242,8 @@ class ComponentService {
     readFileAsText(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target.result);
-            reader.onerror = (e) => reject(new Error('文件读取失败'));
+            reader.onload = e => resolve(e.target.result);
+            reader.onerror = e => reject(new Error('文件读取失败'));
             reader.readAsText(file, 'utf-8');
         });
     }
@@ -2325,11 +2320,11 @@ class ComponentService {
 
             // 精简数据，只保留必要字段
             const compactData = {
-                s: data.siteName,        // 站点名称
+                s: data.siteName, // 站点名称
                 u: data.siteUrl.replace(/https:\/\//g, 'hs:').replace(/http:\/\//g, 'h:'), // 站点URL（简化协议）
-                n: data.videoName,       // 视频名称
-                i: data.videoId,         // 视频ID
-                t: data.timestamp        // 时间戳
+                n: data.videoName, // 视频名称
+                i: data.videoId, // 视频ID
+                t: data.timestamp // 时间戳
             };
 
             console.log('[COMPONENTS] 精简后的数据:', compactData);
@@ -2355,7 +2350,7 @@ class ComponentService {
             console.error('[COMPONENTS] 加密失败:', error);
             return '';
         }
-    }    // 解密分享数据
+    } // 解密分享数据
     decryptShareData(encryptedStr) {
         try {
             // 先尝试新格式解密
@@ -2407,7 +2402,7 @@ class ComponentService {
         // 重构完整数据
         const fullData = {
             siteName: compactData.s,
-            siteUrl: siteUrl,
+            siteUrl,
             videoName: compactData.n,
             videoId: compactData.i,
             timestamp: compactData.t,
@@ -2418,7 +2413,7 @@ class ComponentService {
         };
 
         return fullData;
-    }    // 旧格式解密（向后兼容）
+    } // 旧格式解密（向后兼容）
     decryptOldFormat(encryptedStr) {
         // 反向混淆
         let hexString = '';
@@ -2467,7 +2462,7 @@ class ComponentService {
             description = data.videoContent.replace(/<[^>]*>/g, '');
             // 限制长度，避免分享内容过长
             if (description.length > 80) {
-                description = description.substring(0, 80) + '...';
+                description = `${description.substring(0, 80)}...`;
             }
         }
 

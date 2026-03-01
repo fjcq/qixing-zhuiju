@@ -1,0 +1,48 @@
+{
+    "compilerOptions": {
+        "target": "ES2021",
+        "module": "CommonJS",
+        "moduleResolution": "node",
+        "lib": ["ES2021", "DOM"],
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "resolveJsonModule": true,
+        "declaration": true,
+        "declarationMap": true,
+        "sourceMap": true,
+        "noImplicitAny": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+        "noUncheckedIndexedAccess": true,
+        "noImplicitOverride": true,
+        "exactOptionalPropertyTypes": false,
+        "noPropertyAccessFromIndexSignature": false,
+        "allowUnusedLabels": false,
+        "allowUnreachableCode": false,
+        "baseUrl": ".",
+        "paths": {
+            "@main/*": ["src/main/*"],
+            "@renderer/*": ["src/renderer/*"],
+            "@shared/*": ["src/shared/*"]
+        },
+        "typeRoots": ["./node_modules/@types", "./src/types"]
+    },
+    "include": [
+        "src/**/*",
+        "main.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "src/renderer/js/**/*.js"
+    ],
+    "ts-node": {
+        "compilerOptions": {
+            "module": "CommonJS"
+        }
+    }
+}

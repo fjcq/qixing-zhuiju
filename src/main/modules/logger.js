@@ -22,7 +22,7 @@ function setupLogger() {
     const originalConsoleLog = console.log;
     const originalConsoleError = console.error;
 
-    console.log = function (...args) {
+    console.log = function(...args) {
         const message = args.join(' ');
         // 生产环境下只打印[MAIN]开头的重要日志
         if (isDev || message.startsWith('[MAIN]')) {
@@ -31,7 +31,7 @@ function setupLogger() {
         logToFile(`LOG: ${message}`);
     };
 
-    console.error = function (...args) {
+    console.error = function(...args) {
         const message = args.join(' ');
         originalConsoleError(...args);
         logToFile(`ERROR: ${message}`);

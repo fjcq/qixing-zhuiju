@@ -12,7 +12,16 @@
         "sync-version": "node src/config/sync-version.js",
         "version": "pnpm run sync-version && git add -A",
         "clean": "pnpm store prune",
-        "check": "pnpm audit"
+        "check": "pnpm audit",
+        "lint": "eslint . --ext .js --ignore-pattern node_modules/ --ignore-pattern dist/",
+        "lint:fix": "eslint . --ext .js --fix --ignore-pattern node_modules/ --ignore-pattern dist/",
+        "format": "prettier --write \"src/**/*.js\" \"main.js\"",
+        "format:check": "prettier --check \"src/**/*.js\" \"main.js\"",
+        "typecheck": "tsc --noEmit",
+        "typecheck:watch": "tsc --noEmit --watch",
+        "test": "jest",
+        "test:watch": "jest --watch",
+        "test:coverage": "jest --coverage"
     },
     "pnpm": {
         "peerDependencyRules": {
@@ -41,9 +50,16 @@
     "author": "止水制造",
     "license": "MIT",
     "devDependencies": {
+        "@types/jest": "^30.0.0",
+        "@types/node": "^25.3.3",
         "electron": "^27.0.0",
         "electron-builder": "^24.6.4",
-        "electron-packager": "^17.1.2"
+        "electron-packager": "^17.1.2",
+        "eslint": "^8.57.0",
+        "jest": "^30.2.0",
+        "prettier": "^3.2.5",
+        "ts-jest": "^29.4.6",
+        "typescript": "^5.9.3"
     },
     "dependencies": {
         "asynckit": "^0.4.0",
@@ -60,7 +76,7 @@
     "build": {
         "appId": "com.qxyys.zj",
         "productName": "七星追剧",
-        "asar": false,
+        "asar": true,
         "directories": {
             "output": "dist"
         },
@@ -76,7 +92,10 @@
             "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
             "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
             "!**/{appveyor.yml,.travis.yml,circle.yml}",
-            "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+            "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}",
+            "!**/*.map",
+            "!**/dist/**",
+            "!**/.trae/**"
         ],
         "win": {
             "target": [
@@ -97,7 +116,7 @@
             "url": "http://localhost:3000/",
             "channel": "latest"
         },
-        "compression": "store",
+        "compression": "maximum",
         "beforePack": null,
         "afterPack": null,
         "beforeBuild": null,

@@ -109,7 +109,7 @@ class StorageService {
         progressData[key] = {
             currentTime: Math.round(currentTime),
             duration: Math.round(duration),
-            percentage: percentage,
+            percentage,
             updateTime: Date.now()
         };
 
@@ -121,7 +121,7 @@ class StorageService {
 
     // 更新历史记录中的进度
     updateHistoryProgress(vodId, episode, percentage, playDuration = null) {
-        let history = this.getPlayHistory();
+        const history = this.getPlayHistory();
         const historyItem = history.find(item => item.vod_id === vodId);
 
         if (historyItem) {
@@ -177,7 +177,7 @@ class StorageService {
 
     // 添加收藏
     addFavorite(videoData) {
-        let favorites = this.getFavorites();
+        const favorites = this.getFavorites();
 
         // 检查是否已收藏
         if (!favorites.find(item => item.vod_id === videoData.vod_id)) {
@@ -277,9 +277,9 @@ class StorageService {
         Object.values(this.STORAGE_KEYS).forEach(key => {
             const data = localStorage.getItem(key);
             if (data) {
-                const size = new Blob([data]).size;
+                const { size } = new Blob([data]);
                 usage[key] = {
-                    size: size,
+                    size,
                     sizeText: this.formatBytes(size)
                 };
                 totalSize += size;
@@ -289,9 +289,9 @@ class StorageService {
         // 检查其他数据
         const favorites = localStorage.getItem('favorites');
         if (favorites) {
-            const size = new Blob([favorites]).size;
+            const { size } = new Blob([favorites]);
             usage.favorites = {
-                size: size,
+                size,
                 sizeText: this.formatBytes(size)
             };
             totalSize += size;
@@ -310,7 +310,7 @@ class StorageService {
         const k = 1024;
         const sizes = ['Bytes', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
     }
 
     // 获取线路别名配置
@@ -383,7 +383,7 @@ class StorageService {
             return exportData;
         } catch (error) {
             console.error('[STORAGE] 导出数据失败:', error);
-            throw new Error('导出数据失败: ' + error.message);
+            throw new Error(`导出数据失败: ${error.message}`);
         }
     }
 
@@ -439,7 +439,7 @@ class StorageService {
                         console.log(`[STORAGE] 验证站点: ${site.name} (url: ${site.url}, type: ${site.type}, active: ${site.active})`);
                     });
                 } catch (error) {
-                    results.errors.push('站点配置导入失败: ' + error.message);
+                    results.errors.push(`站点配置导入失败: ${error.message}`);
                 }
             }
 
@@ -457,7 +457,7 @@ class StorageService {
                         results.imported.push(`线路别名 (合并 ${Object.keys(importData.routeAliases).length} 个别名)`);
                     }
                 } catch (error) {
-                    results.errors.push('线路别名导入失败: ' + error.message);
+                    results.errors.push(`线路别名导入失败: ${error.message}`);
                 }
             }
 
@@ -474,7 +474,7 @@ class StorageService {
                         results.imported.push('用户设置 (合并)');
                     }
                 } catch (error) {
-                    results.errors.push('用户设置导入失败: ' + error.message);
+                    results.errors.push(`用户设置导入失败: ${error.message}`);
                 }
             }
 
@@ -491,7 +491,7 @@ class StorageService {
                         results.imported.push(`播放历史 (合并 ${importData.playHistory.length} 条记录)`);
                     }
                 } catch (error) {
-                    results.errors.push('播放历史导入失败: ' + error.message);
+                    results.errors.push(`播放历史导入失败: ${error.message}`);
                 }
             } else if (importData.playHistory) {
                 results.skipped.push(`播放历史 (${importData.playHistory.length} 条记录，用户选择跳过)`);
@@ -510,7 +510,7 @@ class StorageService {
                         results.imported.push(`观看进度 (合并 ${Object.keys(importData.watchProgress).length} 个进度)`);
                     }
                 } catch (error) {
-                    results.errors.push('观看进度导入失败: ' + error.message);
+                    results.errors.push(`观看进度导入失败: ${error.message}`);
                 }
             } else if (importData.watchProgress) {
                 results.skipped.push(`观看进度 (${Object.keys(importData.watchProgress).length} 个进度，用户选择跳过)`);
@@ -520,14 +520,14 @@ class StorageService {
             return results;
         } catch (error) {
             console.error('[STORAGE] 导入数据失败:', error);
-            throw new Error('导入数据失败: ' + error.message);
+            throw new Error(`导入数据失败: ${error.message}`);
         }
     }
 
     // 合并站点数据，避免重复
     mergeSites(existingSites, newSites) {
         const mergedSites = [...existingSites];
-        
+
         // 创建已存在的站点标识集合
         const existingKeys = new Set();
         existingSites.forEach(site => {
@@ -539,17 +539,17 @@ class StorageService {
         newSites.forEach((newSite, index) => {
             // 使用 url 或 api 作为唯一标识
             const newKey = newSite.url || newSite.api || newSite.id;
-            
+
             // 如果新站点没有 url 字段但有 api 字段，则设置 url
             if (!newSite.url && newSite.api) {
                 newSite.url = newSite.api;
             }
-            
+
             // 如果新站点没有 url 也没有 api，但有 ext（规则配置URL）
             if (!newSite.url && newSite.ext && typeof newSite.ext === 'string' && newSite.ext.startsWith('http')) {
                 newSite.url = newSite.ext;
             }
-            
+
             if (!newKey || !existingKeys.has(newKey)) {
                 // 确保新站点有正确的字段和ID格式
                 if (!newSite.id || typeof newSite.id !== 'string') {
@@ -615,7 +615,7 @@ class StorageService {
             isValid: errors.length === 0,
             errors,
             warnings: this.getImportWarnings(convertedData),
-            convertedData: convertedData // 返回转换后的数据
+            convertedData // 返回转换后的数据
         };
     }
 
@@ -633,7 +633,7 @@ class StorageService {
 
         // 如果检测到是从主站信息格式转换的，添加相应提示
         if (data.exportInfo && data.exportInfo.source && data.exportInfo.source.includes('主站信息格式转换')) {
-            warnings.push(`检测到主站信息格式，已自动转换为站点配置（仅导入站点信息）`);
+            warnings.push('检测到主站信息格式，已自动转换为站点配置（仅导入站点信息）');
         }
 
         return warnings;
@@ -686,7 +686,7 @@ class StorageService {
                         enabled: true,
                         active: false, // 添加active字段，默认为false
                         addTime: Date.now(),
-                        description: `从主站信息导入 - JSON格式`
+                        description: '从主站信息导入 - JSON格式'
                     };
 
                     convertedData.sites.push(convertedSite);

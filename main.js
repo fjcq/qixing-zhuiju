@@ -9,13 +9,10 @@ app.commandLine.appendSwitch('disable-software-rasterizer');
 
 // 设置进程编码，确保中文正确显示
 if (process.platform === 'win32') {
-    // 检测终端编码环境
     try {
         if (process.env.VSCODE_PID) {
-            // 在VS Code环境中
             console.log('[MAIN] 检测到VS Code环境，使用UTF-8编码');
         } else {
-            // 在独立终端中
             console.log('[MAIN] 检测到独立终端环境');
         }
     } catch (err) {
@@ -30,9 +27,13 @@ const { createMainWindow, createPlayerWindow } = require('./src/main/modules/win
 const { setupIPC } = require('./src/main/modules/ipcHandler');
 const DLNAManager = require('./src/main/modules/dlnaManager');
 const UpdateManager = require('./src/main/modules/updateManager');
+const { setupMainProcessErrorHandling, ErrorTypes, globalErrorHandler } = require('./src/main/modules/errorHandler');
 
 // 初始化日志
 setupLogger();
+
+// 初始化全局错误处理
+setupMainProcessErrorHandling();
 
 class QixingZhuiju {
     constructor() {

@@ -175,9 +175,9 @@ class EnhancedDanmakuSystem extends DanmakuSystem {
             type: 'danmaku',
             room: this.generateRoomId(this.currentVideoId || ''),
             user: this.generateUserId(),
-            text: text,
-            color: color,
-            size: size,
+            text,
+            color,
+            size,
             time: Date.now(),
             videoTime: this.currentVideoTime, // 添加视频时间
             mode: this.danmakuMode

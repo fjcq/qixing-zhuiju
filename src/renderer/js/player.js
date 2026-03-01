@@ -69,7 +69,7 @@ class VideoPlayer {
         // 最小化按钮
         const minimizeBtn = document.getElementById('minimize-btn');
         if (minimizeBtn) {
-            minimizeBtn.addEventListener('click', (e) => {
+            minimizeBtn.addEventListener('click', e => {
                 e.preventDefault();
                 e.stopPropagation();
                 if (window.electron && window.electron.window) {
@@ -81,7 +81,7 @@ class VideoPlayer {
         // 最大化/还原按钮
         const maximizeBtn = document.getElementById('maximize-btn');
         if (maximizeBtn) {
-            maximizeBtn.addEventListener('click', (e) => {
+            maximizeBtn.addEventListener('click', e => {
                 e.preventDefault();
                 e.stopPropagation();
                 if (window.electron && window.electron.window) {
@@ -93,7 +93,7 @@ class VideoPlayer {
         // 关闭按钮
         const closeBtn = document.getElementById('close-btn');
         if (closeBtn) {
-            closeBtn.addEventListener('click', (e) => {
+            closeBtn.addEventListener('click', e => {
                 e.preventDefault();
                 e.stopPropagation();
                 if (window.electron && window.electron.window) {
@@ -141,7 +141,7 @@ class VideoPlayer {
 
         // 监听主进程发送的视频数据
         if (window.electron && window.electron.ipcRenderer) {
-            window.electron.ipcRenderer.on('video-data', (data) => {
+            window.electron.ipcRenderer.on('video-data', data => {
                 console.log('[PLAYER] 收到视频数据:', data);
                 this.loadVideoData(data);
             });
@@ -483,7 +483,7 @@ class VideoPlayer {
                     episodeName: currentEpisode?.name || `第${episodeIndex}集`,
                     routeIndex: this.currentRouteIndex,
                     routeName: currentRoute?.name || '未知线路',
-                    episodeUrl: episodeUrl
+                    episodeUrl
                 };
 
                 console.log('[PLAYER] 通知主窗口集数变化:', updateData);
@@ -559,7 +559,7 @@ class VideoPlayer {
         console.log('[DLNA] URL保存确认:', {
             currentVideoUrl: this.currentVideoUrl,
             originalVideoUrl: this.originalVideoUrl,
-            cleanUrl: cleanUrl,
+            cleanUrl,
             videoDataUrl: this.videoData?.currentPlayUrl
         });
 
@@ -739,8 +739,8 @@ class VideoPlayer {
             background: #000;
         `;
         iframe.allowFullscreen = true;
-        iframe.allow = "autoplay; fullscreen; encrypted-media; picture-in-picture";
-        iframe.sandbox = "allow-same-origin allow-scripts allow-forms allow-popups allow-presentation allow-top-navigation-by-user-activation";
+        iframe.allow = 'autoplay; fullscreen; encrypted-media; picture-in-picture';
+        iframe.sandbox = 'allow-same-origin allow-scripts allow-forms allow-popups allow-presentation allow-top-navigation-by-user-activation';
 
         // 清空容器并添加新内容
         webPageContainer.innerHTML = '';
@@ -752,7 +752,7 @@ class VideoPlayer {
         const fullscreenBtn = toolbar.querySelector('#toggle-fullscreen');
 
         refreshBtn.addEventListener('click', () => {
-            iframe.src = webPageUrl + (webPageUrl.includes('?') ? '&' : '?') + '_t=' + Date.now();
+            iframe.src = `${webPageUrl + (webPageUrl.includes('?') ? '&' : '?')}_t=${Date.now()}`;
         });
 
         fullscreenBtn.addEventListener('click', () => {
@@ -763,13 +763,13 @@ class VideoPlayer {
             }
         });
 
-        return new Promise((resolve) => {
+        return new Promise(resolve => {
             iframe.onload = () => {
                 console.log('网页iframe加载完成');
                 resolve();
             };
 
-            iframe.onerror = (error) => {
+            iframe.onerror = error => {
                 console.error('网页iframe加载失败:', error);
                 toolbar.innerHTML = `
                     <div style="color: #ff6b6b;">网页加载失败</div>
@@ -807,7 +807,7 @@ class VideoPlayer {
 
         // 重要：确保原始URL被正确保存，不被HLS.js的blob URL覆盖
         console.log('[DLNA] 加载HLS前确认URL保存:', {
-            videoUrl: videoUrl,
+            videoUrl,
             currentVideoUrl: this.currentVideoUrl,
             originalVideoUrl: this.originalVideoUrl
         });
@@ -886,9 +886,8 @@ class VideoPlayer {
             console.log('[DLNA] Safari HLS URL保存到全局变量:', videoUrl);
 
             return this.video.play();
-        } else {
-            throw new Error('浏览器不支持HLS播放，请尝试其他播放源');
         }
+        throw new Error('浏览器不支持HLS播放，请尝试其他播放源');
     }
 
     // 加载普通视频
@@ -956,7 +955,7 @@ class VideoPlayer {
         });
 
         // 播放错误事件 - 只在使用原生播放器时显示错误
-        this.video.addEventListener('error', (e) => {
+        this.video.addEventListener('error', e => {
             // 检查是否正在使用网页播放器
             const webPageContainer = document.getElementById('webpage-player-container');
             if (webPageContainer && webPageContainer.style.display !== 'none') {
@@ -965,7 +964,7 @@ class VideoPlayer {
             }
 
             console.error('视频播放错误:', e);
-            const error = this.video.error;
+            const { error } = this.video;
             let errorMessage = '视频播放出现错误';
 
             // 提供更具体的错误信息
@@ -1001,7 +1000,7 @@ class VideoPlayer {
         });
 
         // 键盘快捷键
-        document.addEventListener('keydown', async (e) => {
+        document.addEventListener('keydown', async e => {
             if (e.target.tagName.toLowerCase() !== 'input') {
                 await this.handleKeyboard(e);
             }
@@ -1032,7 +1031,7 @@ class VideoPlayer {
         this.doubleClickFlag = false;
 
         // 双击全屏功能
-        this.video.addEventListener('dblclick', (e) => {
+        this.video.addEventListener('dblclick', e => {
             e.preventDefault();
             e.stopPropagation();
 
@@ -1053,7 +1052,7 @@ class VideoPlayer {
         });
 
         // 单击切换播放/暂停 - 使用延迟处理避免与双击冲突
-        this.video.addEventListener('click', (e) => {
+        this.video.addEventListener('click', e => {
             // 移除preventDefault和stopPropagation，允许点击事件正常传递
 
             // 如果是双击的一部分，忽略这次单击
@@ -1070,7 +1069,7 @@ class VideoPlayer {
             this.clickTimeout = setTimeout(() => {
                 if (!this.doubleClickFlag) {
                     cmdLog.info('🔥 [TRIGGER-2] 视频画面被点击！');
-                    cmdLog.info('🔥 [TRIGGER-2] 当前视频状态: paused=' + this.video?.paused + ', currentTime=' + this.video?.currentTime);
+                    cmdLog.info(`🔥 [TRIGGER-2] 当前视频状态: paused=${this.video?.paused}, currentTime=${this.video?.currentTime}`);
                     cmdLog.info('🔥 [TRIGGER-2] 准备调用 togglePlayPause()...');
                     this.togglePlayPause();
                     cmdLog.info('🔥 [TRIGGER-2] togglePlayPause() 调用完成');
@@ -1128,9 +1127,9 @@ class VideoPlayer {
         });
 
         // 监听视频错误
-        this.video.addEventListener('error', (e) => {
+        this.video.addEventListener('error', e => {
             console.error('[PLAYER] 视频播放错误:', e);
-            const error = this.video.error;
+            const { error } = this.video;
             if (error) {
                 console.error('[PLAYER] 错误详情:', {
                     code: error.code,
@@ -1229,7 +1228,7 @@ class VideoPlayer {
             toggleAlwaysOnTopBtn.parentNode.replaceChild(newToggleBtn, toggleAlwaysOnTopBtn);
 
             // 为新按钮添加单一的事件监听器
-            newToggleBtn.addEventListener('click', async (e) => {
+            newToggleBtn.addEventListener('click', async e => {
                 e.preventDefault();
                 e.stopPropagation();
                 console.log('[PLAYER] 置顶按钮被点击 - 开始处理');
@@ -1245,7 +1244,7 @@ class VideoPlayer {
         const castVideoBtn = document.getElementById('cast-video');
         if (castVideoBtn) {
             console.log('[PLAYER] 设置投屏按钮事件监听');
-            castVideoBtn.addEventListener('click', async (e) => {
+            castVideoBtn.addEventListener('click', async e => {
                 e.preventDefault();
                 e.stopPropagation();
                 console.log('🚨🚨🚨 [PLAYER] 投屏按钮被点击!!!');
@@ -1258,7 +1257,7 @@ class VideoPlayer {
         const shareVideoBtn = document.getElementById('share-video');
         if (shareVideoBtn) {
             console.log('[PLAYER] 设置分享按钮事件监听');
-            shareVideoBtn.addEventListener('click', (e) => {
+            shareVideoBtn.addEventListener('click', e => {
                 e.preventDefault();
                 e.stopPropagation();
                 console.log('[PLAYER] 分享按钮被点击');
@@ -1295,7 +1294,7 @@ class VideoPlayer {
         // 弹幕启用/禁用开关
         const enableDanmakuCheckbox = document.getElementById('enable-danmaku');
         if (enableDanmakuCheckbox) {
-            enableDanmakuCheckbox.addEventListener('change', (e) => {
+            enableDanmakuCheckbox.addEventListener('change', e => {
                 this.toggleDanmakuDisplay(e.target.checked);
             });
         }
@@ -1303,7 +1302,7 @@ class VideoPlayer {
         // 弹幕类型切换
         const danmakuTypeSelect = document.getElementById('danmaku-type');
         if (danmakuTypeSelect) {
-            danmakuTypeSelect.addEventListener('change', (e) => {
+            danmakuTypeSelect.addEventListener('change', e => {
                 this.changeDanmakuType(e.target.value);
             });
         }
@@ -1319,7 +1318,7 @@ class VideoPlayer {
         // 弹幕输入框回车发送
         const danmakuInput = document.getElementById('danmaku-input');
         if (danmakuInput) {
-            danmakuInput.addEventListener('keypress', (e) => {
+            danmakuInput.addEventListener('keypress', e => {
                 if (e.key === 'Enter') {
                     this.sendDanmaku();
                 }
@@ -1329,7 +1328,7 @@ class VideoPlayer {
         // 弹幕面板阻止事件冒泡（仅为安全起见保留，实际不再需要外部点击关闭）
         const danmakuPanel = document.getElementById('danmaku-input-container');
         if (danmakuPanel) {
-            danmakuPanel.addEventListener('click', (e) => {
+            danmakuPanel.addEventListener('click', e => {
                 // 阻止点击事件冒泡到外层，防止面板被意外关闭
                 e.stopPropagation();
             });
@@ -1348,7 +1347,7 @@ class VideoPlayer {
         const episodePanel = document.getElementById('episode-panel');
 
         // 修改后的全局点击事件监听 - 更安全地处理外部点击关闭选集面板
-        document.addEventListener('click', (e) => {
+        document.addEventListener('click', e => {
             // 检查是否有标题栏相关按钮被点击，如果是则不处理
             if (e.target.closest('#minimize-btn') ||
                 e.target.closest('#maximize-btn') ||
@@ -1447,7 +1446,7 @@ class VideoPlayer {
         if (!this.video) return;
 
         // 检查焦点是否在输入框中，如果是则不处理快捷键
-        const activeElement = document.activeElement;
+        const { activeElement } = document;
         const isInputFocused = activeElement && (
             activeElement.tagName === 'INPUT' ||
             activeElement.tagName === 'TEXTAREA' ||
@@ -1470,7 +1469,7 @@ class VideoPlayer {
                 e.preventDefault();
                 e.stopPropagation();
                 cmdLog.info('🔥 [TRIGGER-3] 空格键被按下！');
-                cmdLog.info('🔥 [TRIGGER-3] 当前视频状态: paused=' + this.video?.paused + ', currentTime=' + this.video?.currentTime);
+                cmdLog.info(`🔥 [TRIGGER-3] 当前视频状态: paused=${this.video?.paused}, currentTime=${this.video?.currentTime}`);
                 cmdLog.info('🔥 [TRIGGER-3] 准备调用 togglePlayPause()...');
                 this.togglePlayPause();
                 cmdLog.info('🔥 [TRIGGER-3] togglePlayPause() 调用完成');
@@ -1548,7 +1547,7 @@ class VideoPlayer {
                 }, 3000);
             }
         }
-    }    // 切换窗口置顶状态
+    } // 切换窗口置顶状态
     async toggleAlwaysOnTop() {
         // 防止重复调用 - 如果正在切换中，直接返回
         if (this._isTogglingAlwaysOnTop) {
@@ -1611,11 +1610,10 @@ class VideoPlayer {
                     1500
                 ); console.log(`[PLAYER] ========== 置顶状态切换完成: ${isAlwaysOnTop ? '已置顶' : '已取消'} ==========`);
                 return isAlwaysOnTop;
-            } else {
-                console.error('[PLAYER] 置顶功能不可用 - Electron API未找到');
-                this.showNotification('置顶功能不可用', 'error');
-                return false;
             }
+            console.error('[PLAYER] 置顶功能不可用 - Electron API未找到');
+            this.showNotification('置顶功能不可用', 'error');
+            return false;
         } catch (error) {
             console.error('[PLAYER] 切换置顶状态失败:', error);
             this.showNotification(`置顶功能异常: ${error.message}`, 'error');
@@ -1718,8 +1716,8 @@ class VideoPlayer {
     savePlaybackProgress() {
         if (!this.video || !this.videoData || !this.storageService) return;
 
-        const currentTime = this.video.currentTime;
-        const duration = this.video.duration;
+        const { currentTime } = this.video;
+        const { duration } = this.video;
 
         if (currentTime > 0 && duration > 0) {
             // 静默保存播放进度，避免频繁日志输出
@@ -1946,11 +1944,11 @@ class VideoPlayer {
 
         if (playPauseBtn) {
             cmdLog.info('🎯 播放/暂停按钮找到，开始设置事件监听');
-            playPauseBtn.addEventListener('click', (e) => {
+            playPauseBtn.addEventListener('click', e => {
                 e.preventDefault();
                 e.stopPropagation();
                 cmdLog.info('🔥 [TRIGGER-1] 播放/暂停按钮被点击！');
-                cmdLog.info('🔥 [TRIGGER-1] 当前视频状态: paused=' + this.video?.paused + ', currentTime=' + this.video?.currentTime);
+                cmdLog.info(`🔥 [TRIGGER-1] 当前视频状态: paused=${this.video?.paused}, currentTime=${this.video?.currentTime}`);
                 cmdLog.info('🔥 [TRIGGER-1] 准备调用 togglePlayPause()...');
                 this.togglePlayPause();
                 cmdLog.info('🔥 [TRIGGER-1] togglePlayPause() 调用完成');
@@ -2055,7 +2053,7 @@ class VideoPlayer {
         const webPageContainer = document.getElementById('webpage-player-container');
         const isUsingWebPage = webPageContainer && webPageContainer.style.display !== 'none';
 
-        cmdLog.info('🔍 网页播放器检查结果: isUsingWebPage=' + isUsingWebPage);
+        cmdLog.info(`🔍 网页播放器检查结果: isUsingWebPage=${isUsingWebPage}`);
 
         if (isUsingWebPage) {
             cmdLog.warn('⚠️ 当前使用网页播放器，暂停功能不适用于iframe内容');
@@ -2093,7 +2091,7 @@ class VideoPlayer {
                         this.updatePlayPauseButton(true);
                     }).catch(error => {
                         cmdLog.error('❌ 视频播放失败:', error.message);
-                        this.showNotification('播放失败: ' + error.message, 'error');
+                        this.showNotification(`播放失败: ${error.message}`, 'error');
                     });
                 } else {
                     cmdLog.info('ℹ️ play() 返回了 undefined（可能是同步操作）');
@@ -2102,13 +2100,13 @@ class VideoPlayer {
                 cmdLog.info('⏸️ 视频当前正在播放，准备暂停...');
                 this.video.pause();
                 cmdLog.info('✅ video.pause() 调用完成');
-                cmdLog.info('🔍 检查暂停后状态: paused=' + this.video.paused + ', currentTime=' + this.video.currentTime);
+                cmdLog.info(`🔍 检查暂停后状态: paused=${this.video.paused}, currentTime=${this.video.currentTime}`);
                 this.updatePlayPauseButton(false);
                 cmdLog.info('✅ 暂停按钮状态已更新');
             }
         } catch (error) {
             cmdLog.error('❌ 切换播放状态时发生异常:', error.message);
-            this.showNotification('播放控制出错: ' + error.message, 'error');
+            this.showNotification(`播放控制出错: ${error.message}`, 'error');
         }
 
         cmdLog.info('🎬 togglePlayPause() 方法执行完成');
@@ -2137,7 +2135,7 @@ class VideoPlayer {
         // 更新按钮显示
         this.updatePlaybackSpeedButton(newSpeed);
 
-        console.log('[PLAYER] 播放速度设置为:', newSpeed + 'x');
+        console.log('[PLAYER] 播放速度设置为:', `${newSpeed}x`);
     }
 
     // 更新播放速度按钮显示
@@ -2146,9 +2144,9 @@ class VideoPlayer {
         if (speedBtn) {
             const icon = speedBtn.querySelector('.icon');
             if (icon) {
-                icon.textContent = speed + 'x';
+                icon.textContent = `${speed}x`;
             }
-            speedBtn.title = '播放速度: ' + speed + 'x';
+            speedBtn.title = `播放速度: ${speed}x`;
         }
     }
 
@@ -2156,7 +2154,7 @@ class VideoPlayer {
     refreshVideo() {
         if (!this.video || !this.currentRouteUrl) return;
 
-        const currentTime = this.video.currentTime;
+        const { currentTime } = this.video;
         console.log('[PLAYER] 刷新视频，当前时间:', currentTime);
 
         // 重新加载视频
@@ -2207,7 +2205,7 @@ class VideoPlayer {
 
     // 更新时间显示和进度条
     updateProgressDisplay() {
-        const currentTime = this.video.currentTime;
+        const { currentTime } = this.video;
         const duration = this.video.duration || 0;
 
         // 更新时间显示
@@ -2221,8 +2219,8 @@ class VideoPlayer {
         const progressHandle = document.getElementById('progress-handle');
         if (progressFill && progressHandle && duration > 0) {
             const percentage = (currentTime / duration) * 100;
-            progressFill.style.width = percentage + '%';
-            progressHandle.style.left = percentage + '%';
+            progressFill.style.width = `${percentage}%`;
+            progressHandle.style.left = `${percentage}%`;
         }
     }
 
@@ -2259,8 +2257,8 @@ class VideoPlayer {
         if (volumeFill && volumeHandle) {
             const volume = this.video.muted ? 0 : this.video.volume;
             const percentage = volume * 100;
-            volumeFill.style.width = percentage + '%';
-            volumeHandle.style.left = percentage + '%';
+            volumeFill.style.width = `${percentage}%`;
+            volumeHandle.style.left = `${percentage}%`;
         }
     }
 
@@ -2319,12 +2317,12 @@ class VideoPlayer {
                     opacity: 1 !important;
                     visibility: visible !important;
                 `;
-                
+
                 // 检查时间预览的位置
                 const previewRect = timePreview.getBoundingClientRect();
             }
         }, 2000); // 延长到2秒，确保其他样式加载完成
-        */        const updateProgress = (e) => {
+        */ const updateProgress = e => {
             if (!this.video || !this.video.duration) return;
 
             const rect = progressBar.getBoundingClientRect();
@@ -2338,7 +2336,7 @@ class VideoPlayer {
             }
         };
 
-        const showTimePreview = (e) => {
+        const showTimePreview = e => {
             if (!this.video || !this.video.duration) {
                 console.log('[PLAYER] 无法显示时间预览：视频未加载或无时长');
                 return;
@@ -2371,7 +2369,7 @@ class VideoPlayer {
                     opacity: 1 !important;
                     visibility: visible !important;
                 `;
-                console.log('[PLAYER] 显示时间预览:', timePreview.textContent, '位置:', percentage + '%', '元素:', timePreview);
+                console.log('[PLAYER] 显示时间预览:', timePreview.textContent, '位置:', `${percentage}%`, '元素:', timePreview);
             }
         };
 
@@ -2398,27 +2396,27 @@ class VideoPlayer {
         };
 
         // 鼠标悬停显示时间预览 - 阻止事件冒泡避免与悬浮控制栏冲突
-        progressBar.addEventListener('mousemove', (e) => {
+        progressBar.addEventListener('mousemove', e => {
             e.stopPropagation(); // 阻止冒泡到播放器容器
             showTimePreview(e);
         });
-        progressBar.addEventListener('mouseenter', (e) => {
+        progressBar.addEventListener('mouseenter', e => {
             e.stopPropagation();
             showTimePreview(e);
         });
-        progressBar.addEventListener('mouseleave', (e) => {
+        progressBar.addEventListener('mouseleave', e => {
             e.stopPropagation();
             hideTimePreview();
         });
 
         // 点击进度条跳转
-        progressBar.addEventListener('click', (e) => {
+        progressBar.addEventListener('click', e => {
             console.log('[PLAYER] 进度条被点击');
             updateProgress(e);
         });
 
         // 拖拽开始
-        progressHandle.addEventListener('mousedown', (e) => {
+        progressHandle.addEventListener('mousedown', e => {
             console.log('[PLAYER] 开始拖拽进度条');
             isDragging = true;
             progressBar.classList.add('dragging');
@@ -2427,7 +2425,7 @@ class VideoPlayer {
         });
 
         // 拖拽过程
-        document.addEventListener('mousemove', (e) => {
+        document.addEventListener('mousemove', e => {
             if (isDragging) {
                 updateProgress(e);
             }
@@ -2456,7 +2454,7 @@ class VideoPlayer {
 
         let isDragging = false;
 
-        const updateVolume = (e) => {
+        const updateVolume = e => {
             const rect = volumeBar.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
             const percentage = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
@@ -2468,13 +2466,13 @@ class VideoPlayer {
 
         volumeBar.addEventListener('click', updateVolume);
 
-        volumeHandle.addEventListener('mousedown', (e) => {
+        volumeHandle.addEventListener('mousedown', e => {
             isDragging = true;
             volumeBar.classList.add('dragging');
             e.preventDefault();
         });
 
-        document.addEventListener('mousemove', (e) => {
+        document.addEventListener('mousemove', e => {
             if (isDragging) {
                 updateVolume(e);
             }
@@ -2512,7 +2510,7 @@ class VideoPlayer {
         }
 
         // 确保所有控制元素都能接收点击事件
-        const ensureClickable = (elements) => {
+        const ensureClickable = elements => {
             elements.forEach(selector => {
                 const element = document.querySelector(selector);
                 if (element) {
@@ -2601,7 +2599,7 @@ class VideoPlayer {
         console.log('[PLAYER] 悬浮控制栏初始化完成，默认显示鼠标');
 
         console.log('[PLAYER] 悬浮控制栏初始化完成');
-    }    // 设置全屏状态监听器
+    } // 设置全屏状态监听器
     setupFullscreenListeners() {
         const playerContainer = document.querySelector('.player-container');
         const overlay = document.getElementById('player-overlay');
@@ -2663,7 +2661,7 @@ class VideoPlayer {
                     overlay.classList.add('show');
                 }
             }
-        };        // 添加全屏状态变化监听器
+        }; // 添加全屏状态变化监听器
         document.addEventListener('fullscreenchange', handleFullscreenChange);
         document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
         document.addEventListener('mozfullscreenchange', handleFullscreenChange);
@@ -2956,7 +2954,7 @@ class VideoPlayer {
             }
         } catch (error) {
             console.error('[PLAYER] 投屏操作失败:', error);
-            this.showNotification('投屏操作失败: ' + error.message, 'error');
+            this.showNotification(`投屏操作失败: ${error.message}`, 'error');
         }
     }
 
@@ -2968,10 +2966,9 @@ class VideoPlayer {
         try {
             // 显示设备选择对话框
             this.showCastDeviceModal();
-
         } catch (error) {
             console.error('[PLAYER] 显示投屏设备选择失败:', error);
-            this.showNotification('投屏设备选择失败: ' + error.message, 'error');
+            this.showNotification(`投屏设备选择失败: ${error.message}`, 'error');
         }
     }
 
@@ -3046,11 +3043,11 @@ class VideoPlayer {
     }
 
     // 处理对话框键盘事件
-    handleCastModalKeydown = (e) => {
+    handleCastModalKeydown = e => {
         if (e.key === 'Escape') {
             this.hideCastDeviceModal();
         }
-    }
+    };
 
     // 隐藏投屏设备选择对话框
     hideCastDeviceModal() {
@@ -3100,7 +3097,6 @@ class VideoPlayer {
                     refreshBtn.onclick = () => this.startDeviceDiscovery();
                 }
             }
-
         } catch (error) {
             console.error('[PLAYER] 设备搜索失败:', error);
             if (scanning) scanning.style.display = 'none';
@@ -3151,7 +3147,6 @@ class VideoPlayer {
 
             console.log(`[PLAYER] 设备发现完成，找到 ${devices.length} 个设备:`, devices);
             return devices;
-
         } catch (error) {
             console.error('[PLAYER] 设备发现过程出错:', error);
             return devices; // 返回已发现的设备
@@ -3187,7 +3182,6 @@ class VideoPlayer {
             availability.addEventListener('change', () => {
                 console.log('[PLAYER] Presentation 设备可用性变化:', availability.value);
             });
-
         } catch (error) {
             console.warn('[PLAYER] Presentation API 设备发现失败:', error);
         }
@@ -3214,12 +3208,12 @@ class VideoPlayer {
             // 收集 ICE 候选者来获取本地网络信息
             const localIPs = new Set();
 
-            return new Promise((resolve) => {
+            return new Promise(resolve => {
                 let timeout;
 
-                pc.onicecandidate = (event) => {
+                pc.onicecandidate = event => {
                     if (event.candidate) {
-                        const candidate = event.candidate.candidate;
+                        const { candidate } = event.candidate;
                         const ipMatch = candidate.match(/(\d+\.\d+\.\d+\.\d+)/);
                         if (ipMatch && !ipMatch[1].startsWith('127.')) {
                             localIPs.add(ipMatch[1]);
@@ -3259,7 +3253,6 @@ class VideoPlayer {
                     resolve(devices);
                 }, 3000);
             });
-
         } catch (error) {
             console.warn('[PLAYER] WebRTC 设备发现失败:', error);
             return devices;
@@ -3282,7 +3275,6 @@ class VideoPlayer {
             // 注意：在浏览器中无法直接进行 mDNS 查询
             // 这里我们只是预留接口，实际需要通过主进程来实现
             console.log('[PLAYER] mDNS 发现需要系统级支持，跳过浏览器端实现');
-
         } catch (error) {
             console.warn('[PLAYER] mDNS 设备发现失败:', error);
         }
@@ -3301,7 +3293,7 @@ class VideoPlayer {
             seen.add(key);
             return true;
         });
-    }    // 显示投屏设备列表
+    } // 显示投屏设备列表
     displayCastDevices(devices) {
         const deviceList = document.getElementById('cast-device-list');
         if (!deviceList) return;
@@ -3453,47 +3445,35 @@ class VideoPlayer {
             // 方法1：使用保存的原始URL
             if (this.originalVideoUrl && this.originalVideoUrl.trim()) {
                 currentUrl = this.originalVideoUrl;
-            }
-
-            // 方法2：使用当前视频URL
-            else if (this.currentVideoUrl && this.currentVideoUrl.trim()) {
+            } else if (this.currentVideoUrl && this.currentVideoUrl.trim()) {
+                // 方法2：使用当前视频URL
                 currentUrl = this.currentVideoUrl;
                 console.log('[PLAYER] ✅ 方法2成功：使用currentVideoUrl =', currentUrl);
-            }
-
-            // 方法3：从视频数据获取
-            else if (this.videoData && this.videoData.currentPlayUrl) {
+            } else if (this.videoData && this.videoData.currentPlayUrl) {
+                // 方法3：从视频数据获取
                 currentUrl = this.videoData.currentPlayUrl;
                 console.log('[PLAYER] ✅ 方法3成功：使用videoData.currentPlayUrl =', currentUrl);
-            }
-
-            // 方法4：使用最后播放的URL备份
-            else if (this.lastPlayedUrl && this.lastPlayedUrl.trim()) {
+            } else if (this.lastPlayedUrl && this.lastPlayedUrl.trim()) {
+                // 方法4：使用最后播放的URL备份
                 currentUrl = this.lastPlayedUrl;
                 console.log('[PLAYER] ✅ 方法4成功：使用lastPlayedUrl =', currentUrl);
-            }
-
-            // 方法5：从video元素获取（排除blob URL）
-            else if (this.video) {
+            } else if (this.video) {
+                // 方法5：从video元素获取（排除blob URL）
                 const videoSrc = this.video.src || this.video.currentSrc;
                 if (videoSrc && !videoSrc.startsWith('blob:') && !videoSrc.startsWith('mediasource:')) {
                     currentUrl = videoSrc;
                     console.log('[PLAYER] ✅ 方法5成功：使用video.src（非blob） =', currentUrl);
+                } else if (this.video.dataset.originalUrl) {
+                    // 方法6：从video元素的data属性获取
+                    currentUrl = this.video.dataset.originalUrl;
+                    console.log('[PLAYER] ✅ 方法6成功：使用video.dataset.originalUrl =', currentUrl);
                 } else {
                     console.log('[PLAYER] ❌ 方法5失败：video.src是blob或无效 =', videoSrc);
                 }
-            }
-
-            // 方法6：从全局变量获取备份
-            else if (window.currentPlayingUrl && window.currentPlayingUrl.trim()) {
+            } else if (window.currentPlayingUrl && window.currentPlayingUrl.trim()) {
+                // 方法7：从全局变量获取备份
                 currentUrl = window.currentPlayingUrl;
-                console.log('[PLAYER] ✅ 方法6成功：使用window.currentPlayingUrl =', currentUrl);
-            }
-
-            // 方法7：从video元素的data属性获取
-            else if (this.video && this.video.dataset.originalUrl) {
-                currentUrl = this.video.dataset.originalUrl;
-                console.log('[PLAYER] ✅ 方法7成功：使用video.dataset.originalUrl =', currentUrl);
+                console.log('[PLAYER] ✅ 方法7成功：使用window.currentPlayingUrl =', currentUrl);
             }
 
             console.log('[PLAYER] URL获取结果:');
@@ -3615,7 +3595,6 @@ class VideoPlayer {
             } else {
                 throw new Error('连接失败');
             }
-
         } catch (error) {
             console.error('[PLAYER] 连接投屏设备失败:', error);
             this.showNotification(`连接 ${device.name} 失败: ${error.message}`, 'error');
@@ -3659,8 +3638,8 @@ class VideoPlayer {
             console.log('[PLAYER] 调用主进程DLNA投屏...');
             console.log('[PLAYER] IPC调用参数:', {
                 deviceId: device.id,
-                mediaUrl: mediaUrl,
-                metadata: metadata
+                mediaUrl,
+                metadata
             });
 
             const result = await window.electron.ipcRenderer.invoke('cast-to-dlna-device', device.id, mediaUrl, metadata);
@@ -3676,18 +3655,16 @@ class VideoPlayer {
                 }
 
                 return true;
-            } else {
-                // 根据错误类型提供更友好的错误信息
-                let userFriendlyError = this.translateDLNAError(result.error);
-                console.error('[PLAYER] DLNA投屏失败:', result.error);
-                throw new Error(userFriendlyError);
             }
-
+            // 根据错误类型提供更友好的错误信息
+            const userFriendlyError = this.translateDLNAError(result.error);
+            console.error('[PLAYER] DLNA投屏失败:', result.error);
+            throw new Error(userFriendlyError);
         } catch (error) {
             console.error('[PLAYER] DLNA投屏过程出错:', error);
 
             // 转换为用户友好的错误信息
-            let userFriendlyError = this.translateDLNAError(error.message);
+            const userFriendlyError = this.translateDLNAError(error.message);
             throw new Error(userFriendlyError);
         }
     }
@@ -3743,7 +3720,7 @@ class VideoPlayer {
             const castInfo = {
                 url: mediaUrl,
                 title: metadata.title,
-                currentTime: currentTime
+                currentTime
             };
 
             const result = await window.electron.ipcRenderer.invoke('start-system-casting', castInfo);
@@ -3751,10 +3728,8 @@ class VideoPlayer {
             if (result.success) {
                 console.log('[PLAYER] 系统投屏成功');
                 return true;
-            } else {
-                throw new Error(result.error || '系统投屏失败');
             }
-
+            throw new Error(result.error || '系统投屏失败');
         } catch (error) {
             console.error('[PLAYER] 系统投屏失败:', error);
             throw error;
@@ -3833,7 +3808,6 @@ class VideoPlayer {
                     await window.electron.ipcRenderer.invoke('stop-casting');
                 }
             }
-
         } catch (error) {
             console.warn('[PLAYER] 停止投屏时出现警告:', error);
         } finally {
@@ -3872,7 +3846,6 @@ class VideoPlayer {
 
             const result = await window.electron.ipcRenderer.invoke('start-system-casting', castInfo);
             return result && result.success;
-
         } catch (error) {
             console.error('[PLAYER] 系统投屏失败:', error);
             return false;
@@ -3900,7 +3873,7 @@ class VideoPlayer {
             console.log('[PLAYER] 投屏设备已连接');
         });
 
-        connection.addEventListener('close', (event) => {
+        connection.addEventListener('close', event => {
             console.log('[PLAYER] 投屏连接已关闭:', event.reason);
             this.stopCasting();
         });
@@ -3960,8 +3933,8 @@ class VideoPlayer {
 
             // 生成分享数据
             const shareData = {
-                siteName: siteName,
-                siteUrl: siteUrl,
+                siteName,
+                siteUrl,
                 videoName: this.videoData.vod_name,
                 videoId: this.videoData.vod_id,
                 videoPic: this.videoData.vod_pic || '',
@@ -3970,7 +3943,7 @@ class VideoPlayer {
                 timestamp: Date.now()
             };
 
-            console.log('[PLAYER] 构建的分享数据:', shareData);            // 加密数据
+            console.log('[PLAYER] 构建的分享数据:', shareData); // 加密数据
             const encryptedData = this.encryptShareData(shareData);
             if (!encryptedData) {
                 this.showNotification('分享码生成失败', 'error');
@@ -4007,11 +3980,11 @@ class VideoPlayer {
 
             // 精简数据，只保留必要字段
             const compactData = {
-                s: data.siteName,        // 站点名称
+                s: data.siteName, // 站点名称
                 u: data.siteUrl.replace(/https:\/\//g, 'hs:').replace(/http:\/\//g, 'h:'), // 站点URL（简化协议）
-                n: data.videoName,       // 视频名称
-                i: data.videoId,         // 视频ID
-                t: data.timestamp        // 时间戳
+                n: data.videoName, // 视频名称
+                i: data.videoId, // 视频ID
+                t: data.timestamp // 时间戳
             };
 
             console.log('[PLAYER] 精简后的数据:', compactData);
@@ -4044,7 +4017,7 @@ class VideoPlayer {
             description = data.videoContent.replace(/<[^>]*>/g, '');
             // 限制长度，避免分享内容过长
             if (description.length > 80) {
-                description = description.substring(0, 80) + '...';
+                description = `${description.substring(0, 80)}...`;
             }
         }
 
@@ -4142,8 +4115,8 @@ ${description ? `💡 简介：${description}` : ''}
         }
 
         console.log('[PLAYER] 投屏按钮状态更新:', {
-            currentUrl: currentUrl,
-            canCast: canCast,
+            currentUrl,
+            canCast,
             isDirectVideo: currentUrl ? this.isDirectVideoFile(currentUrl) : false
         });
     }

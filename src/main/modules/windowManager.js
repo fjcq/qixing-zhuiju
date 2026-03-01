@@ -1,10 +1,48 @@
-const { BrowserWindow, Menu } = require('electron');
+const { BrowserWindow, Menu, session } = require('electron');
 const path = require('path');
 const { isDev } = require('./logger');
+
+/**
+ * 配置安全会话
+ * 用于处理跨域请求而不禁用webSecurity
+ */
+function setupSecureSession() {
+    const ses = session.defaultSession;
+
+    // 设置CORS请求头处理
+    ses.webRequest.onBeforeSendHeaders((details, callback) => {
+        callback({
+            requestHeaders: {
+                ...details.requestHeaders,
+                'Origin': '*'
+            }
+        });
+    });
+
+    // 处理响应头，允许跨域资源加载
+    ses.webRequest.onHeadersReceived((details, callback) => {
+        const responseHeaders = {
+            ...details.responseHeaders
+        };
+
+        // 允许跨域访问视频资源
+        if (details.resourceType === 'media' || details.resourceType === 'image') {
+            responseHeaders['Access-Control-Allow-Origin'] = ['*'];
+            responseHeaders['Access-Control-Allow-Methods'] = ['GET, OPTIONS'];
+        }
+
+        callback({ responseHeaders });
+    });
+
+    console.log('[MAIN] 安全会话配置完成');
+}
 
 // 创建主窗口
 async function createMainWindow(qixingApp) {
     if (isDev) console.log('[MAIN] 创建主窗口...');
+
+    // 配置安全会话
+    setupSecureSession();
 
     qixingApp.mainWindow = new BrowserWindow({
         width: 1200,
@@ -14,26 +52,26 @@ async function createMainWindow(qixingApp) {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            webSecurity: false,
-            allowRunningInsecureContent: true,
+            webSecurity: true,
+            allowRunningInsecureContent: false,
             experimentalFeatures: false,
             enableRemoteModule: false,
-            backgroundThrottling: false, // 防止后台时CPU节流
+            backgroundThrottling: false,
             preload: path.join(__dirname, '..', '..', 'preload.js'),
-            disableBlinkFeatures: 'Auxclick', // 禁用一些不必要的Blink特性
-            disableSiteIsolationTrials: true, // 禁用站点隔离试验以提高性能
-            hardwareAcceleration: false // 禁用硬件加速，防止GPU崩溃
+            disableBlinkFeatures: 'Auxclick',
+            sandbox: true,
+            webviewTag: false,
+            hardwareAcceleration: false
         },
         icon: path.join(__dirname, '..', '..', '..', 'assets', 'icon.png'),
-        frame: false,  // 取消标题栏
-        transparent: true,  // 启用透明窗口
-        backgroundColor: '#00000000',  // 完全透明的背景
-        vibrancy: isDev ? 'dark' : undefined, // 仅在开发模式下启用vibrancy
-        backgroundMaterial: isDev ? 'acrylic' : undefined, // 仅在开发模式下启用acrylic效果
-        autoHideMenuBar: true,  // 自动隐藏菜单栏
+        frame: false,
+        transparent: true,
+        backgroundColor: '#00000000',
+        vibrancy: isDev ? 'dark' : undefined,
+        backgroundMaterial: isDev ? 'acrylic' : undefined,
+        autoHideMenuBar: true,
         show: false,
         title: '七星追剧',
-        // 添加GPU相关配置，防止GPU崩溃
         offscreen: false,
         enableLargerThanScreen: false
     });
@@ -146,23 +184,23 @@ function createPlayerWindow(qixingApp, videoData) {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            webSecurity: false,
-            allowRunningInsecureContent: true,
+            webSecurity: true,
+            allowRunningInsecureContent: false,
             preload: path.join(__dirname, '..', '..', 'preload.js'),
-            disableBlinkFeatures: 'Auxclick', // 禁用一些不必要的Blink特性
-            disableSiteIsolationTrials: true, // 禁用站点隔离试验以提高性能
-            hardwareAcceleration: false // 禁用硬件加速，防止GPU崩溃
+            disableBlinkFeatures: 'Auxclick',
+            sandbox: true,
+            webviewTag: false,
+            hardwareAcceleration: false
         },
         icon: path.join(__dirname, '..', '..', '..', 'assets', 'icon.png'),
         show: false,
-        frame: false,  // 取消标题栏
-        transparent: true,  // 启用透明窗口
-        backgroundColor: '#00000000',  // 完全透明的背景
-        vibrancy: isDev ? 'dark' : undefined, // 仅在开发模式下启用vibrancy
-        backgroundMaterial: isDev ? 'acrylic' : undefined, // 仅在开发模式下启用acrylic效果
-        autoHideMenuBar: true,  // 自动隐藏菜单栏
+        frame: false,
+        transparent: true,
+        backgroundColor: '#00000000',
+        vibrancy: isDev ? 'dark' : undefined,
+        backgroundMaterial: isDev ? 'acrylic' : undefined,
+        autoHideMenuBar: true,
         title: videoData?.title || '七星追剧播放器',
-        // 添加GPU相关配置，防止GPU崩溃
         offscreen: false,
         enableLargerThanScreen: false
     });

@@ -51,7 +51,7 @@ contextBridge.exposeInMainWorld('electron', {
         }
     },
     shell: {
-        openExternal: (url) => {
+        openExternal: url => {
             // 验证URL是否安全
             if (url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
                 return shell.openExternal(url);
@@ -64,12 +64,12 @@ contextBridge.exposeInMainWorld('electron', {
         minimize: () => ipcRenderer.invoke('window-minimize'),
         maximize: () => ipcRenderer.invoke('window-maximize'),
         toggleAlwaysOnTop: () => ipcRenderer.invoke('toggle-always-on-top'),
-        setTitle: (title) => ipcRenderer.invoke('window-set-title', title)
+        setTitle: title => ipcRenderer.invoke('window-set-title', title)
     },
     // 剪切板API
     clipboard: {
         readText: () => ipcRenderer.invoke('read-clipboard'),
-        writeText: (text) => ipcRenderer.invoke('write-clipboard', text)
+        writeText: text => ipcRenderer.invoke('write-clipboard', text)
     },
     // 播放器日志API - 发送到主进程cmd控制台
     playerLog: {
@@ -82,7 +82,7 @@ contextBridge.exposeInMainWorld('electron', {
 
 // 暴露电子API
 contextBridge.exposeInMainWorld('electronAPI', {
-    openExternal: async (url) => {
+    openExternal: async url => {
         console.log('[PRELOAD] 尝试通过IPC打开外部链接:', url);
         try {
             // 使用IPC通信而不是直接调用shell
@@ -95,7 +95,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
     // 获取远程内容 - 用于TVBOX配置加载
-    fetchRemoteContent: async (url) => {
+    fetchRemoteContent: async url => {
         console.log('[PRELOAD] 尝试获取远程内容:', url);
         try {
             const result = await ipcRenderer.invoke('fetch-remote-content', url);

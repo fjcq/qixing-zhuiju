@@ -67,7 +67,7 @@ class DanmakuSystem {
 
         if (input && sendBtn) {
             // 输入框内回车发送弹幕
-            input.addEventListener('keypress', (e) => {
+            input.addEventListener('keypress', e => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     this.sendDanmaku();
@@ -130,7 +130,7 @@ class DanmakuSystem {
                 }
             });
 
-            playerContainer.addEventListener('mouseleave', (e) => {
+            playerContainer.addEventListener('mouseleave', e => {
                 const inputContainer = document.getElementById('danmaku-input-container');
 
                 // 如果鼠标移动到输入框，不隐藏
@@ -156,7 +156,7 @@ class DanmakuSystem {
         // 弹幕输入容器事件处理
         const inputContainer = document.getElementById('danmaku-input-container');
         if (inputContainer) {
-            inputContainer.addEventListener('mouseleave', (e) => {
+            inputContainer.addEventListener('mouseleave', e => {
                 const playerContainer = document.querySelector('.player-container');
 
                 // 如果鼠标移回播放器，不隐藏
@@ -179,7 +179,7 @@ class DanmakuSystem {
         // 这样可以避免多个系统之间的冲突，确保弹幕面板只通过指定的3种方式关闭
 
         // 跟踪鼠标位置，用于智能隐藏判断
-        document.addEventListener('mousemove', (e) => {
+        document.addEventListener('mousemove', e => {
             this.lastMouseX = e.clientX;
             this.lastMouseY = e.clientY;
         });
@@ -189,7 +189,7 @@ class DanmakuSystem {
         this.lastMouseY = 0;
         this.keepInputVisible = false;
         this.keepInputVisible = false;
-    }    // 连接弹幕服务器
+    } // 连接弹幕服务器
     connectWebSocket(videoId) {
         if (this.websocket) {
             this.disconnectWebSocket();
@@ -215,7 +215,7 @@ class DanmakuSystem {
                 });
             };
 
-            this.websocket.onmessage = (event) => {
+            this.websocket.onmessage = event => {
                 try {
                     const data = JSON.parse(event.data);
                     this.handleWebSocketMessage(data);
@@ -229,11 +229,10 @@ class DanmakuSystem {
                 this.attemptReconnect();
             };
 
-            this.websocket.onerror = (error) => {
+            this.websocket.onerror = error => {
                 console.error('[DANMAKU] WebSocket连接错误:', error);
                 this.tryNextServer();
             };
-
         } catch (error) {
             console.error('[DANMAKU] 创建WebSocket连接失败:', error);
             this.tryNextServer();
@@ -315,7 +314,7 @@ class DanmakuSystem {
         // 从localStorage获取或生成用户ID
         let userId = localStorage.getItem('danmaku_user_id');
         if (!userId) {
-            userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             localStorage.setItem('danmaku_user_id', userId);
         }
         return userId;
@@ -340,17 +339,17 @@ class DanmakuSystem {
             type: 'danmaku',
             room: this.generateRoomId(this.currentVideoId || ''),
             user: this.generateUserId(),
-            text: text,
-            color: color,
-            size: size,
+            text,
+            color,
+            size,
             time: Date.now()
         });
 
         // 立即在本地显示
         this.displayDanmaku({
-            text: text,
-            color: color,
-            size: size,
+            text,
+            color,
+            size,
             user: this.generateUserId(),
             time: Date.now(),
             local: true

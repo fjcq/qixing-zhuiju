@@ -39,7 +39,7 @@ function cleanupWindowsProcesses() {
         const commands = [
             // 查找七星追剧相关进程
             'tasklist /FI "IMAGENAME eq 七星追剧.exe" /FO CSV /NH',
-            'tasklist /FI "IMAGENAME eq qixing-zhuiju.exe" /FO CSV /NH',
+            'tasklist /FI "IMAGENAME eq qixing-zhuiju.exe" /FO CSV /NH'
         ];
 
         commands.forEach(cmd => {
@@ -109,7 +109,7 @@ function cleanupMacProcesses() {
 
                     // 不要杀死当前进程
                     if (pid && parseInt(pid) !== process.pid) {
-                        exec(`kill -9 ${pid}`, (killError) => {
+                        exec(`kill -9 ${pid}`, killError => {
                             if (!killError) {
                                 console.log(`[MAIN] 清理了残余进程 PID: ${pid}`);
                             }
@@ -135,7 +135,7 @@ function cleanupLinuxProcesses() {
 
                     // 不要杀死当前进程
                     if (pid && parseInt(pid) !== process.pid) {
-                        exec(`kill -9 ${pid}`, (killError) => {
+                        exec(`kill -9 ${pid}`, killError => {
                             if (!killError) {
                                 console.log(`[MAIN] 清理了残余进程 PID: ${pid}`);
                             }
@@ -172,14 +172,13 @@ function setupSingleInstance() {
         // 应用已经运行，退出当前实例
         app.quit();
         return false;
-    } else {
-        console.log('[MAIN] 获得单实例锁，正在清理残余进程...');
-
-        // 清理可能的残余进程
-        cleanupOrphanedProcesses();
-
-        return true;
     }
+    console.log('[MAIN] 获得单实例锁，正在清理残余进程...');
+
+    // 清理可能的残余进程
+    cleanupOrphanedProcesses();
+
+    return true;
 }
 
 // 处理第二个实例启动事件

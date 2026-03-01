@@ -66,7 +66,6 @@ function main() {
         console.log('   1. 更新 CHANGELOG.md 中的版本信息');
         console.log('   2. 更新 src/config/changelog.js 中的更新内容');
         console.log('   3. 提交所有更改到Git');
-
     } catch (error) {
         console.error('❌ 版本同步失败:', error.message);
         process.exit(1);

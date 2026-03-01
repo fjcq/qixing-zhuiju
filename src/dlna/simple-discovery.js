@@ -9,7 +9,7 @@ class SimpleUPnPDiscovery {
     async discover() {
         console.log('开始简单UPnP设备发现...');
 
-        return new Promise((resolve) => {
+        return new Promise(resolve => {
             const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
 
             socket.on('message', (msg, rinfo) => {
@@ -45,7 +45,7 @@ class SimpleUPnPDiscovery {
                 }
             });
 
-            socket.on('error', (error) => {
+            socket.on('error', error => {
                 console.error('套接字错误:', error);
             });
 
@@ -72,7 +72,7 @@ class SimpleUPnPDiscovery {
                         ''
                     ].join('\r\n');
 
-                    socket.send(Buffer.from(message), 1900, '239.255.255.250', (error) => {
+                    socket.send(Buffer.from(message), 1900, '239.255.255.250', error => {
                         if (error) {
                             console.error(`发送搜索失败 (${st}):`, error);
                         } else {
@@ -138,7 +138,7 @@ discovery.discover().then(devices => {
                     timeout: 5000
                 };
 
-                const req = http.request(options, (res) => {
+                const req = http.request(options, res => {
                     let data = '';
                     res.on('data', chunk => data += chunk);
                     res.on('end', () => {
@@ -164,7 +164,7 @@ discovery.discover().then(devices => {
                     });
                 });
 
-                req.on('error', (error) => {
+                req.on('error', error => {
                     console.log(`设备 ${device.address} 描述获取失败: ${error.message}`);
                 });
 

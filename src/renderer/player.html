@@ -4,30 +4,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self';
+        script-src 'self' 'unsafe-inline' 'unsafe-eval';
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data: https: http:;
+        media-src 'self' https: http: blob:;
+        connect-src 'self' https: http: wss: ws:;
+        font-src 'self' data:;
+        object-src 'none';
+        base-uri 'self';
+        form-action 'self';
+    ">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="DENY">
     <title>七星追剧 - 播放器</title>
     <link rel="stylesheet" href="css/player.css">
 
-    <!-- 立即执行的测试脚本 -->
+    <!-- 调试脚本 -->
     <script>
-        console.log('🔥🔥🔥🔥🔥 [PLAYER-HEAD] player.html HEAD 脚本立即执行！🔥🔥🔥🔥🔥');
-        console.log('[PLAYER-HEAD] 执行时间:', new Date().toLocaleTimeString());
-        console.log('[PLAYER-HEAD] document.readyState:', document.readyState);
-        console.log('[PLAYER-HEAD] window.location:', window.location.href);
+        console.log('[PLAYER] 播放器页面加载');
+        console.log('[PLAYER] 执行时间:', new Date().toLocaleTimeString());
+        console.log('[PLAYER] document.readyState:', document.readyState);
 
-        // 添加一个全局测试函数
+        // 全局测试函数
         window.testPlayerLoaded = function () {
-            console.log('🧪 [PLAYER-TEST] 播放器页面测试函数被调用');
+            console.log('[PLAYER-TEST] 播放器页面测试函数被调用');
             return true;
         };
-
-        // 立即测试元素查找
-        setTimeout(() => {
-            console.log('🔍 [PLAYER-HEAD] 延迟测试DOM元素...');
-            const video = document.getElementById('video-player');
-            const playBtn = document.getElementById('play-pause-btn');
-            console.log('[PLAYER-HEAD] video元素:', video ? '✅ 找到' : '❌ 未找到');
-            console.log('[PLAYER-HEAD] 播放按钮:', playBtn ? '✅ 找到' : '❌ 未找到');
-        }, 1000);
     </script>
 </head>
 

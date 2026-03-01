@@ -4,6 +4,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self';
+        script-src 'self' 'unsafe-inline' 'unsafe-eval';
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data: https: http:;
+        media-src 'self' https: http: blob:;
+        connect-src 'self' https: http: wss: ws:;
+        font-src 'self' data:;
+        object-src 'none';
+        base-uri 'self';
+        form-action 'self';
+    ">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="DENY">
     <title>七星追剧</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/components.css">
@@ -302,6 +316,12 @@
     <script src="js/api.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/components.js"></script>
+    <!-- 新增模块化组件 -->
+    <script src="js/utils/utils.js"></script>
+    <script src="js/utils/lazyLoader.js"></script>
+    <script src="js/controllers/SearchController.js"></script>
+    <script src="js/controllers/HistoryController.js"></script>
+    <script src="js/controllers/SettingsController.js"></script>
     <script src="js/app.js"></script>
 </body>
 

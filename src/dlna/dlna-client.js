@@ -17,23 +17,23 @@ class DLNAClient extends EventEmitter {
 
         // 搜索目标类型（扩展搜索范围以兼容更多设备）
         this.SEARCH_TARGETS = [
-            'upnp:rootdevice',                               // 所有UPnP设备（最重要）
-            'urn:schemas-upnp-org:device:MediaRenderer:1',  // DLNA媒体渲染器
-            'urn:schemas-upnp-org:device:MediaRenderer:2',  // DLNA媒体渲染器v2
-            'urn:schemas-upnp-org:device:MediaServer:1',    // DLNA媒体服务器
-            'urn:schemas-upnp-org:service:AVTransport:1',   // AV传输服务
-            'urn:schemas-upnp-org:service:AVTransport:2',   // AV传输服务v2
+            'upnp:rootdevice', // 所有UPnP设备（最重要）
+            'urn:schemas-upnp-org:device:MediaRenderer:1', // DLNA媒体渲染器
+            'urn:schemas-upnp-org:device:MediaRenderer:2', // DLNA媒体渲染器v2
+            'urn:schemas-upnp-org:device:MediaServer:1', // DLNA媒体服务器
+            'urn:schemas-upnp-org:service:AVTransport:1', // AV传输服务
+            'urn:schemas-upnp-org:service:AVTransport:2', // AV传输服务v2
             'urn:schemas-upnp-org:service:RenderingControl:1', // 渲染控制服务
             'urn:schemas-upnp-org:service:ConnectionManager:1', // 连接管理服务
-            'urn:dial-multiscreen-org:service:dial:1',      // DIAL协议（Chromecast等）
-            'ssdp:all'                                      // 搜索所有SSDP设备
+            'urn:dial-multiscreen-org:service:dial:1', // DIAL协议（Chromecast等）
+            'ssdp:all' // 搜索所有SSDP设备
         ];
     }
 
     // 日志方法，根据开发模式控制日志输出
     log(level, message, ...args) {
         if (this.isDev || level === 'error' || level === 'warn') {
-            const fullMessage = `[DLNA] ${level.toUpperCase()}: ${message}` + (args.length > 0 ? ' ' + args.join(' ') : '');
+            const fullMessage = `[DLNA] ${level.toUpperCase()}: ${message}${args.length > 0 ? ` ${args.join(' ')}` : ''}`;
             if (level === 'error') {
                 console.error(fullMessage);
             } else if (level === 'warn') {
@@ -106,7 +106,6 @@ class DLNAClient extends EventEmitter {
             }, Math.min(3000, timeout / 2)); // 至少等待3秒或超时时间的一半
 
             return true;
-
         } catch (error) {
             console.error('[DLNA] 设备搜索启动失败:', error);
             this.stopDiscovery();
@@ -145,7 +144,7 @@ class DLNAClient extends EventEmitter {
             this.handleSSDPResponse(msg.toString(), rinfo);
         });
 
-        this.socket.on('error', (error) => {
+        this.socket.on('error', error => {
             console.error('[DLNA] 套接字错误:', error);
             this.stopDiscovery();
         });
@@ -196,7 +195,6 @@ class DLNAClient extends EventEmitter {
                 const address = this.socket.address();
                 console.log(`[DLNA] 套接字绑定到: ${address.address}:${address.port}`);
             }
-
         } catch (error) {
             console.warn('[DLNA] 网络诊断失败:', error);
         }
@@ -223,7 +221,7 @@ class DLNAClient extends EventEmitter {
             this.debug(`消息长度: ${buffer.length} 字节`);
             this.debug(`完整消息:\n${searchMessage}`);
 
-            this.socket.send(buffer, this.SSDP_PORT, this.SSDP_ADDRESS, (error) => {
+            this.socket.send(buffer, this.SSDP_PORT, this.SSDP_ADDRESS, error => {
                 if (error) {
                     this.log('error', `发送搜索请求失败 (${searchTarget}):`, error);
                     reject(error);
@@ -259,13 +257,13 @@ class DLNAClient extends EventEmitter {
             this.debug('解析的响应头:', headers);
 
             // 检查是否为有效的UPnP设备响应
-            if (!headers['location']) {
+            if (!headers.location) {
                 this.debug('缺少location头，跳过此响应');
                 return;
             }
 
             // 更宽松的检查：只要有location就认为是有效设备
-            const st = headers['st'] || headers['nt'] || 'unknown';
+            const st = headers.st || headers.nt || 'unknown';
             this.debug(`发现设备类型: ${st}`);
 
             // 检查是否为NOTIFY消息（设备广播）
@@ -278,7 +276,7 @@ class DLNAClient extends EventEmitter {
             }
 
             // 提取设备UUID用于去重
-            const usn = headers['usn'] || headers['nt'];
+            const usn = headers.usn || headers.nt;
             let deviceUUID = null;
             if (usn) {
                 // USN格式通常为: uuid:device-uuid::service-type 或 uuid:device-uuid::upnp:rootdevice
@@ -302,7 +300,6 @@ class DLNAClient extends EventEmitter {
 
             // 解析设备信息（现在接受所有UPnP设备）
             this.parseDeviceInfo(deviceId, headers, rinfo);
-
         } catch (error) {
             console.warn('[DLNA] 解析SSDP响应失败:', error);
         }
@@ -311,16 +308,16 @@ class DLNAClient extends EventEmitter {
     // 解析设备信息
     async parseDeviceInfo(deviceId, headers, rinfo) {
         try {
-            const st = headers['st'] || headers['nt'] || 'upnp:device';
+            const st = headers.st || headers.nt || 'upnp:device';
 
             const device = {
                 id: deviceId,
                 address: rinfo.address,
                 port: rinfo.port,
-                location: headers['location'],
-                st: st,
-                usn: headers['usn'] || headers['nt'],
-                server: headers['server'] || headers['user-agent'] || '未知设备',
+                location: headers.location,
+                st,
+                usn: headers.usn || headers.nt,
+                server: headers.server || headers['user-agent'] || '未知设备',
                 discoveredAt: new Date(),
                 lastSeen: new Date(),
                 type: this.getDeviceType(st),
@@ -331,11 +328,11 @@ class DLNAClient extends EventEmitter {
                 supportedServices: new Set([st]) // 跟踪支持的服务类型
             };
 
-            this.debug(`正在获取设备 ${rinfo.address} 的详细信息...`)
+            this.debug(`正在获取设备 ${rinfo.address} 的详细信息...`);
 
             // 尝试获取设备描述
             try {
-                const deviceInfo = await this.fetchDeviceDescription(headers['location']);
+                const deviceInfo = await this.fetchDeviceDescription(headers.location);
                 if (deviceInfo) {
                     device.name = deviceInfo.friendlyName || device.name;
                     device.manufacturer = deviceInfo.manufacturer;
@@ -343,7 +340,7 @@ class DLNAClient extends EventEmitter {
                     device.modelDescription = deviceInfo.modelDescription;
                     device.services = deviceInfo.services;
 
-                    this.debug(`设备详细信息获取成功: ${device.name}`)
+                    this.debug(`设备详细信息获取成功: ${device.name}`);
 
                     // 更精确的设备类型判断
                     if (deviceInfo.deviceType) {
@@ -363,15 +360,15 @@ class DLNAClient extends EventEmitter {
                         if (hasAVTransport && hasRenderingControl) {
                             device.type = 'DLNA媒体渲染器';
                             device.icon = '📺';
-                            this.debug(`检测到完整的DLNA媒体渲染器: ${device.name}`)
+                            this.debug(`检测到完整的DLNA媒体渲染器: ${device.name}`);
                         } else if (hasAVTransport) {
                             device.type = 'DLNA兼容设备';
                             device.icon = '📱';
-                            this.debug(`检测到DLNA兼容设备: ${device.name}`)
+                            this.debug(`检测到DLNA兼容设备: ${device.name}`);
                         }
                     }
                 } else {
-                    this.log('warn', `无法获取设备 ${rinfo.address} 的详细信息，使用基本信息`)
+                    this.log('warn', `无法获取设备 ${rinfo.address} 的详细信息，使用基本信息`);
                     // 即使无法获取详细信息，也添加设备（可能仍然可以投屏）
                     device.name = `UPnP设备 (${rinfo.address})`;
                 }
@@ -386,7 +383,6 @@ class DLNAClient extends EventEmitter {
             this.emit('deviceFound', device);
 
             this.log('info', `设备已添加: ${device.name} (${device.address}) - ${device.type}`);
-
         } catch (error) {
             this.log('error', '解析设备信息失败:', error);
         }
@@ -407,7 +403,7 @@ class DLNAClient extends EventEmitter {
             }
 
             // 添加新发现的服务类型
-            const serviceType = headers['st'];
+            const serviceType = headers.st;
             if (serviceType) {
                 device.supportedServices.add(serviceType);
                 this.debug(`为设备 ${device.name} 添加服务: ${serviceType}`);
@@ -420,7 +416,6 @@ class DLNAClient extends EventEmitter {
             this.devices.set(deviceId, device);
 
             this.debug(`设备 ${device.name} 服务信息已更新，支持的服务数量: ${device.supportedServices.size}`);
-
         } catch (error) {
             this.log('error', '更新设备服务失败:', error);
         }
@@ -452,7 +447,6 @@ class DLNAClient extends EventEmitter {
 
             console.log(`[DLNA] 设备描述获取成功，长度: ${response.data.length}`);
             return this.parseDeviceDescriptionXML(response.data);
-
         } catch (error) {
             console.warn(`[DLNA] 获取设备描述失败: ${error.message}`);
 
@@ -491,18 +485,18 @@ class DLNAClient extends EventEmitter {
                 timeout: 8000
             };
 
-            console.log(`[DLNA] HTTP请求选项:`, {
+            console.log('[DLNA] HTTP请求选项:', {
                 hostname: options.hostname,
                 port: options.port,
                 path: options.path
             });
 
-            const req = http.request(options, (res) => {
+            const req = http.request(options, res => {
                 let data = '';
 
                 console.log(`[DLNA] 设备描述响应状态: ${res.statusCode}`);
 
-                res.on('data', (chunk) => {
+                res.on('data', chunk => {
                     data += chunk;
                 });
 
@@ -518,7 +512,7 @@ class DLNAClient extends EventEmitter {
                 });
             });
 
-            req.on('error', (error) => {
+            req.on('error', error => {
                 console.error(`[DLNA] HTTP请求错误: ${error.message}`);
                 reject(error);
             });
@@ -583,7 +577,6 @@ class DLNAClient extends EventEmitter {
             }
 
             return deviceInfo;
-
         } catch (error) {
             console.warn('[DLNA] 解析设备描述XML失败:', error);
             return null;
@@ -600,9 +593,8 @@ class DLNAClient extends EventEmitter {
             return 'DLNA设备';
         } else if (st.includes('RenderingControl')) {
             return 'DLNA控制器';
-        } else {
-            return 'UPnP设备';
         }
+        return 'UPnP设备';
     }
 
     // 根据设备描述确定更精确的设备类型
@@ -613,9 +605,8 @@ class DLNAClient extends EventEmitter {
             return 'DLNA媒体服务器';
         } else if (deviceType.includes('InternetGateway')) {
             return '网关设备';
-        } else {
-            return 'UPnP设备';
         }
+        return 'UPnP设备';
     }
 
     // 获取设备图标
@@ -626,9 +617,8 @@ class DLNAClient extends EventEmitter {
             return '💿';
         } else if (type.includes('InternetGateway')) {
             return '🌐';
-        } else {
-            return '📱';
         }
+        return '📱';
     }
 
     // 获取所有发现的设备
@@ -645,7 +635,7 @@ class DLNAClient extends EventEmitter {
 
         this.log('info', `开始投屏到设备: ${device.name} (${device.address})`);
         this.log('info', `媒体URL: ${mediaUrl}`);
-        this.debug(`设备详情:`, {
+        this.debug('设备详情:', {
             id: device.id,
             address: device.address,
             location: device.location,
@@ -685,12 +675,12 @@ class DLNAClient extends EventEmitter {
                     this.log('info', '仍未找到AVTransport服务，使用基于设备XML的控制URL');
                     avTransportService = {
                         serviceType: 'urn:schemas-upnp-org:service:AVTransport:1',
-                        controlURL: '/control/AVTransport1'  // 基于实际XML的正确路径
+                        controlURL: '/control/AVTransport1' // 基于实际XML的正确路径
                     };
                 }
             }
 
-            this.debug(`使用AVTransport服务:`, avTransportService);
+            this.debug('使用AVTransport服务:', avTransportService);
 
             // 构建控制URL
             const controlUrl = this.buildControlUrl(device.location, avTransportService.controlURL);
@@ -708,35 +698,32 @@ class DLNAClient extends EventEmitter {
 
                 if (playResult.success) {
                     this.log('info', `投屏成功: ${device.name}`);
-                    return { success: true, device: device };
-                } else {
-                    this.log('warn', `播放命令失败，但URI设置成功: ${playResult.error}`);
-                    // 即使播放命令失败，URI设置成功也算部分成功
-                    return { success: true, device: device, warning: '播放可能需要手动开始' };
+                    return { success: true, device };
                 }
-            } else {
-                // 提供更详细的错误信息
-                const errorMsg = setUriResult.error || '设置媒体URI失败';
-                this.log('error', `SetAVTransportURI失败: ${errorMsg}`);
-                this.log('error', `状态码: ${setUriResult.statusCode}`);
-
-                // 根据错误类型提供解决建议
-                if (errorMsg.includes('UPnP错误码: 501')) {
-                    throw new Error('设备操作失败：媒体URL为空或无效，请确保视频正在播放且为直接视频链接');
-                } else if (errorMsg.includes('UPnP错误码: 718')) {
-                    throw new Error('设备不支持此媒体格式，请尝试其他播放线路');
-                } else if (errorMsg.includes('UPnP错误码: 714')) {
-                    throw new Error('媒体URL无效或设备无法访问，请检查网络连接');
-                } else if (errorMsg.includes('UPnP错误码: 701')) {
-                    throw new Error('设备转换错误，请重试或尝试其他设备');
-                } else {
-                    throw new Error(`${errorMsg}`);
-                }
+                this.log('warn', `播放命令失败，但URI设置成功: ${playResult.error}`);
+                // 即使播放命令失败，URI设置成功也算部分成功
+                return { success: true, device, warning: '播放可能需要手动开始' };
             }
+            // 提供更详细的错误信息
+            const errorMsg = setUriResult.error || '设置媒体URI失败';
+            this.log('error', `SetAVTransportURI失败: ${errorMsg}`);
+            this.log('error', `状态码: ${setUriResult.statusCode}`);
 
+            // 根据错误类型提供解决建议
+            if (errorMsg.includes('UPnP错误码: 501')) {
+                throw new Error('设备操作失败：媒体URL为空或无效，请确保视频正在播放且为直接视频链接');
+            } else if (errorMsg.includes('UPnP错误码: 718')) {
+                throw new Error('设备不支持此媒体格式，请尝试其他播放线路');
+            } else if (errorMsg.includes('UPnP错误码: 714')) {
+                throw new Error('媒体URL无效或设备无法访问，请检查网络连接');
+            } else if (errorMsg.includes('UPnP错误码: 701')) {
+                throw new Error('设备转换错误，请重试或尝试其他设备');
+            } else {
+                throw new Error(`${errorMsg}`);
+            }
         } catch (error) {
             this.log('error', `投屏失败: ${error.message}`);
-            this.log('error', `错误详情:`, error);
+            this.log('error', '错误详情:', error);
             throw error;
         }
     }
@@ -754,7 +741,6 @@ class DLNAClient extends EventEmitter {
 
             this.debug(`设备验证成功: ${device.name}`);
             return true;
-
         } catch (error) {
             this.log('warn', `设备验证失败: ${error.message}`);
             throw new Error(`设备 ${device.name} 当前不可达，请检查网络连接`);
@@ -782,7 +768,6 @@ class DLNAClient extends EventEmitter {
                 } else {
                     return result; // 返回最后的失败结果
                 }
-
             } catch (error) {
                 this.log('error', `SetAVTransportURI 尝试 ${attempt} 出错:`, error);
 
@@ -817,7 +802,6 @@ class DLNAClient extends EventEmitter {
                 } else {
                     return result; // 返回最后的失败结果
                 }
-
             } catch (error) {
                 this.log('error', `Play 尝试 ${attempt} 出错:`, error);
 
@@ -852,9 +836,8 @@ class DLNAClient extends EventEmitter {
 
             this.debug(`构建的控制URL: ${controlUrl}`);
             return controlUrl;
-
         } catch (error) {
-            this.log('error', `构建控制URL失败:`, error);
+            this.log('error', '构建控制URL失败:', error);
             throw new Error(`无效的控制URL: ${error.message}`);
         }
     }
@@ -876,7 +859,7 @@ class DLNAClient extends EventEmitter {
     </s:Body>
 </s:Envelope>`;
 
-        this.debug(`SOAP请求体:`, soapBody);
+        this.debug('SOAP请求体:', soapBody);
         return await this.sendSOAPRequest(controlUrl, soapAction, soapBody);
     }
 
@@ -896,7 +879,7 @@ class DLNAClient extends EventEmitter {
     </s:Body>
 </s:Envelope>`;
 
-        this.debug(`Play SOAP请求体:`, soapBody);
+        this.debug('Play SOAP请求体:', soapBody);
         return await this.sendSOAPRequest(controlUrl, soapAction, soapBody);
     }
 
@@ -915,7 +898,7 @@ class DLNAClient extends EventEmitter {
     </s:Body>
 </s:Envelope>`;
 
-        this.debug(`Pause SOAP请求体:`, soapBody);
+        this.debug('Pause SOAP请求体:', soapBody);
         return await this.sendSOAPRequest(controlUrl, soapAction, soapBody);
     }
 
@@ -934,7 +917,7 @@ class DLNAClient extends EventEmitter {
     </s:Body>
 </s:Envelope>`;
 
-        this.debug(`Stop SOAP请求体:`, soapBody);
+        this.debug('Stop SOAP请求体:', soapBody);
         return await this.sendSOAPRequest(controlUrl, soapAction, soapBody);
     }
 
@@ -955,7 +938,7 @@ class DLNAClient extends EventEmitter {
     </s:Body>
 </s:Envelope>`;
 
-        this.debug(`Seek SOAP请求体:`, soapBody);
+        this.debug('Seek SOAP请求体:', soapBody);
         return await this.sendSOAPRequest(controlUrl, soapAction, soapBody);
     }
 
@@ -976,7 +959,7 @@ class DLNAClient extends EventEmitter {
     </s:Body>
 </s:Envelope>`;
 
-        this.debug(`SetVolume SOAP请求体:`, soapBody);
+        this.debug('SetVolume SOAP请求体:', soapBody);
         return await this.sendSOAPRequest(controlUrl, soapAction, soapBody);
     }
 
@@ -995,7 +978,7 @@ class DLNAClient extends EventEmitter {
     </s:Body>
 </s:Envelope>`;
 
-        this.debug(`GetPositionInfo SOAP请求体:`, soapBody);
+        this.debug('GetPositionInfo SOAP请求体:', soapBody);
         return await this.sendSOAPRequest(controlUrl, soapAction, soapBody);
     }
 
@@ -1014,7 +997,7 @@ class DLNAClient extends EventEmitter {
     </s:Body>
 </s:Envelope>`;
 
-        this.debug(`GetTransportInfo SOAP请求体:`, soapBody);
+        this.debug('GetTransportInfo SOAP请求体:', soapBody);
         return await this.sendSOAPRequest(controlUrl, soapAction, soapBody);
     }
 
@@ -1045,7 +1028,7 @@ class DLNAClient extends EventEmitter {
                 }
 
                 // 安全检查3: 验证hostname是本地网络地址（可选，根据实际需求调整）
-                const hostname = urlObj.hostname;
+                const { hostname } = urlObj;
                 // 允许localhost、127.0.0.1或本地网络地址
                 const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
                 const isLocalNetwork = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(hostname);
@@ -1064,7 +1047,7 @@ class DLNAClient extends EventEmitter {
                 const http = urlObj.protocol === 'https:' ? require('https') : require('http');
 
                 const options = {
-                    hostname: hostname,
+                    hostname,
                     port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
                     path: urlObj.pathname + (urlObj.search || ''),
                     method: 'POST',
@@ -1078,26 +1061,26 @@ class DLNAClient extends EventEmitter {
                     timeout: 15000 // 增加超时时间到15秒
                 };
 
-                this.debug(`请求选项:`, {
+                this.debug('请求选项:', {
                     hostname: options.hostname,
                     port: options.port,
                     path: options.path,
                     method: options.method,
                     headers: options.headers,
-                    requestSize: requestSize
+                    requestSize
                 });
 
-                const req = http.request(options, (res) => {
+                const req = http.request(options, res => {
                     let data = '';
                     const maxResponseSize = 5 * 1024 * 1024; // 最大响应大小5MB
 
                     this.debug(`收到响应状态: ${res.statusCode} ${res.statusMessage}`);
-                    this.debug(`响应头:`, res.headers);
+                    this.debug('响应头:', res.headers);
 
-                    res.on('data', (chunk) => {
+                    res.on('data', chunk => {
                         // 安全检查5: 限制响应大小
                         if (data.length + chunk.length > maxResponseSize) {
-                            this.log('error', `响应过大，超过限制（5MB），正在中断请求`);
+                            this.log('error', '响应过大，超过限制（5MB），正在中断请求');
                             req.destroy();
                             reject(new Error('响应过大，超过限制'));
                             return;
@@ -1107,7 +1090,7 @@ class DLNAClient extends EventEmitter {
 
                     res.on('end', () => {
                         this.debug(`响应完成，数据长度: ${data.length}`);
-                        this.debug(`响应内容:`, data);
+                        this.debug('响应内容:', data);
 
                         if (res.statusCode === 200) {
                             resolve({ success: true, response: data, statusCode: res.statusCode });
@@ -1144,8 +1127,8 @@ class DLNAClient extends EventEmitter {
                     });
                 });
 
-                req.on('error', (error) => {
-                    this.log('error', `请求错误:`, error);
+                req.on('error', error => {
+                    this.log('error', '请求错误:', error);
                     reject(new Error(`网络请求失败: ${error.message}`));
                 });
 
@@ -1158,7 +1141,7 @@ class DLNAClient extends EventEmitter {
                 req.write(soapBody);
                 req.end();
             } catch (error) {
-                this.log('error', `发送请求失败:`, error);
+                this.log('error', '发送请求失败:', error);
                 reject(new Error(`发送SOAP请求失败: ${error.message}`));
             }
         });
@@ -1224,18 +1207,17 @@ class DLNAClient extends EventEmitter {
 
             if (result.success) {
                 this.log('info', `暂停播放成功: ${device.name}`);
-                return { success: true, device: device };
-            } else {
-                this.log('warn', `暂停播放失败: ${result.error}`);
-                // 根据错误类型提供更友好的提示
-                let errorMsg = result.error || '暂停播放失败';
-                if (errorMsg.includes('UPnP错误码: 701')) {
-                    errorMsg = `设备 ${device.name} 不支持暂停操作`;
-                } else if (errorMsg.includes('timeout')) {
-                    errorMsg = `设备 ${device.name} 响应超时，请检查网络连接`;
-                }
-                return { success: false, error: errorMsg, device: device };
+                return { success: true, device };
             }
+            this.log('warn', `暂停播放失败: ${result.error}`);
+            // 根据错误类型提供更友好的提示
+            let errorMsg = result.error || '暂停播放失败';
+            if (errorMsg.includes('UPnP错误码: 701')) {
+                errorMsg = `设备 ${device.name} 不支持暂停操作`;
+            } else if (errorMsg.includes('timeout')) {
+                errorMsg = `设备 ${device.name} 响应超时，请检查网络连接`;
+            }
+            return { success: false, error: errorMsg, device };
         } catch (error) {
             this.log('error', `暂停播放失败: ${error.message}`);
             // 转换技术错误为用户友好提示
@@ -1282,18 +1264,17 @@ class DLNAClient extends EventEmitter {
 
             if (result.success) {
                 this.log('info', `停止播放成功: ${device.name}`);
-                return { success: true, device: device };
-            } else {
-                this.log('warn', `停止播放失败: ${result.error}`);
-                // 根据错误类型提供更友好的提示
-                let errorMsg = result.error || '停止播放失败';
-                if (errorMsg.includes('UPnP错误码: 701')) {
-                    errorMsg = `设备 ${device.name} 不支持停止操作`;
-                } else if (errorMsg.includes('timeout')) {
-                    errorMsg = `设备 ${device.name} 响应超时，请检查网络连接`;
-                }
-                return { success: false, error: errorMsg, device: device };
+                return { success: true, device };
             }
+            this.log('warn', `停止播放失败: ${result.error}`);
+            // 根据错误类型提供更友好的提示
+            let errorMsg = result.error || '停止播放失败';
+            if (errorMsg.includes('UPnP错误码: 701')) {
+                errorMsg = `设备 ${device.name} 不支持停止操作`;
+            } else if (errorMsg.includes('timeout')) {
+                errorMsg = `设备 ${device.name} 响应超时，请检查网络连接`;
+            }
+            return { success: false, error: errorMsg, device };
         } catch (error) {
             this.log('error', `停止播放失败: ${error.message}`);
             // 转换技术错误为用户友好提示
@@ -1340,20 +1321,19 @@ class DLNAClient extends EventEmitter {
 
             if (result.success) {
                 this.log('info', `跳转成功: ${device.name}`);
-                return { success: true, device: device };
-            } else {
-                this.log('warn', `跳转失败: ${result.error}`);
-                // 根据错误类型提供更友好的提示
-                let errorMsg = result.error || '跳转到指定位置失败';
-                if (errorMsg.includes('UPnP错误码: 701')) {
-                    errorMsg = `设备 ${device.name} 不支持跳转操作`;
-                } else if (errorMsg.includes('UPnP错误码: 712')) {
-                    errorMsg = `设备 ${device.name} 不支持指定的跳转单位`;
-                } else if (errorMsg.includes('timeout')) {
-                    errorMsg = `设备 ${device.name} 响应超时，请检查网络连接`;
-                }
-                return { success: false, error: errorMsg, device: device };
+                return { success: true, device };
             }
+            this.log('warn', `跳转失败: ${result.error}`);
+            // 根据错误类型提供更友好的提示
+            let errorMsg = result.error || '跳转到指定位置失败';
+            if (errorMsg.includes('UPnP错误码: 701')) {
+                errorMsg = `设备 ${device.name} 不支持跳转操作`;
+            } else if (errorMsg.includes('UPnP错误码: 712')) {
+                errorMsg = `设备 ${device.name} 不支持指定的跳转单位`;
+            } else if (errorMsg.includes('timeout')) {
+                errorMsg = `设备 ${device.name} 响应超时，请检查网络连接`;
+            }
+            return { success: false, error: errorMsg, device };
         } catch (error) {
             this.log('error', `跳转失败: ${error.message}`);
             // 转换技术错误为用户友好提示
@@ -1400,20 +1380,19 @@ class DLNAClient extends EventEmitter {
 
             if (result.success) {
                 this.log('info', `音量设置成功: ${device.name}`);
-                return { success: true, device: device };
-            } else {
-                this.log('warn', `音量设置失败: ${result.error}`);
-                // 根据错误类型提供更友好的提示
-                let errorMsg = result.error || '音量设置失败';
-                if (errorMsg.includes('UPnP错误码: 701')) {
-                    errorMsg = `设备 ${device.name} 不支持音量控制`;
-                } else if (errorMsg.includes('UPnP错误码: 712')) {
-                    errorMsg = `设备 ${device.name} 音量超出有效范围`;
-                } else if (errorMsg.includes('timeout')) {
-                    errorMsg = `设备 ${device.name} 响应超时，请检查网络连接`;
-                }
-                return { success: false, error: errorMsg, device: device };
+                return { success: true, device };
             }
+            this.log('warn', `音量设置失败: ${result.error}`);
+            // 根据错误类型提供更友好的提示
+            let errorMsg = result.error || '音量设置失败';
+            if (errorMsg.includes('UPnP错误码: 701')) {
+                errorMsg = `设备 ${device.name} 不支持音量控制`;
+            } else if (errorMsg.includes('UPnP错误码: 712')) {
+                errorMsg = `设备 ${device.name} 音量超出有效范围`;
+            } else if (errorMsg.includes('timeout')) {
+                errorMsg = `设备 ${device.name} 响应超时，请检查网络连接`;
+            }
+            return { success: false, error: errorMsg, device };
         } catch (error) {
             this.log('error', `音量设置失败: ${error.message}`);
             // 转换技术错误为用户友好提示
@@ -1462,16 +1441,15 @@ class DLNAClient extends EventEmitter {
                 this.log('info', `获取播放位置成功: ${device.name}`);
                 // 解析响应获取当前位置和时长
                 const positionInfo = this.parsePositionInfo(result.response);
-                return { success: true, device: device, positionInfo: positionInfo };
-            } else {
-                this.log('warn', `获取播放位置失败: ${result.error}`);
-                // 根据错误类型提供更友好的提示
-                let errorMsg = result.error || '获取播放位置失败';
-                if (errorMsg.includes('timeout')) {
-                    errorMsg = `设备 ${device.name} 响应超时，请检查网络连接`;
-                }
-                return { success: false, error: errorMsg, device: device };
+                return { success: true, device, positionInfo };
             }
+            this.log('warn', `获取播放位置失败: ${result.error}`);
+            // 根据错误类型提供更友好的提示
+            let errorMsg = result.error || '获取播放位置失败';
+            if (errorMsg.includes('timeout')) {
+                errorMsg = `设备 ${device.name} 响应超时，请检查网络连接`;
+            }
+            return { success: false, error: errorMsg, device };
         } catch (error) {
             this.log('error', `获取播放位置失败: ${error.message}`);
             // 转换技术错误为用户友好提示
@@ -1520,16 +1498,15 @@ class DLNAClient extends EventEmitter {
                 this.log('info', `获取传输状态成功: ${device.name}`);
                 // 解析响应获取传输状态
                 const transportInfo = this.parseTransportInfo(result.response);
-                return { success: true, device: device, transportInfo: transportInfo };
-            } else {
-                this.log('warn', `获取传输状态失败: ${result.error}`);
-                // 根据错误类型提供更友好的提示
-                let errorMsg = result.error || '获取传输状态失败';
-                if (errorMsg.includes('timeout')) {
-                    errorMsg = `设备 ${device.name} 响应超时，请检查网络连接`;
-                }
-                return { success: false, error: errorMsg, device: device };
+                return { success: true, device, transportInfo };
             }
+            this.log('warn', `获取传输状态失败: ${result.error}`);
+            // 根据错误类型提供更友好的提示
+            let errorMsg = result.error || '获取传输状态失败';
+            if (errorMsg.includes('timeout')) {
+                errorMsg = `设备 ${device.name} 响应超时，请检查网络连接`;
+            }
+            return { success: false, error: errorMsg, device };
         } catch (error) {
             this.log('error', `获取传输状态失败: ${error.message}`);
             // 转换技术错误为用户友好提示

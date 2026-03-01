@@ -1,32 +1,41 @@
 const { ipcMain, BrowserWindow } = require('electron');
+const {
+    validateVideoData,
+    validateDeviceId,
+    validateMediaUrl,
+    validateSearchKeyword,
+    sanitizeInput
+} = require('./securityValidator');
 
-// 设置IPC通信处理
+/**
+ * 设置IPC通信处理
+ * @param {object} qixingApp - 应用实例
+ */
 function setupIPC(qixingApp) {
     // 打开播放器窗口
     ipcMain.handle('open-player', async (event, videoData) => {
         try {
-            console.log('[MAIN] 收到打开播放器请求:', videoData);
+            console.log('[MAIN] 收到打开播放器请求');
 
-            // 安全检查：验证videoData参数
-            if (!videoData || typeof videoData !== 'object') {
-                return { success: false, message: '无效的视频数据' };
+            // 安全验证：验证视频数据
+            const validation = validateVideoData(videoData);
+            if (!validation.valid) {
+                console.error('[MAIN] 视频数据验证失败:', validation.error);
+                return { success: false, message: validation.error };
             }
 
-            // 验证URL格式
-            if (videoData.url && typeof videoData.url !== 'string') {
-                return { success: false, message: '无效的视频URL' };
-            }
+            // 使用清理后的数据
+            const safeData = validation.sanitized || videoData;
 
-            // 🔥 保存当前播放的视频URL，用于投屏
-            qixingApp.currentVideoUrl = videoData.url;
-            console.log('[MAIN] ========== 保存视频URL用于投屏 ==========');
-            console.log('[MAIN] 当前视频URL:', qixingApp.currentVideoUrl);
+            // 保存当前播放的视频URL，用于投屏
+            qixingApp.currentVideoUrl = safeData.url;
+            console.log('[MAIN] 保存视频URL用于投屏:', qixingApp.currentVideoUrl);
 
-            qixingApp.createPlayerWindow(videoData);
+            qixingApp.createPlayerWindow(safeData);
             return { success: true, message: '播放器已打开' };
         } catch (error) {
             console.error('[MAIN] 打开播放器失败:', error);
-            return { success: false, message: error.message };
+            return { success: false, message: '处理请求时发生错误' };
         }
     });
 
@@ -44,39 +53,40 @@ function setupIPC(qixingApp) {
     });
 
     // 获取应用版本
-    ipcMain.handle('get-app-version', () => {
-        return require('electron').app.getVersion();
-    });
+    ipcMain.handle('get-app-version', () => require('electron').app.getVersion());
 
     // 打开外部链接
     ipcMain.handle('open-external-url', async (event, url) => {
         try {
-            // 安全检查：验证URL格式
-            if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
-                return { success: false, error: '无效的URL格式' };
+            // 安全验证：验证URL
+            const validation = validateMediaUrl(url);
+            if (!validation.valid) {
+                console.error('[MAIN] 外部链接验证失败:', validation.error);
+                return { success: false, error: validation.error };
             }
-            await require('electron').shell.openExternal(url);
+
+            await require('electron').shell.openExternal(validation.sanitized || url);
             return { success: true };
         } catch (error) {
             console.error('[MAIN] 打开外部链接失败:', error);
-            return { success: false, error: error.message };
+            return { success: false, error: '打开链接失败' };
         }
     });
 
     // 窗口控制处理器
-    ipcMain.handle('window-close', (event) => {
+    ipcMain.handle('window-close', event => {
         const window = BrowserWindow.fromWebContents(event.sender);
         if (window) {
             window.close();
         }
     });
 
-    ipcMain.handle('window-minimize', (event) => {
+    ipcMain.handle('window-minimize', event => {
         const window = BrowserWindow.fromWebContents(event.sender);
         window.minimize();
     });
 
-    ipcMain.handle('window-maximize', (event) => {
+    ipcMain.handle('window-maximize', event => {
         const window = BrowserWindow.fromWebContents(event.sender);
         if (window) {
             if (window.isMaximized()) {
@@ -87,13 +97,13 @@ function setupIPC(qixingApp) {
         }
     });
 
-    ipcMain.handle('toggle-always-on-top', (event) => {
+    ipcMain.handle('toggle-always-on-top', event => {
         const window = BrowserWindow.fromWebContents(event.sender);
         if (window) {
             const currentState = window.isAlwaysOnTop();
             const newState = !currentState;
 
-            console.log(`[MAIN] ========== 置顶状态切换请求 ==========`);
+            console.log('[MAIN] ========== 置顶状态切换请求 ==========');
             console.log(`[MAIN] 当前置顶状态: ${currentState}`);
             console.log(`[MAIN] 请求切换到: ${newState}`);
 
@@ -102,10 +112,10 @@ function setupIPC(qixingApp) {
                 if (newState) {
                     // 尝试多种置顶级别以确保成功
                     window.setAlwaysOnTop(true, 'screen-saver');
-                    console.log(`[MAIN] 设置置顶级别: screen-saver`);
+                    console.log('[MAIN] 设置置顶级别: screen-saver');
                 } else {
                     window.setAlwaysOnTop(false, 'normal');
-                    console.log(`[MAIN] 取消置顶，恢复正常级别`);
+                    console.log('[MAIN] 取消置顶，恢复正常级别');
                 }
 
                 // 验证设置是否生效
@@ -143,7 +153,7 @@ function setupIPC(qixingApp) {
     });
 
     // 设备发现处理
-    ipcMain.handle('discover-cast-devices', async (event) => {
+    ipcMain.handle('discover-cast-devices', async event => {
         console.log('[MAIN] 收到设备发现请求');
         try {
             return await qixingApp.discoverCastDevices();
@@ -155,110 +165,128 @@ function setupIPC(qixingApp) {
 
     // DLNA投屏处理
     ipcMain.handle('cast-to-dlna-device', async (event, deviceId, mediaUrl, metadata) => {
-        console.log('[MAIN] 收到DLNA投屏请求:', { deviceId, mediaUrl });
+        console.log('[MAIN] 收到DLNA投屏请求');
 
-        // 安全检查：验证参数
-        if (typeof deviceId !== 'string' || !deviceId) {
-            return { success: false, error: '无效的设备ID' };
+        // 安全验证：验证设备ID
+        const deviceValidation = validateDeviceId(deviceId);
+        if (!deviceValidation.valid) {
+            console.error('[MAIN] 设备ID验证失败:', deviceValidation.error);
+            return { success: false, error: deviceValidation.error };
         }
 
-        // 🔥 修复：如果mediaUrl为空，使用保存的视频URL
+        // 如果mediaUrl为空，使用保存的视频URL
         if (!mediaUrl && qixingApp.currentVideoUrl) {
             mediaUrl = qixingApp.currentVideoUrl;
             console.log('[MAIN] 使用保存的视频URL:', mediaUrl);
         }
 
-        // 安全检查：验证媒体URL格式
-        if (mediaUrl && typeof mediaUrl !== 'string') {
-            return { success: false, error: '无效的媒体URL' };
+        // 安全验证：验证媒体URL
+        if (mediaUrl) {
+            const urlValidation = validateMediaUrl(mediaUrl);
+            if (!urlValidation.valid) {
+                console.error('[MAIN] 媒体URL验证失败:', urlValidation.error);
+                return { success: false, error: urlValidation.error };
+            }
         }
 
         try {
             return await qixingApp.castToDLNADevice(deviceId, mediaUrl, metadata);
         } catch (error) {
             console.error('[MAIN] DLNA投屏失败:', error);
-            return { success: false, error: error.message };
+            return { success: false, error: '投屏操作失败' };
         }
     });
 
     // 停止DLNA投屏
     ipcMain.handle('stop-dlna-casting', async (event, deviceId) => {
-        console.log('[MAIN] 收到停止DLNA投屏请求:', deviceId);
-        // 安全检查：验证设备ID
-        if (typeof deviceId !== 'string' || !deviceId) {
-            return { success: false, error: '无效的设备ID' };
+        console.log('[MAIN] 收到停止DLNA投屏请求');
+
+        const deviceValidation = validateDeviceId(deviceId);
+        if (!deviceValidation.valid) {
+            return { success: false, error: deviceValidation.error };
         }
+
         try {
             return await qixingApp.stopDLNACasting(deviceId);
         } catch (error) {
             console.error('[MAIN] 停止DLNA投屏失败:', error);
-            return { success: false, error: error.message };
+            return { success: false, error: '停止投屏失败' };
         }
     });
 
     // 暂停DLNA投屏
     ipcMain.handle('pause-dlna-casting', async (event, deviceId) => {
-        console.log('[MAIN] 收到暂停DLNA投屏请求:', deviceId);
-        // 安全检查：验证设备ID
-        if (typeof deviceId !== 'string' || !deviceId) {
-            return { success: false, error: '无效的设备ID' };
+        console.log('[MAIN] 收到暂停DLNA投屏请求');
+
+        const deviceValidation = validateDeviceId(deviceId);
+        if (!deviceValidation.valid) {
+            return { success: false, error: deviceValidation.error };
         }
+
         try {
             return await qixingApp.pauseDLNACasting(deviceId);
         } catch (error) {
             console.error('[MAIN] 暂停DLNA投屏失败:', error);
-            return { success: false, error: error.message };
+            return { success: false, error: '暂停投屏失败' };
         }
     });
 
     // 跳转到指定位置
     ipcMain.handle('seek-dlna-casting', async (event, deviceId, position) => {
-        console.log('[MAIN] 收到跳转到指定位置请求:', { deviceId, position });
-        // 安全检查：验证参数
-        if (typeof deviceId !== 'string' || !deviceId) {
-            return { success: false, error: '无效的设备ID' };
+        console.log('[MAIN] 收到跳转到指定位置请求');
+
+        const deviceValidation = validateDeviceId(deviceId);
+        if (!deviceValidation.valid) {
+            return { success: false, error: deviceValidation.error };
         }
+
         if (typeof position !== 'number' || isNaN(position) || position < 0) {
             return { success: false, error: '无效的位置参数' };
         }
+
         try {
             return await qixingApp.seekDLNACasting(deviceId, position);
         } catch (error) {
             console.error('[MAIN] 跳转DLNA投屏失败:', error);
-            return { success: false, error: error.message };
+            return { success: false, error: '跳转操作失败' };
         }
     });
 
     // 设置DLNA投屏音量
     ipcMain.handle('set-volume-dlna-casting', async (event, deviceId, volume) => {
-        console.log('[MAIN] 收到设置DLNA投屏音量请求:', { deviceId, volume });
-        // 安全检查：验证参数
-        if (typeof deviceId !== 'string' || !deviceId) {
-            return { success: false, error: '无效的设备ID' };
+        console.log('[MAIN] 收到设置DLNA投屏音量请求');
+
+        const deviceValidation = validateDeviceId(deviceId);
+        if (!deviceValidation.valid) {
+            return { success: false, error: deviceValidation.error };
         }
+
         if (typeof volume !== 'number' || isNaN(volume) || volume < 0 || volume > 100) {
             return { success: false, error: '无效的音量值，必须在0-100之间' };
         }
+
         try {
             return await qixingApp.setVolumeDLNACasting(deviceId, volume);
         } catch (error) {
             console.error('[MAIN] 设置DLNA投屏音量失败:', error);
-            return { success: false, error: error.message };
+            return { success: false, error: '设置音量失败' };
         }
     });
 
     // 获取DLNA投屏位置信息
     ipcMain.handle('get-dlna-position-info', async (event, deviceId) => {
-        console.log('[MAIN] 收到获取DLNA投屏位置信息请求:', deviceId);
-        // 安全检查：验证设备ID
-        if (typeof deviceId !== 'string' || !deviceId) {
-            return { success: false, error: '无效的设备ID' };
+        console.log('[MAIN] 收到获取DLNA投屏位置信息请求');
+
+        const deviceValidation = validateDeviceId(deviceId);
+        if (!deviceValidation.valid) {
+            return { success: false, error: deviceValidation.error };
         }
+
         try {
             return await qixingApp.getDLNAPositionInfo(deviceId);
         } catch (error) {
             console.error('[MAIN] 获取DLNA投屏位置信息失败:', error);
-            return { success: false, error: error.message };
+            return { success: false, error: '获取位置信息失败' };
         }
     });
 
@@ -278,7 +306,7 @@ function setupIPC(qixingApp) {
     });
 
     // 剪切板读取处理
-    ipcMain.handle('read-clipboard', async (event) => {
+    ipcMain.handle('read-clipboard', async event => {
         try {
             const { clipboard } = require('electron');
             return clipboard.readText();
@@ -317,7 +345,7 @@ function setupIPC(qixingApp) {
             console.error('[PLAYER-ERROR] 无效的日志消息类型');
             return false;
         }
-        const fullMessage = `[PLAYER-${level.toUpperCase()}] ${message}` + (args.length > 0 ? ' ' + args.join(' ') : '');
+        const fullMessage = `[PLAYER-${level.toUpperCase()}] ${message}${args.length > 0 ? ` ${args.join(' ')}` : ''}`;
 
         if (level === 'error') {
             console.error(fullMessage);
@@ -350,7 +378,7 @@ function setupIPC(qixingApp) {
 
     // 自动更新相关IPC处理
     // 检查更新
-    ipcMain.handle('check-for-updates', async (event) => {
+    ipcMain.handle('check-for-updates', async event => {
         console.log('[MAIN] 收到检查更新请求');
         try {
             return await qixingApp.checkForUpdates();
@@ -361,7 +389,7 @@ function setupIPC(qixingApp) {
     });
 
     // 安装更新
-    ipcMain.handle('install-update', async (event) => {
+    ipcMain.handle('install-update', async event => {
         console.log('[MAIN] 收到安装更新请求');
         try {
             qixingApp.installUpdate();
@@ -373,7 +401,7 @@ function setupIPC(qixingApp) {
     });
 
     // 取消更新
-    ipcMain.handle('cancel-update', async (event) => {
+    ipcMain.handle('cancel-update', async event => {
         console.log('[MAIN] 收到取消更新请求');
         try {
             qixingApp.cancelUpdate();
@@ -417,11 +445,11 @@ function setupIPC(qixingApp) {
                     }
                 };
 
-                const req = protocol.request(options, (res) => {
+                const req = protocol.request(options, res => {
                     let data = '';
                     res.setEncoding('utf8');
 
-                    res.on('data', (chunk) => {
+                    res.on('data', chunk => {
                         data += chunk;
                     });
 
@@ -429,7 +457,7 @@ function setupIPC(qixingApp) {
                         clearTimeout(timer);
                         if (res.statusCode >= 200 && res.statusCode < 300) {
                             console.log('[MAIN] 远程内容获取成功, 大小:', data.length);
-                            resolve({ success: true, data: data, statusCode: res.statusCode });
+                            resolve({ success: true, data, statusCode: res.statusCode });
                         } else {
                             console.error('[MAIN] 远程内容获取失败, 状态码:', res.statusCode);
                             resolve({ success: false, error: `HTTP错误: ${res.statusCode}`, statusCode: res.statusCode });
@@ -437,7 +465,7 @@ function setupIPC(qixingApp) {
                     });
                 });
 
-                req.on('error', (e) => {
+                req.on('error', e => {
                     clearTimeout(timer);
                     console.error('[MAIN] 远程内容获取失败:', e.message);
                     resolve({ success: false, error: e.message });

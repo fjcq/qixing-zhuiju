@@ -1,6 +1,9 @@
 // 主应用文件
 class QixingZhuijuApp {
     constructor() {
+        // 初始化全局错误处理
+        this.setupGlobalErrorHandling();
+
         this.apiService = new ApiService();
         this.storageService = new StorageService();
         this.componentService = new ComponentService();
@@ -14,6 +17,39 @@ class QixingZhuijuApp {
 
         // 初始化标题栏控制
         this.initializeTitlebarControls();
+    }
+
+    /**
+     * 设置全局错误处理
+     */
+    setupGlobalErrorHandling() {
+        // 捕获未处理的Promise拒绝
+        window.addEventListener('unhandledrejection', event => {
+            console.error('[APP] 未处理的Promise拒绝:', event.reason);
+            this.showError('操作失败，请稍后重试');
+            event.preventDefault();
+        });
+
+        // 捕获全局错误
+        window.addEventListener('error', event => {
+            console.error('[APP] 全局错误:', event.error || event.message);
+            // 不阻止默认错误处理，只记录日志
+        });
+
+        console.log('[APP] 全局错误处理已初始化');
+    }
+
+    /**
+     * 显示错误消息
+     * @param {string} message - 错误消息
+     */
+    showError(message) {
+        // 使用现有的toast或alert显示错误
+        if (this.componentService && this.componentService.showToast) {
+            this.componentService.showToast(message, 'error');
+        } else {
+            console.error('[APP-ERROR]', message);
+        }
     }
 
     // 初始化标题栏控制
@@ -34,7 +70,7 @@ class QixingZhuijuApp {
         // 最小化按钮
         const minimizeBtn = document.getElementById('minimize-btn');
         if (minimizeBtn) {
-            minimizeBtn.addEventListener('click', (e) => {
+            minimizeBtn.addEventListener('click', e => {
                 e.preventDefault();
                 e.stopPropagation();
                 if (window.electron && window.electron.window) {
@@ -46,7 +82,7 @@ class QixingZhuijuApp {
         // 最大化/还原按钮
         const maximizeBtn = document.getElementById('maximize-btn');
         if (maximizeBtn) {
-            maximizeBtn.addEventListener('click', (e) => {
+            maximizeBtn.addEventListener('click', e => {
                 e.preventDefault();
                 e.stopPropagation();
                 if (window.electron && window.electron.window) {
@@ -58,7 +94,7 @@ class QixingZhuijuApp {
         // 关闭按钮
         const closeBtn = document.getElementById('close-btn');
         if (closeBtn) {
-            closeBtn.addEventListener('click', (e) => {
+            closeBtn.addEventListener('click', e => {
                 e.preventDefault();
                 e.stopPropagation();
                 if (window.electron && window.electron.window) {
@@ -107,10 +143,10 @@ class QixingZhuijuApp {
         // 导航菜单事件
         const navItems = document.querySelectorAll('.nav-item a');
         navItems.forEach(item => {
-            item.addEventListener('click', (e) => {
+            item.addEventListener('click', e => {
                 e.preventDefault();
                 // 使用 currentTarget 确保获取的是绑定事件的 <a> 元素，而不是点击的子元素
-                const page = e.currentTarget.dataset.page;
+                const { page } = e.currentTarget.dataset;
                 console.log('点击导航:', page, 'target:', e.target, 'currentTarget:', e.currentTarget);
                 if (page) {
                     this.switchToPage(page);
@@ -129,7 +165,7 @@ class QixingZhuijuApp {
         }
 
         if (searchInput) {
-            searchInput.addEventListener('keypress', (e) => {
+            searchInput.addEventListener('keypress', e => {
                 if (e.key === 'Enter') {
                     this.performSearch();
                 }
@@ -137,7 +173,7 @@ class QixingZhuijuApp {
         }
 
         if (siteSelect) {
-            siteSelect.addEventListener('change', (e) => {
+            siteSelect.addEventListener('change', e => {
                 this.switchSite(e.target.value);
             });
         }
@@ -158,7 +194,7 @@ class QixingZhuijuApp {
         }
 
         if (multiSearchInput) {
-            multiSearchInput.addEventListener('keypress', (e) => {
+            multiSearchInput.addEventListener('keypress', e => {
                 if (e.key === 'Enter') {
                     this.performMultiSearch();
                 }
@@ -230,7 +266,7 @@ class QixingZhuijuApp {
         this.setupUpdateChecker();
 
         // 键盘快捷键
-        document.addEventListener('keydown', (e) => {
+        document.addEventListener('keydown', e => {
             if (e.ctrlKey) {
                 switch (e.key) {
                     case 'f':
@@ -475,14 +511,12 @@ class QixingZhuijuApp {
 
                     this.displaySearchResults(enhancedResponse);
                     this.currentSearchData.totalPages = enhancedResponse.pagecount || 1;
-
                 } catch (detailError) {
                     console.warn('[APP] 获取视频详情失败，使用基本信息:', detailError);
                     // 如果获取详情失败，仍然显示基本信息
                     this.displaySearchResults(response);
                     this.currentSearchData.totalPages = response.pagecount || 1;
                 }
-
             } else {
                 console.warn('[APP] 搜索无结果或响应格式错误:', response);
                 this.displayEmptyResults();
@@ -545,14 +579,12 @@ class QixingZhuijuApp {
 
                     this.displaySearchResults(enhancedResponse);
                     this.currentSearchData.totalPages = response.pagecount || 1;
-
                 } catch (detailError) {
                     console.warn('[APP] 获取视频详情失败，使用基本信息:', detailError);
                     // 如果获取详情失败，仍然显示基本信息
                     this.displaySearchResults(response);
                     this.currentSearchData.totalPages = response.pagecount || 1;
                 }
-
             } else {
                 console.warn('[APP] API响应格式不正确或无数据:', response);
                 this.displayEmptyResults();
@@ -681,7 +713,7 @@ class QixingZhuijuApp {
             const keywordText = item.querySelector('.keyword-text');
             if (keywordText) {
                 keywordText.addEventListener('click', () => {
-                    const keyword = item.dataset.keyword;
+                    const { keyword } = item.dataset;
                     if (keyword) {
                         const multiSearchInput = document.getElementById('multi-search-input');
                         if (multiSearchInput) {
@@ -695,9 +727,9 @@ class QixingZhuijuApp {
             // 清除按钮点击事件
             const removeBtn = item.querySelector('.keyword-remove');
             if (removeBtn) {
-                removeBtn.addEventListener('click', (e) => {
+                removeBtn.addEventListener('click', e => {
                     e.stopPropagation(); // 阻止冒泡，避免触发关键词点击事件
-                    const keyword = item.dataset.keyword;
+                    const { keyword } = item.dataset;
                     if (keyword) {
                         this.removeSearchHistory(keyword);
                     }
@@ -815,9 +847,9 @@ class QixingZhuijuApp {
                                 finalPosterUrl = finalPosterUrl.trim();
                                 if (!finalPosterUrl.startsWith('http')) {
                                     if (finalPosterUrl.startsWith('//')) {
-                                        finalPosterUrl = 'https:' + finalPosterUrl;
+                                        finalPosterUrl = `https:${finalPosterUrl}`;
                                     } else {
-                                        finalPosterUrl = 'https:' + finalPosterUrl;
+                                        finalPosterUrl = `https:${finalPosterUrl}`;
                                     }
                                 }
                             }
@@ -859,7 +891,6 @@ class QixingZhuijuApp {
 
             // 隐藏加载状态
             this.hideMultiLoading();
-
         } catch (error) {
             console.error('[APP] 多站点搜索失败:', error);
             this.componentService.showNotification(`多站点搜索失败: ${error.message}`, 'error');
@@ -903,7 +934,7 @@ class QixingZhuijuApp {
         multiVideoGrid.innerHTML = '';
 
         if (videos && videos.length > 0) {
-            console.log(`[APP] 多站点搜索到视频数量:`, videos.length);
+            console.log('[APP] 多站点搜索到视频数量:', videos.length);
 
             videos.forEach((video, index) => {
                 try {
@@ -954,7 +985,7 @@ class QixingZhuijuApp {
         const pagination = this.componentService.createPagination(
             currentPage,
             totalPages,
-            (page) => this.performSearch(page)
+            page => this.performSearch(page)
         );
 
         paginationContainer.appendChild(pagination);
@@ -1108,19 +1139,19 @@ class QixingZhuijuApp {
             item.replaceWith(newItem);
 
             // 拖拽开始事件
-            newItem.addEventListener('dragstart', (e) => {
+            newItem.addEventListener('dragstart', e => {
                 e.target.classList.add('dragging');
                 // 设置拖拽数据
                 e.dataTransfer.setData('text/plain', e.target.dataset.siteId);
             });
 
             // 拖拽结束事件
-            newItem.addEventListener('dragend', (e) => {
+            newItem.addEventListener('dragend', e => {
                 e.target.classList.remove('dragging');
             });
 
             // 重新绑定原始事件监听器
-            const siteId = newItem.dataset.siteId;
+            const { siteId } = newItem.dataset;
             const site = this.apiService.getSites().find(s => s.id === siteId);
 
             if (site) {
@@ -1142,7 +1173,7 @@ class QixingZhuijuApp {
             siteList.removeEventListener('dragover', listener);
         });
 
-        const dragoverListener = (e) => {
+        const dragoverListener = e => {
             e.preventDefault();
             const afterElement = this.getDragAfterElement(siteList, e.clientY);
             const draggable = document.querySelector('.dragging');
@@ -1162,7 +1193,7 @@ class QixingZhuijuApp {
             siteList.removeEventListener('drop', listener);
         });
 
-        const dropListener = (e) => {
+        const dropListener = e => {
             e.preventDefault();
             // 更新站点顺序
             this.updateSiteOrder(siteList);
@@ -1181,10 +1212,9 @@ class QixingZhuijuApp {
             const offset = y - box.top - box.height / 2;
 
             if (offset < 0 && offset > closest.offset) {
-                return { offset: offset, element: child };
-            } else {
-                return closest;
+                return { offset, element: child };
             }
+            return closest;
         }, { offset: Number.NEGATIVE_INFINITY }).element;
     }
 
@@ -1202,7 +1232,7 @@ class QixingZhuijuApp {
 
         // 按照新的顺序构建站点列表
         siteItems.forEach(item => {
-            const siteId = item.dataset.siteId;
+            const { siteId } = item.dataset;
             if (siteMap[siteId]) {
                 newOrder.push(siteMap[siteId]);
             }
@@ -1237,11 +1267,6 @@ class QixingZhuijuApp {
         if (loading) {
             loading.classList.add('hidden');
         }
-    }
-
-    // 显示错误信息
-    showError(message) {
-        this.componentService.showNotification(message, 'error');
     }
 
     // 临时方法：添加测试播放历史
@@ -1299,7 +1324,7 @@ class QixingZhuijuApp {
         // 记录上次剪切板内容，避免重复检测
         this.lastClipboardContent = '';
         // 监听Ctrl+V键盘事件
-        document.addEventListener('keydown', (e) => {
+        document.addEventListener('keydown', e => {
             if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.code === 'KeyV')) {
                 console.log('[APP] 检测到Ctrl+V按键，开始检测剪切板...');
                 setTimeout(() => {
@@ -1321,7 +1346,7 @@ class QixingZhuijuApp {
 
         // 监听播放器窗口发送的集数变化事件
         if (window.electron && window.electron.ipcRenderer) {
-            window.electron.ipcRenderer.on('episode-changed', (updateData) => {
+            window.electron.ipcRenderer.on('episode-changed', updateData => {
                 console.log('[APP] 收到播放器集数变化通知:', updateData);
                 this.handlePlayerEpisodeChanged(updateData);
             });
@@ -1341,7 +1366,6 @@ class QixingZhuijuApp {
             if (this.currentPage === 'detail' &&
                 this.componentService.currentVideoData &&
                 this.componentService.currentVideoData.vod_id === updateData.videoId) {
-
                 console.log('[APP] 当前正在查看此视频详情页，同步更新集数显示');
 
                 // 通知组件服务更新当前集数显示
@@ -1453,7 +1477,6 @@ class QixingZhuijuApp {
             if (this.currentPage === 'detail' &&
                 this.componentService.currentVideoData &&
                 this.componentService.currentVideoData.vod_id === shareData.videoId) {
-
                 console.log('[APP] 当前已在查看此剧集，无需跳转');
                 this.componentService.showNotification('你已经在观看这个剧集了！', 'info');
                 return;
@@ -1569,10 +1592,9 @@ class QixingZhuijuApp {
             setTimeout(() => {
                 this.componentService.showNotification(`已跳转到《${shareData.videoName}》`, 'success');
             }, 500);
-
         } catch (error) {
             console.error('[APP] 跳转到分享视频失败:', error);
-            this.componentService.showNotification('跳转失败：' + error.message, 'error');
+            this.componentService.showNotification(`跳转失败：${error.message}`, 'error');
         }
     }
 
@@ -1597,7 +1619,7 @@ class QixingZhuijuApp {
             } catch (error) {
                 console.error('[APP] 添加分享站点失败:', error);
                 // 如果API服务添加失败，抛出错误
-                throw new Error('添加分享站点失败: ' + error.message);
+                throw new Error(`添加分享站点失败: ${error.message}`);
             }
         } else {
             console.log('[APP] 分享的站点已存在:', existingSite);
@@ -1708,7 +1730,6 @@ class QixingZhuijuApp {
 
                 this.componentService.showNotification('您使用的已是最新版本', 'success');
             }
-
         } catch (error) {
             console.error('[APP] 检查更新失败:', error);
 
@@ -1720,7 +1741,7 @@ class QixingZhuijuApp {
                 updateMessage.textContent = `检查更新失败: ${error.message}`;
             }
 
-            this.componentService.showNotification('检查更新失败: ' + error.message, 'error');
+            this.componentService.showNotification(`检查更新失败: ${error.message}`, 'error');
         } finally {
             // 恢复按钮状态
             if (checkUpdateBtn) {
@@ -1744,7 +1765,7 @@ class QixingZhuijuApp {
 
         // 逐位比较
         for (let i = 0; i < maxLength; i++) {
-            if (v1[i] > v2[i]) return true;  // version1 > version2
+            if (v1[i] > v2[i]) return true; // version1 > version2
             if (v1[i] < v2[i]) return false; // version1 < version2
         }
 
@@ -1763,11 +1784,11 @@ class QixingZhuijuApp {
                 if (result && result.success) {
                     this.componentService.showNotification(`已打开${linkName}`, 'success');
                 } else {
-                    this.componentService.showNotification(`打开${linkName}失败: ` + (result?.error || '未知错误'), 'error');
+                    this.componentService.showNotification(`打开${linkName}失败: ${result?.error || '未知错误'}`, 'error');
                 }
             } catch (error) {
                 console.error(`[APP] 打开${linkName}异常:`, error);
-                this.componentService.showNotification(`打开${linkName}异常: ` + error.message, 'error');
+                this.componentService.showNotification(`打开${linkName}异常: ${error.message}`, 'error');
             }
         } else {
             console.warn('[APP] electronAPI不可用');
