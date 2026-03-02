@@ -221,7 +221,6 @@ class QixingZhuijuApp {
         // 设置页面事件
         const addSiteBtn = document.getElementById('add-site-btn');
         const clearHistoryBtn = document.getElementById('clear-history-btn');
-        const manageRoutesBtn = document.getElementById('manage-routes-btn');
         const exportDataBtn = document.getElementById('export-data-btn');
         const importDataBtn = document.getElementById('import-data-btn');
         const importFileInput = document.getElementById('import-file-input');
@@ -232,15 +231,48 @@ class QixingZhuijuApp {
             });
         }
 
-        if (clearHistoryBtn) {
-            clearHistoryBtn.addEventListener('click', () => {
-                this.confirmClearHistory();
+        // 批量操作事件绑定
+        const selectAllSites = document.getElementById('select-all-sites');
+        const batchDeleteSitesBtn = document.getElementById('batch-delete-sites-btn');
+
+        if (selectAllSites) {
+            selectAllSites.addEventListener('change', (e) => {
+                this.componentService.toggleSelectAllSites(e.target.checked);
             });
         }
 
-        if (manageRoutesBtn) {
-            manageRoutesBtn.addEventListener('click', () => {
-                this.componentService.showRouteAliasModal();
+        if (batchDeleteSitesBtn) {
+            batchDeleteSitesBtn.addEventListener('click', () => {
+                this.componentService.confirmBatchDeleteSites();
+            });
+        }
+
+        // 线路别名批量操作事件绑定
+        const selectAllAliases = document.getElementById('select-all-aliases');
+        const batchDeleteAliasesBtn = document.getElementById('batch-delete-aliases-btn');
+        const addAliasBtn = document.getElementById('add-alias-btn');
+
+        if (selectAllAliases) {
+            selectAllAliases.addEventListener('change', (e) => {
+                this.componentService.toggleSelectAllAliases(e.target.checked);
+            });
+        }
+
+        if (batchDeleteAliasesBtn) {
+            batchDeleteAliasesBtn.addEventListener('click', () => {
+                this.componentService.confirmBatchDeleteAliasesFromSettings();
+            });
+        }
+
+        if (addAliasBtn) {
+            addAliasBtn.addEventListener('click', () => {
+                this.componentService.showAddAliasModal();
+            });
+        }
+
+        if (clearHistoryBtn) {
+            clearHistoryBtn.addEventListener('click', () => {
+                this.confirmClearHistory();
             });
         }
 
@@ -253,6 +285,15 @@ class QixingZhuijuApp {
         if (importDataBtn) {
             importDataBtn.addEventListener('click', () => {
                 this.componentService.showImportDataModal();
+            });
+        }
+
+        // Gitee仓库按钮事件
+        const giteeRepoBtn = document.getElementById('gitee-repo-btn');
+        if (giteeRepoBtn) {
+            giteeRepoBtn.addEventListener('click', async e => {
+                e.preventDefault();
+                await this.openExternalLink('https://gitee.com/fjcq/qixing-zhuiju', 'Gitee仓库');
             });
         }
 
@@ -401,11 +442,19 @@ class QixingZhuijuApp {
 
     // 加载站点选择器
     async loadSiteSelector() {
+        console.log('[APP] ========== loadSiteSelector 开始 ==========');
         const siteSelect = document.getElementById('site-select');
-        if (!siteSelect) return;
+        if (!siteSelect) {
+            console.log('[APP] 未找到 site-select 元素');
+            return;
+        }
 
         const sites = this.apiService.getSites();
         const activeSite = this.apiService.getActiveSite();
+        
+        console.log('[APP] loadSiteSelector - 站点数量:', sites.length);
+        console.log('[APP] loadSiteSelector - 站点列表:', sites.map(s => ({ id: s.id, name: s.name, active: s.active })));
+        console.log('[APP] loadSiteSelector - 活跃站点:', activeSite ? activeSite.name : '无');
 
         siteSelect.innerHTML = '';
         sites.forEach(site => {
@@ -415,6 +464,7 @@ class QixingZhuijuApp {
             option.selected = site.id === activeSite?.id;
             siteSelect.appendChild(option);
         });
+        console.log('[APP] ========== loadSiteSelector 完成 ==========');
     }
 
     // 加载分类选择器
@@ -1030,23 +1080,43 @@ class QixingZhuijuApp {
 
     // 加载设置页面
     loadSettings() {
+        console.log('[APP] ========== loadSettings 开始 ==========');
+        
         // 加载站点列表
         const siteList = document.getElementById('site-list');
+        console.log('[APP] loadSettings - siteList 元素:', siteList);
+        console.log('[APP] loadSettings - siteList 是否存在:', !!siteList);
+        
         if (siteList) {
             const sites = this.apiService.getSites();
+            console.log('[APP] loadSettings - 从 apiService 获取站点列表，数量:', sites.length);
+            console.log('[APP] loadSettings - 站点列表:', sites.map(s => ({ id: s.id, name: s.name, active: s.active })));
+            
+            // 验证 localStorage 中的数据
+            const localStorageSites = JSON.parse(localStorage.getItem('video_sites') || '[]');
+            console.log('[APP] loadSettings - localStorage 中的站点数量:', localStorageSites.length);
+            
+            // 清空站点列表
+            console.log('[APP] loadSettings - 清空 siteList.innerHTML');
             siteList.innerHTML = '';
 
             if (sites.length > 0) {
-                sites.forEach(site => {
+                console.log('[APP] loadSettings - 开始创建站点元素...');
+                sites.forEach((site, index) => {
+                    console.log(`[APP] loadSettings - 创建站点元素 [${index}]:`, site.name);
                     const siteElement = this.componentService.createSiteItem(site);
+                    console.log(`[APP] loadSettings - 站点元素创建完成:`, siteElement);
                     // 设置站点项为可拖拽
                     siteElement.draggable = true;
                     siteList.appendChild(siteElement);
+                    console.log(`[APP] loadSettings - 站点元素已添加到列表`);
                 });
 
                 // 添加拖拽事件监听器
                 this.setupDragAndDrop(siteList);
+                console.log('[APP] loadSettings - 站点列表渲染完成，子元素数量:', siteList.children.length);
             } else {
+                console.log('[APP] loadSettings - 站点列表为空，显示空状态');
                 siteList.innerHTML = `
                     <div class="empty-state">
                         <i>⚙️</i>
@@ -1055,7 +1125,12 @@ class QixingZhuijuApp {
                     </div>
                 `;
             }
+        } else {
+            console.error('[APP] loadSettings - 未找到 site-list 元素！');
         }
+        console.log('[APP] ========== loadSettings 完成 ==========');
+        
+        // 继续加载其他设置...
 
         // 加载线路别名列表
         const routeAliasesList = document.getElementById('route-aliases-list');
@@ -1232,6 +1307,8 @@ class QixingZhuijuApp {
         const sites = this.apiService.getSites();
         const newOrder = [];
 
+        console.log('[APP] 更新站点顺序，DOM元素数量:', siteItems.length, '实际站点数量:', sites.length);
+
         // 创建站点ID到站点对象的映射
         const siteMap = {};
         sites.forEach(site => {
@@ -1243,8 +1320,19 @@ class QixingZhuijuApp {
             const { siteId } = item.dataset;
             if (siteMap[siteId]) {
                 newOrder.push(siteMap[siteId]);
+                // 从 siteMap 中移除已添加的站点
+                delete siteMap[siteId];
             }
         });
+
+        // 检查是否有遗漏的站点（可能在DOM中不存在但存在于数据中）
+        const remainingSites = Object.values(siteMap);
+        if (remainingSites.length > 0) {
+            console.warn('[APP] 发现未在DOM中的站点，将追加到列表末尾:', remainingSites.map(s => s.name));
+            newOrder.push(...remainingSites);
+        }
+
+        console.log('[APP] 保存站点顺序，站点数量:', newOrder.length);
 
         // 保存新的站点顺序
         this.apiService.saveSites(newOrder);

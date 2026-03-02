@@ -216,14 +216,35 @@
                             <div class="settings-section">
                                 <h3>站点管理</h3>
                                 <div class="site-list" id="site-list"></div>
-                                <button id="add-site-btn" class="btn-primary">添加站点</button>
+                                <div class="site-actions-bar">
+                                    <div class="batch-actions-left">
+                                        <input type="checkbox" id="select-all-sites">
+                                        <label for="select-all-sites">全选</label>
+                                        <span class="selected-info">已选择 <span id="selected-count">0</span> 个站点</span>
+                                    </div>
+                                    <div class="batch-actions-right">
+                                        <button id="batch-delete-sites-btn" class="btn-delete">批量删除</button>
+                                        <button id="add-site-btn" class="btn-primary">添加站点</button>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="settings-section">
-                                <h3>线路设置</h3>
+                                <h3>线路别名</h3>
                                 <p class="settings-description">为播放线路设置自定义别名，让线路名称更易理解</p>
                                 <div class="route-aliases-list" id="route-aliases-list"></div>
-                                <button id="manage-routes-btn" class="btn-primary">管理线路别名</button>
+                                <div class="alias-actions-bar" id="alias-actions-bar">
+                                    <div class="alias-actions-left">
+                                        <input type="checkbox" id="select-all-aliases">
+                                        <label for="select-all-aliases">全选</label>
+                                        <span class="selected-info">已选择 <span id="alias-selected-count">0</span>
+                                            个别名</span>
+                                    </div>
+                                    <div class="alias-actions-right">
+                                        <button id="batch-delete-aliases-btn" class="btn-delete">批量删除</button>
+                                        <button id="add-alias-btn" class="btn-primary">添加别名</button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -241,6 +262,14 @@
                                 <div class="about-info">
                                     <p class="version">版本 <span id="about-version">v1.2.4</span></p>
                                     <p class="description">基于 Electron 的桌面影视播放应用</p>
+                                    <a href="https://gitee.com/fjcq/qixing-zhuiju" target="_blank"
+                                        rel="noopener noreferrer" class="gitee-btn" id="gitee-repo-btn">
+                                        <svg class="gitee-icon" viewBox="0 0 24 24" fill="currentColor">
+                                            <path
+                                                d="M11.984 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.016 0zm6.09 5.333c.328 0 .593.266.592.593v1.482a.594.594 0 0 1-.593.592H9.777c-.982 0-1.778.796-1.778 1.778v5.63c0 .327.266.592.593.592h5.63c.327 0 .593-.265.593-.593v-1.481a.593.593 0 0 0-.593-.593h-3.556a.593.593 0 0 1-.593-.593V9.778c0-.327.266-.593.593-.593h5.333c.327 0 .593.266.593.593v6.815a2.37 2.37 0 0 1-2.37 2.37H6.518a.593.593 0 0 1-.593-.593V9.778a4.444 4.444 0 0 1 4.444-4.445h7.705z" />
+                                        </svg>
+                                        <span>访问 Gitee 仓库</span>
+                                    </a>
                                 </div>
                             </div>
 

@@ -526,11 +526,11 @@ body .player-container .player-overlay.show .top-right-controls {
     transform: translate(-50%, -50%);
     text-align: center;
     z-index: 150;
-    background: var(--glass-surface-elevated);
+    background: transparent;
     padding: var(--spacing-xl);
     border-radius: var(--radius-lg);
-    border: 1px solid var(--glass-border-default);
-    box-shadow: var(--shadow-xl);
+    border: none;
+    box-shadow: none;
 }
 
 .loading-spinner {
@@ -712,7 +712,7 @@ body .player-container .player-overlay.show .top-right-controls {
     background: var(--color-surface-dark);
     display: flex;
     flex-direction: column;
-    z-index: 1;
+    z-index: 9999999;
 }
 
 #webpage-player-container .toolbar {
@@ -990,7 +990,7 @@ body.fullscreen-mode .player-loading,
     right: 0 !important;
     bottom: 0 !important;
     z-index: 9999 !important;
-    background: rgba(0, 0, 0, 0.8) !important;
+    background: transparent !important;
 }
 
 /* 全屏模式下的错误状态适配 */

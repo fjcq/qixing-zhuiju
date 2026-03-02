@@ -44,10 +44,13 @@ class ComponentService {
         const statusText = site.active ? '当前站点' : '未激活';
 
         siteItem.innerHTML = `
+            <div class="site-checkbox-wrapper">
+                <input type="checkbox" class="site-checkbox" data-site-id="${site.id}">
+            </div>
             <div class="site-info">
                 <div class="site-header">
                     <h4 class="site-name">${site.name}</h4>
-                    <span class="site-type">${site.type ? site.type.toUpperCase() : 'UNKNOWN'}</span>
+                    <span class="site-type">${site.type && typeof site.type === 'string' ? site.type.toUpperCase() : 'JSON'}</span>
                     <span class="site-status ${statusClass}">${statusText}</span>
                 </div>
                 <div class="site-details">
@@ -77,11 +80,15 @@ class ComponentService {
         const editBtn = siteItem.querySelector('.btn-edit');
         const activateBtn = siteItem.querySelector('.btn-activate');
         const deleteBtn = siteItem.querySelector('.btn-delete');
+        const checkbox = siteItem.querySelector('.site-checkbox');
 
         testBtn?.addEventListener('click', () => this.testSiteConnection(site));
         editBtn?.addEventListener('click', () => this.showEditSiteModal(site));
         activateBtn?.addEventListener('click', () => this.activateSite(site.id));
         deleteBtn?.addEventListener('click', () => this.confirmDeleteSite(site));
+        
+        // 复选框事件
+        checkbox?.addEventListener('change', () => this.updateBatchActionsBar());
 
         return siteItem;
     }
@@ -149,6 +156,11 @@ class ComponentService {
                 if (window.app) {
                     window.app.loadSettings();
                     window.app.loadSiteSelector();
+                    window.app.loadCategorySelector();
+                    // 如果当前在主页，重新加载推荐视频
+                    if (window.app.currentPage === 'home') {
+                        window.app.loadRecommendedVideos();
+                    }
                 }
             } catch (error) {
                 this.showNotification(`添加失败：${error.message}`, 'error');
@@ -219,6 +231,12 @@ class ComponentService {
                 if (window.app) {
                     window.app.loadSettings();
                     window.app.loadSiteSelector();
+                    window.app.loadCategorySelector();
+                    // 如果编辑的是当前激活站点，重新加载主页内容
+                    const activeSite = this.apiService.getActiveSite();
+                    if (activeSite && activeSite.id === site.id && window.app.currentPage === 'home') {
+                        window.app.loadRecommendedVideos();
+                    }
                 }
             } catch (error) {
                 this.showNotification(`更新失败：${error.message}`, 'error');
@@ -304,7 +322,7 @@ class ComponentService {
                             <h4>站点信息：</h4>
                             <p><strong>名称：</strong>${site.name}</p>
                             <p><strong>地址：</strong>${site.url}</p>
-                            <p><strong>类型：</strong>${site.type.toUpperCase()}</p>
+                            <p><strong>类型：</strong>${site.type && typeof site.type === 'string' ? site.type.toUpperCase() : 'JSON'}</p>
                         </div>
                         <div class="test-details">
                             <h4>测试详情：</h4>
@@ -333,6 +351,10 @@ class ComponentService {
                 window.app.loadSettings();
                 window.app.loadSiteSelector();
                 window.app.loadCategorySelector();
+                // 切换激活站点后重新加载主页内容
+                if (window.app.currentPage === 'home') {
+                    window.app.loadRecommendedVideos();
+                }
             }
         } catch (error) {
             this.showNotification(`设置失败：${error.message}`, 'error');
@@ -341,13 +363,36 @@ class ComponentService {
 
     // 确认删除站点
     confirmDeleteSite(site) {
+        // 获取当前站点信息
+        const sites = this.apiService.getSites();
+        const activeSite = this.apiService.getActiveSite();
+        const isDeletingActiveSite = activeSite && activeSite.id === site.id;
+        const remainingCount = sites.length - 1;
+
+        // 构建警告信息
+        let warningMessage = '';
+        if (isDeletingActiveSite) {
+            warningMessage = '<p class="warning-text">⚠️ 您正在删除当前默认站点，删除后将自动切换到其他站点。</p>';
+        }
+        if (remainingCount === 0) {
+            warningMessage = '<p class="warning-text">⚠️ 这是最后一个站点，删除后将没有可用站点！</p>';
+        }
+
         const content = `
             <h3>删除确认</h3>
-            <p>确定要删除站点 "<strong>${site.name}</strong>" 吗？</p>
-            <p>此操作不可撤销。</p>
+            <div class="delete-confirm-content">
+                <p>确定要删除站点 "<strong class="site-name-highlight">${site.name}</strong>" 吗？</p>
+                <div class="site-info-summary">
+                    <p><strong>站点地址：</strong>${site.url || site.api || '无URL'}</p>
+                    <p><strong>API类型：</strong>${site.type && typeof site.type === 'string' ? site.type.toUpperCase() : 'JSON'}</p>
+                    <p><strong>剩余站点：</strong>${remainingCount} 个</p>
+                </div>
+                ${warningMessage}
+                <p class="info-text">💡 系统会自动备份站点配置，如需恢复请联系技术支持。</p>
+            </div>
             <div class="form-actions">
                 <button type="button" class="btn-secondary" id="cancel-delete-btn">取消</button>
-                <button type="button" class="btn-delete" id="confirm-delete-btn">删除</button>
+                <button type="button" class="btn-delete" id="confirm-delete-btn">确认删除</button>
             </div>
         `;
 
@@ -359,16 +404,174 @@ class ComponentService {
         cancelBtn.addEventListener('click', () => this.hideModal());
         confirmBtn.addEventListener('click', () => {
             try {
-                this.apiService.deleteSite(site.id);
-                this.hideModal();
-                this.showNotification('站点已删除', 'success');
-                // 刷新相关界面
-                if (window.app) {
-                    window.app.loadSettings();
-                    window.app.loadSiteSelector();
+                console.log('[COMPONENTS] 用户确认删除站点:', site.name, 'ID:', site.id);
+
+                // 调用API服务删除站点
+                const result = this.apiService.deleteSite(site.id);
+
+                if (result && result.success) {
+                    this.hideModal();
+                    this.showNotification(`站点 "${site.name}" 已成功删除`, 'success');
+                    console.log('[COMPONENTS] 站点删除成功，剩余站点数:', result.remainingCount);
+
+                    // 刷新相关界面
+                    if (window.app) {
+                        window.app.loadSettings();
+                        window.app.loadSiteSelector();
+                        window.app.loadCategorySelector();
+                        // 如果删除的是当前激活站点或当前在主页，重新加载主页内容
+                        if (isDeletingActiveSite || window.app.currentPage === 'home') {
+                            window.app.loadRecommendedVideos();
+                        }
+                    }
+                } else {
+                    throw new Error('删除操作返回异常结果');
                 }
             } catch (error) {
+                console.error('[COMPONENTS] 删除站点失败:', error);
                 this.showNotification(`删除失败：${error.message}`, 'error');
+                // 刷新设置页面以恢复正确状态
+                if (window.app) {
+                    window.app.loadSettings();
+                }
+            }
+        });
+    }
+
+    // 更新批量操作栏状态
+    updateBatchActionsBar() {
+        const siteList = document.getElementById('site-list');
+        const selectedCount = document.getElementById('selected-count');
+        const selectAllCheckbox = document.getElementById('select-all-sites');
+        const batchDeleteBtn = document.getElementById('batch-delete-sites-btn');
+        
+        if (!siteList) return;
+
+        const checkboxes = siteList.querySelectorAll('.site-checkbox');
+        const checkedBoxes = siteList.querySelectorAll('.site-checkbox:checked');
+        const count = checkedBoxes.length;
+
+        // 更新选中数量显示
+        if (selectedCount) {
+            selectedCount.textContent = count;
+        }
+
+        // 更新批量删除按钮状态
+        if (batchDeleteBtn) {
+            batchDeleteBtn.disabled = count === 0;
+        }
+
+        // 更新全选复选框状态
+        if (selectAllCheckbox) {
+            if (count === 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            } else if (count === checkboxes.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            }
+        }
+    }
+
+    // 全选/取消全选站点
+    toggleSelectAllSites(checked) {
+        const siteList = document.getElementById('site-list');
+        if (!siteList) return;
+
+        const checkboxes = siteList.querySelectorAll('.site-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = checked;
+        });
+
+        this.updateBatchActionsBar();
+    }
+
+    // 批量删除站点
+    confirmBatchDeleteSites() {
+        const siteList = document.getElementById('site-list');
+        if (!siteList) return;
+
+        const checkedBoxes = siteList.querySelectorAll('.site-checkbox:checked');
+        if (checkedBoxes.length === 0) {
+            this.showNotification('请先选择要删除的站点', 'warning');
+            return;
+        }
+
+        const siteIds = Array.from(checkedBoxes).map(cb => cb.dataset.siteId);
+        const sites = this.apiService.getSites();
+        const selectedSites = sites.filter(s => siteIds.includes(s.id));
+
+        // 检查是否包含当前活跃站点
+        const hasActiveSite = selectedSites.some(s => s.active);
+
+        const warningMessage = hasActiveSite 
+            ? `<div class="warning-message">
+                   <p>⚠️ 选中的站点中包含当前默认站点，删除后需要重新设置默认站点。</p>
+               </div>`
+            : '';
+
+        const content = `
+            <h3>批量删除确认</h3>
+            <div class="delete-confirm-content">
+                <p>确定要删除选中的 <strong class="highlight">${selectedSites.length}</strong> 个站点吗？</p>
+                <div class="selected-sites-preview">
+                    <h4>将删除以下站点：</h4>
+                    <div class="sites-preview-list">
+                        ${selectedSites.map(s => `
+                            <div class="preview-item">
+                                <span class="preview-name">${s.name}</span>
+                                <span class="preview-type">${s.type && typeof s.type === 'string' ? s.type.toUpperCase() : 'JSON'}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                ${warningMessage}
+                <p class="info-text">💡 系统会自动备份站点配置，如需恢复请联系技术支持。</p>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" id="cancel-batch-delete-btn">取消</button>
+                <button type="button" class="btn-delete" id="confirm-batch-delete-btn">确认删除 (${selectedSites.length}个)</button>
+            </div>
+        `;
+
+        this.showModal(content);
+
+        document.getElementById('cancel-batch-delete-btn').addEventListener('click', () => this.hideModal());
+        document.getElementById('confirm-batch-delete-btn').addEventListener('click', () => {
+            try {
+                console.log('[COMPONENTS] 批量删除站点:', siteIds);
+
+                // 使用统一的批量删除接口
+                const result = this.apiService.deleteSites(siteIds);
+
+                if (result && result.success) {
+                    this.hideModal();
+                    this.showNotification(`成功删除 ${result.deletedCount} 个站点`, 'success');
+                    console.log('[COMPONENTS] 批量删除成功，剩余站点数:', result.remainingCount);
+
+                    // 刷新界面
+                    if (window.app) {
+                        window.app.loadSettings();
+                        window.app.loadSiteSelector();
+                        window.app.loadCategorySelector();
+                        // 如果删除了活跃站点或在主页，重新加载主页内容
+                        if (result.hasActiveSiteDeleted || window.app.currentPage === 'home') {
+                            window.app.loadRecommendedVideos();
+                        }
+                    }
+                } else {
+                    throw new Error('批量删除操作返回异常结果');
+                }
+            } catch (error) {
+                console.error('[COMPONENTS] 批量删除失败:', error);
+                this.showNotification(`批量删除失败：${error.message}`, 'error');
+                // 刷新设置页面以恢复正确状态
+                if (window.app) {
+                    window.app.loadSettings();
+                }
             }
         });
     }
@@ -1555,6 +1758,9 @@ class ComponentService {
                     ${aliasEntries.length > 0 ?
         aliasEntries.map(([routeName, alias]) => `
                             <div class="route-alias-edit-item" data-route="${routeName}">
+                                <div class="alias-checkbox-wrapper">
+                                    <input type="checkbox" class="alias-checkbox" data-route="${routeName}">
+                                </div>
                                 <div class="alias-edit-info">
                                     <div class="alias-original-name">原名称: ${routeName}</div>
                                     <div class="alias-input-group">
@@ -1574,8 +1780,16 @@ class ComponentService {
         '<div class="empty-alias-state"><p>暂无线路别名设置</p><p>在视频播放页面会自动为遇到的线路创建别名设置</p></div>'
 }
                 </div>
-                <div class="form-actions">
-                    <button type="button" class="btn-secondary" id="close-alias-modal">关闭</button>
+                <div class="alias-actions-bar">
+                    <div class="alias-actions-left">
+                        <input type="checkbox" id="select-all-aliases">
+                        <label for="select-all-aliases">全选</label>
+                        <span class="selected-info">已选择 <span id="alias-selected-count">0</span> 个别名</span>
+                    </div>
+                    <div class="alias-actions-right">
+                        <button id="batch-delete-aliases-btn" class="btn-delete">批量删除</button>
+                        <button type="button" class="btn-secondary" id="close-alias-modal">关闭</button>
+                    </div>
                 </div>
             </div>
         `;
@@ -1591,6 +1805,9 @@ class ComponentService {
         const closeBtn = document.getElementById('close-alias-modal');
         const saveButtons = document.querySelectorAll('.btn-save-alias');
         const removeButtons = document.querySelectorAll('.btn-remove-alias');
+        const selectAllAliases = document.getElementById('select-all-aliases');
+        const batchDeleteAliasesBtn = document.getElementById('batch-delete-aliases-btn');
+        const aliasCheckboxes = document.querySelectorAll('.alias-checkbox');
 
         closeBtn?.addEventListener('click', () => this.hideModal());
 
@@ -1615,6 +1832,123 @@ class ComponentService {
                 this.confirmRemoveRouteAlias(routeName);
             });
         });
+
+        // 批量操作事件
+        selectAllAliases?.addEventListener('change', (e) => {
+            const checked = e.target.checked;
+            aliasCheckboxes.forEach(checkbox => {
+                checkbox.checked = checked;
+            });
+            this.updateAliasBatchActionsBar();
+        });
+
+        aliasCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', () => this.updateAliasBatchActionsBar());
+        });
+
+        batchDeleteAliasesBtn?.addEventListener('click', () => this.confirmBatchDeleteAliases());
+    }
+
+    // 更新别名批量操作栏状态
+    updateAliasBatchActionsBar() {
+        const aliasList = document.querySelector('.route-alias-list-modal');
+        const selectedCount = document.getElementById('alias-selected-count');
+        const selectAllCheckbox = document.getElementById('select-all-aliases');
+        const batchDeleteBtn = document.getElementById('batch-delete-aliases-btn');
+        
+        if (!aliasList) return;
+
+        const checkboxes = aliasList.querySelectorAll('.alias-checkbox');
+        const checkedBoxes = aliasList.querySelectorAll('.alias-checkbox:checked');
+        const count = checkedBoxes.length;
+
+        // 更新选中数量显示
+        if (selectedCount) {
+            selectedCount.textContent = count;
+        }
+
+        // 更新批量删除按钮状态
+        if (batchDeleteBtn) {
+            batchDeleteBtn.disabled = count === 0;
+        }
+
+        // 更新全选复选框状态
+        if (selectAllCheckbox) {
+            if (count === 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            } else if (count === checkboxes.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            }
+        }
+    }
+
+    // 批量删除线路别名
+    confirmBatchDeleteAliases() {
+        const aliasList = document.querySelector('.route-alias-list-modal');
+        if (!aliasList) return;
+
+        const checkedBoxes = aliasList.querySelectorAll('.alias-checkbox:checked');
+        if (checkedBoxes.length === 0) {
+            this.showNotification('请先选择要删除的别名', 'warning');
+            return;
+        }
+
+        const routeNames = Array.from(checkedBoxes).map(cb => cb.dataset.route);
+
+        const content = `
+            <h3>批量删除确认</h3>
+            <div class="delete-confirm-content">
+                <p>确定要删除选中的 <strong class="highlight">${routeNames.length}</strong> 个线路别名吗？</p>
+                <div class="selected-sites-preview">
+                    <h4>将删除以下线路别名：</h4>
+                    <div class="sites-preview-list">
+                        ${routeNames.map(name => `
+                            <div class="preview-item">
+                                <span class="preview-name">${name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                <p class="info-text">💡 删除后将显示原始线路名称。</p>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" id="cancel-batch-delete-aliases-btn">取消</button>
+                <button type="button" class="btn-delete" id="confirm-batch-delete-aliases-btn">确认删除 (${routeNames.length}个)</button>
+            </div>
+        `;
+
+        this.showModal(content);
+
+        document.getElementById('cancel-batch-delete-aliases-btn').addEventListener('click', () => {
+            this.hideModal();
+            // 重新显示别名管理界面
+            setTimeout(() => this.showRouteAliasModal(), 100);
+        });
+
+        document.getElementById('confirm-batch-delete-aliases-btn').addEventListener('click', () => {
+            try {
+                console.log('[COMPONENTS] 批量删除线路别名:', routeNames);
+
+                // 执行批量删除
+                routeNames.forEach(routeName => {
+                    this.storageService.removeRouteAlias(routeName);
+                });
+
+                this.hideModal();
+                this.showNotification(`成功删除 ${routeNames.length} 个线路别名`, 'success');
+
+                // 重新显示别名管理界面
+                setTimeout(() => this.showRouteAliasModal(), 100);
+            } catch (error) {
+                console.error('[COMPONENTS] 批量删除线路别名失败:', error);
+                this.showNotification(`批量删除失败：${error.message}`, 'error');
+            }
+        });
     }
 
     // 确认删除线路别名
@@ -1634,11 +1968,7 @@ class ComponentService {
         const cancelBtn = document.getElementById('cancel-remove-alias');
         const confirmBtn = document.getElementById('confirm-remove-alias');
 
-        cancelBtn.addEventListener('click', () => {
-            this.hideModal();
-            // 重新显示别名管理界面
-            setTimeout(() => this.showRouteAliasModal(), 100);
-        });
+        cancelBtn.addEventListener('click', () => this.hideModal());
 
         confirmBtn.addEventListener('click', () => {
             this.storageService.removeRouteAlias(routeName);
@@ -1648,8 +1978,6 @@ class ComponentService {
             if (window.app) {
                 window.app.loadSettings();
             }
-            // 重新显示别名管理界面
-            setTimeout(() => this.showRouteAliasModal(), 100);
         });
     }
 
@@ -1659,7 +1987,17 @@ class ComponentService {
         item.className = 'route-alias-item';
         item.dataset.route = routeName;
 
-        // 使用DOM API创建元素，确保能正确获取按钮元素
+        // 复选框
+        const checkboxWrapper = document.createElement('div');
+        checkboxWrapper.className = 'alias-checkbox-wrapper';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'alias-checkbox';
+        checkbox.dataset.route = routeName;
+        checkboxWrapper.appendChild(checkbox);
+
+        // 信息区域
         const infoDiv = document.createElement('div');
         infoDiv.className = 'route-alias-info';
 
@@ -1673,6 +2011,7 @@ class ComponentService {
         displayDiv.textContent = `显示为: ${alias}`;
         infoDiv.appendChild(displayDiv);
 
+        // 操作按钮
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'route-alias-actions';
 
@@ -1688,10 +2027,13 @@ class ComponentService {
         removeBtn.textContent = '删除';
         actionsDiv.appendChild(removeBtn);
 
+        item.appendChild(checkboxWrapper);
         item.appendChild(infoDiv);
         item.appendChild(actionsDiv);
 
         // 添加事件监听
+        checkbox.addEventListener('change', () => this.updateRouteAliasBatchActionsBar());
+        
         editBtn.addEventListener('click', () => {
             this.editRouteAlias(routeName, alias);
         });
@@ -1701,6 +2043,167 @@ class ComponentService {
         });
 
         return item;
+    }
+
+    // 更新线路别名批量操作栏状态
+    updateRouteAliasBatchActionsBar() {
+        const aliasList = document.getElementById('route-aliases-list');
+        const selectedCount = document.getElementById('alias-selected-count');
+        const selectAllCheckbox = document.getElementById('select-all-aliases');
+        const batchDeleteBtn = document.getElementById('batch-delete-aliases-btn');
+        
+        if (!aliasList) return;
+
+        const checkboxes = aliasList.querySelectorAll('.alias-checkbox');
+        const checkedBoxes = aliasList.querySelectorAll('.alias-checkbox:checked');
+        const count = checkedBoxes.length;
+
+        // 更新选中数量显示
+        if (selectedCount) {
+            selectedCount.textContent = count;
+        }
+
+        // 更新批量删除按钮状态
+        if (batchDeleteBtn) {
+            batchDeleteBtn.disabled = count === 0;
+        }
+
+        // 更新全选复选框状态
+        if (selectAllCheckbox) {
+            if (count === 0) {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = false;
+            } else if (count === checkboxes.length) {
+                selectAllCheckbox.checked = true;
+                selectAllCheckbox.indeterminate = false;
+            } else {
+                selectAllCheckbox.checked = false;
+                selectAllCheckbox.indeterminate = true;
+            }
+        }
+    }
+
+    // 全选/取消全选线路别名
+    toggleSelectAllAliases(checked) {
+        const aliasList = document.getElementById('route-aliases-list');
+        if (!aliasList) return;
+
+        const checkboxes = aliasList.querySelectorAll('.alias-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = checked;
+        });
+
+        this.updateRouteAliasBatchActionsBar();
+    }
+
+    // 批量删除线路别名
+    confirmBatchDeleteAliasesFromSettings() {
+        const aliasList = document.getElementById('route-aliases-list');
+        if (!aliasList) return;
+
+        const checkedBoxes = aliasList.querySelectorAll('.alias-checkbox:checked');
+        if (checkedBoxes.length === 0) {
+            this.showNotification('请先选择要删除的别名', 'warning');
+            return;
+        }
+
+        const routeNames = Array.from(checkedBoxes).map(cb => cb.dataset.route);
+
+        const content = `
+            <h3>批量删除确认</h3>
+            <div class="delete-confirm-content">
+                <p>确定要删除选中的 <strong class="highlight">${routeNames.length}</strong> 个线路别名吗？</p>
+                <div class="selected-sites-preview">
+                    <h4>将删除以下线路别名：</h4>
+                    <div class="sites-preview-list">
+                        ${routeNames.map(name => `
+                            <div class="preview-item">
+                                <span class="preview-name">${name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                <p class="info-text">💡 删除后将显示原始线路名称。</p>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn-secondary" id="cancel-batch-delete-aliases-btn">取消</button>
+                <button type="button" class="btn-delete" id="confirm-batch-delete-aliases-btn">确认删除 (${routeNames.length}个)</button>
+            </div>
+        `;
+
+        this.showModal(content);
+
+        document.getElementById('cancel-batch-delete-aliases-btn').addEventListener('click', () => this.hideModal());
+
+        document.getElementById('confirm-batch-delete-aliases-btn').addEventListener('click', () => {
+            try {
+                console.log('[COMPONENTS] 批量删除线路别名:', routeNames);
+
+                // 执行批量删除
+                routeNames.forEach(routeName => {
+                    this.storageService.removeRouteAlias(routeName);
+                });
+
+                this.hideModal();
+                this.showNotification(`成功删除 ${routeNames.length} 个线路别名`, 'success');
+
+                // 刷新设置页面
+                if (window.app) {
+                    window.app.loadSettings();
+                }
+            } catch (error) {
+                console.error('[COMPONENTS] 批量删除线路别名失败:', error);
+                this.showNotification(`批量删除失败：${error.message}`, 'error');
+            }
+        });
+    }
+
+    // 显示添加别名模态框
+    showAddAliasModal() {
+        const content = `
+            <h3>添加线路别名</h3>
+            <form id="add-alias-form" class="alias-form">
+                <div class="form-group">
+                    <label for="route-name-input">原线路名称</label>
+                    <input type="text" id="route-name-input" placeholder="输入原线路名称" required>
+                    <small class="form-description">输入播放器中显示的原始线路名称</small>
+                </div>
+                <div class="form-group">
+                    <label for="alias-input">自定义别名</label>
+                    <input type="text" id="alias-input" placeholder="输入自定义别名" required>
+                    <small class="form-description">输入您希望显示的别名</small>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" id="cancel-add-alias">取消</button>
+                    <button type="submit" class="btn-primary">添加</button>
+                </div>
+            </form>
+        `;
+
+        this.showModal(content);
+
+        const form = document.getElementById('add-alias-form');
+        const cancelBtn = document.getElementById('cancel-add-alias');
+
+        cancelBtn.addEventListener('click', () => this.hideModal());
+
+        form.addEventListener('submit', e => {
+            e.preventDefault();
+            const routeName = document.getElementById('route-name-input').value.trim();
+            const alias = document.getElementById('alias-input').value.trim();
+
+            if (routeName && alias) {
+                this.storageService.setRouteAlias(routeName, alias);
+                this.hideModal();
+                this.showNotification('别名添加成功', 'success');
+                // 刷新设置页面
+                if (window.app) {
+                    window.app.loadSettings();
+                }
+            } else {
+                this.showNotification('请填写完整信息', 'warning');
+            }
+        });
     }
 
     // 编辑线路别名
@@ -1927,18 +2430,16 @@ class ComponentService {
 
                 <div class="import-options" id="import-options" style="display: none;">
                     <h4>导入选项：</h4>
-                    <div class="import-mode-selection">
-                        <label class="radio-item">
-                            <input type="radio" name="import-mode" value="merge" checked>
-                            <span class="radio-mark"></span>
-                            合并模式（推荐）
-                            <small>保留现有数据，只添加新数据</small>
-                        </label>
-                        <label class="radio-item">
-                            <input type="radio" name="import-mode" value="overwrite">
-                            <span class="radio-mark"></span>
-                            覆盖模式
-                            <small>完全替换现有数据，请谨慎使用</small>
+                    
+                    <!-- 重复处理机制 -->
+                    <div class="duplicate-handling-section">
+                        <h5>重复配置处理：</h5>
+                        <label class="checkbox-item">
+                            <input type="checkbox" id="overwrite-duplicates">
+                            <span class="checkmark"></span>
+                            覆盖重复配置
+                            <small>勾选后，导入的新配置将覆盖已存在的同名配置；<br>
+                            未勾选时，跳过重复配置，保留原有设置（推荐）</small>
                         </label>
                     </div>
 
@@ -2001,8 +2502,10 @@ class ComponentService {
             const fileContent = await this.readFileAsText(file);
             const importData = JSON.parse(fileContent);
 
-            // 验证数据
+            // 鎇证数据
             const validation = this.storageService.validateImportData(importData);
+
+            console.log('[COMPONENTS] 导入验证结果:', validation);
 
             if (!validation.isValid) {
                 this.showNotification(`文件格式无效: ${validation.errors.join(', ')}`, 'error');
@@ -2012,10 +2515,16 @@ class ComponentService {
             // 显示警告信息
             if (validation.warnings.length > 0) {
                 console.warn('[COMPONENTS] 导入警告:', validation.warnings);
+                // 可以选择显示警告给用户
+                validation.warnings.forEach(warning => {
+                    console.warn('[COMPONENTS] 警告:', warning);
+                });
             }
 
-            // 使用转换后的数据
+            // 使用转换后的数据（如果有转换）
             const finalImportData = validation.convertedData || importData;
+
+            console.log('[COMPONENTS] 最终导入数据:', finalImportData);
 
             // 生成数据类型选择界面
             this.generateImportDataTypes(finalImportData);
@@ -2112,22 +2621,21 @@ class ComponentService {
                 return;
             }
 
+            console.log('[COMPONENTS] 开始执行导入操作...');
+
             // 获取导入选项
-            const importMode = document.querySelector('input[name="import-mode"]:checked').value;
-            const isOverwrite = importMode === 'overwrite';
+            const overwriteDuplicates = document.getElementById('overwrite-duplicates')?.checked || false;
 
             const importOptions = {
-                // 覆盖选项
-                overwriteSites: isOverwrite,
-                overwriteAliases: isOverwrite,
-                overwriteSettings: isOverwrite,
-                overwriteHistory: isOverwrite,
-                overwriteProgress: isOverwrite,
+                // 重复处理选项
+                overwriteDuplicates,
 
                 // 导入选项
                 importHistory: document.getElementById('import-playHistory')?.checked || false,
                 importProgress: document.getElementById('import-watchProgress')?.checked || false
             };
+
+            console.log('[COMPONENTS] 导入选项:', importOptions);
 
             // 过滤要导入的数据
             const filteredData = { ...this.currentImportData };
@@ -2148,32 +2656,42 @@ class ComponentService {
                 delete filteredData.watchProgress;
             }
 
+            console.log('[COMPONENTS] 过滤后的导入数据:', filteredData);
+
             // 执行导入
             const results = this.storageService.importAllData(filteredData, importOptions);
 
-            this.hideModal();
+            console.log('[COMPONENTS] 导入结果:', results);
 
-            // 显示导入结果
-            this.showImportResults(results);
+            // 先刷新相关界面（在显示结果对话框之前）
+            if (window.app) {
+                console.log('[COMPONENTS] 刷新界面...');
+                window.app.loadSettings();
+                window.app.loadSiteSelector();
+                window.app.loadCategorySelector();
+                console.log('[COMPONENTS] 界面刷新完成');
+            }
 
             // 如果导入了站点配置，需要重新初始化API服务
-            const importedSites = results.imported.some(item => item.includes('站点配置'));
+            const importedSites = results.details && results.details.sites && 
+                (results.details.sites.imported > 0 || results.details.sites.overwritten > 0);
             if (importedSites && window.app && window.app.apiService) {
                 console.log('[COMPONENTS] 检测到站点配置变更，重新初始化API服务...');
                 try {
                     await window.app.apiService.initialize();
                     console.log('[COMPONENTS] API服务重新初始化完成');
+                    // 再次刷新界面以确保API服务状态正确
+                    window.app.loadSettings();
+                    window.app.loadSiteSelector();
                 } catch (error) {
                     console.error('[COMPONENTS] API服务重新初始化失败:', error);
                 }
             }
 
-            // 刷新相关界面
-            if (window.app) {
-                window.app.loadSettings();
-                window.app.loadSiteSelector();
-                window.app.loadCategorySelector();
-            }
+            this.hideModal();
+
+            // 显示导入结果
+            this.showImportResults(results);
         } catch (error) {
             console.error('[COMPONENTS] 导入失败:', error);
             this.showNotification(`导入失败: ${error.message}`, 'error');
@@ -2184,28 +2702,97 @@ class ComponentService {
     showImportResults(results) {
         const successItems = results.imported.map(item => `<div>✅ ${item}</div>`).join('');
         const skippedItems = results.skipped.map(item => `<div>⏭️ ${item}</div>`).join('');
+        const overwrittenItems = results.overwritten.map(item => `<div>🔄 ${item}</div>`).join('');
         const errorItems = results.errors.map(item => `<div>❌ ${item}</div>`).join('');
+
+        // 生成详细统计表格
+        const details = results.details || {};
+        const statsTable = `
+            <div class="import-stats-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>数据类型</th>
+                            <th>新增</th>
+                            <th>覆盖</th>
+                            <th>跳过</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${details.sites ? `
+                        <tr>
+                            <td>站点配置</td>
+                            <td class="stat-success">${details.sites.imported}</td>
+                            <td class="stat-warning">${details.sites.overwritten}</td>
+                            <td class="stat-info">${details.sites.skipped}</td>
+                        </tr>
+                        ` : ''}
+                        ${details.routeAliases ? `
+                        <tr>
+                            <td>线路别名</td>
+                            <td class="stat-success">${details.routeAliases.imported}</td>
+                            <td class="stat-warning">${details.routeAliases.overwritten}</td>
+                            <td class="stat-info">${details.routeAliases.skipped}</td>
+                        </tr>
+                        ` : ''}
+                        ${details.userSettings ? `
+                        <tr>
+                            <td>用户设置</td>
+                            <td class="stat-success">${details.userSettings.imported}</td>
+                            <td class="stat-warning">${details.userSettings.overwritten}</td>
+                            <td class="stat-info">${details.userSettings.skipped}</td>
+                        </tr>
+                        ` : ''}
+                        ${details.playHistory ? `
+                        <tr>
+                            <td>播放历史</td>
+                            <td class="stat-success">${details.playHistory.imported}</td>
+                            <td class="stat-warning">${details.playHistory.overwritten}</td>
+                            <td class="stat-info">${details.playHistory.skipped}</td>
+                        </tr>
+                        ` : ''}
+                        ${details.watchProgress ? `
+                        <tr>
+                            <td>观看进度</td>
+                            <td class="stat-success">${details.watchProgress.imported}</td>
+                            <td class="stat-warning">${details.watchProgress.overwritten}</td>
+                            <td class="stat-info">${details.watchProgress.skipped}</td>
+                        </tr>
+                        ` : ''}
+                    </tbody>
+                </table>
+            </div>
+        `;
 
         const content = `
             <h3>导入完成</h3>
             <div class="import-results">
+                ${statsTable}
+
                 ${results.imported.length > 0 ? `
                     <div class="result-section success">
-                        <h4>成功导入 (${results.imported.length})</h4>
+                        <h4>✅ 新增项目 (${results.imported.length})</h4>
                         <div class="result-items">${successItems}</div>
+                    </div>
+                ` : ''}
+                
+                ${results.overwritten.length > 0 ? `
+                    <div class="result-section warning">
+                        <h4>🔄 覆盖项目 (${results.overwritten.length})</h4>
+                        <div class="result-items">${overwrittenItems}</div>
                     </div>
                 ` : ''}
                 
                 ${results.skipped.length > 0 ? `
                     <div class="result-section info">
-                        <h4>跳过的项目 (${results.skipped.length})</h4>
+                        <h4>⏭️ 跳过项目 (${results.skipped.length})</h4>
                         <div class="result-items">${skippedItems}</div>
                     </div>
                 ` : ''}
                 
                 ${results.errors.length > 0 ? `
                     <div class="result-section error">
-                        <h4>导入失败 (${results.errors.length})</h4>
+                        <h4>❌ 导入失败 (${results.errors.length})</h4>
                         <div class="result-items">${errorItems}</div>
                     </div>
                 ` : ''}
@@ -2213,28 +2800,67 @@ class ComponentService {
                 <div class="import-summary">
                     <p>
                         <strong>导入汇总：</strong>
-                        成功 ${results.imported.length} 项，
+                        新增 ${results.imported.length} 项，
+                        覆盖 ${results.overwritten.length} 项，
                         跳过 ${results.skipped.length} 项，
                         失败 ${results.errors.length} 项
                     </p>
+                    ${results.backupKey ? `
+                        <p class="backup-info">💡 系统已自动备份导入前的配置，如需撤销可在控制台执行撤销操作。</p>
+                    ` : ''}
                 </div>
             </div>
             <div class="form-actions">
+                ${results.backupKey ? `
+                    <button type="button" class="btn-secondary" id="undo-import-btn">撤销导入</button>
+                ` : ''}
                 <button type="button" class="btn-primary" id="close-results-btn">确定</button>
             </div>
         `;
 
         this.showModal(content);
 
+        // 关闭按钮事件
         document.getElementById('close-results-btn').addEventListener('click', () => {
             this.hideModal();
+            // 关闭对话框后刷新界面
+            if (window.app) {
+                console.log('[COMPONENTS] 关闭导入结果对话框，刷新界面');
+                window.app.loadSettings();
+                window.app.loadSiteSelector();
+                window.app.loadCategorySelector();
+            }
         });
+
+        // 撤销导入按钮事件
+        const undoBtn = document.getElementById('undo-import-btn');
+        if (undoBtn && results.backupKey) {
+            undoBtn.addEventListener('click', () => {
+                if (confirm('确定要撤销本次导入操作吗？将恢复到导入前的配置状态。')) {
+                    const success = this.storageService.undoImport(results.backupKey);
+                    if (success) {
+                        this.showNotification('已撤销导入，配置已恢复', 'success');
+                        this.hideModal();
+                        // 刷新界面
+                        if (window.app) {
+                            window.app.loadSettings();
+                            window.app.loadSiteSelector();
+                            window.app.loadCategorySelector();
+                        }
+                    } else {
+                        this.showNotification('撤销失败，备份可能已过期', 'error');
+                    }
+                }
+            });
+        }
 
         // 显示通知
         if (results.errors.length > 0) {
             this.showNotification(`导入完成，但有 ${results.errors.length} 项失败`, 'warning');
+        } else if (results.imported.length > 0 || results.overwritten.length > 0) {
+            this.showNotification(`配置导入成功！新增 ${results.imported.length} 项，覆盖 ${results.overwritten.length} 项`, 'success');
         } else {
-            this.showNotification('配置导入成功！', 'success');
+            this.showNotification('导入完成，没有新增或覆盖的配置', 'info');
         }
     }
 

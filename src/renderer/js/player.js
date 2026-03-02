@@ -54,6 +54,7 @@ class VideoPlayer {
         this.currentVideoUrl = null; // 当前播放的视频URL（用于投屏）
         this.originalVideoUrl = null; // 原始视频URL（HTTP/HTTPS，用于投屏）
         this.lastPlayedUrl = null; // 最后播放的URL（备份）
+        this.isWebPlayerMode = false; // 网页播放模式标记
 
         // 初始化标题栏控制
         this.initializeTitlebarControls();
@@ -696,8 +697,36 @@ class VideoPlayer {
     async loadWebPage(webPageUrl) {
         console.log('加载网页播放器:', webPageUrl);
 
+        // 标记为网页播放模式
+        this.isWebPlayerMode = true;
+
         // 隐藏原生video元素
         this.video.style.display = 'none';
+
+        // 隐藏自定义控制栏（网页播放器自带控制栏）
+        const overlay = document.getElementById('player-overlay');
+        if (overlay) {
+            overlay.style.display = 'none';
+            overlay.style.pointerEvents = 'none';
+        }
+
+        // 隐藏右上角控制按钮（防止阻挡iframe）
+        const topRightControls = document.querySelector('.top-right-controls');
+        if (topRightControls) {
+            topRightControls.style.display = 'none';
+        }
+
+        // 隐藏弹幕容器
+        const danmakuContainer = document.getElementById('danmaku-container');
+        if (danmakuContainer) {
+            danmakuContainer.style.display = 'none';
+        }
+
+        // 隐藏选集面板
+        const episodePanel = document.getElementById('episode-panel');
+        if (episodePanel) {
+            episodePanel.style.display = 'none';
+        }
 
         const playerContainer = document.querySelector('.player-container');
 
@@ -715,12 +744,11 @@ class VideoPlayer {
                 background: #000;
                 display: flex;
                 flex-direction: column;
-                z-index: 1;
             `;
             playerContainer.appendChild(webPageContainer);
         }
 
-        // 创建工具栏
+        // 创建简洁工具栏（只有刷新按钮）
         const toolbar = document.createElement('div');
         toolbar.style.cssText = `
             background: rgba(0,0,0,0.9);
@@ -739,8 +767,8 @@ class VideoPlayer {
                 <span>🌐 网页播放器</span>
                 <button id="refresh-webpage" style="padding: 4px 8px; background: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">刷新</button>
             </div>
-            <div>
-                <button id="toggle-fullscreen" style="padding: 4px 8px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;">全屏</button>
+            <div style="color: #888; font-size: 12px;">
+                使用网页内置控制栏播放
             </div>
         `;
 
@@ -762,20 +790,10 @@ class VideoPlayer {
         webPageContainer.appendChild(toolbar);
         webPageContainer.appendChild(iframe);
 
-        // 添加工具栏按钮事件
+        // 添加刷新按钮事件
         const refreshBtn = toolbar.querySelector('#refresh-webpage');
-        const fullscreenBtn = toolbar.querySelector('#toggle-fullscreen');
-
         refreshBtn.addEventListener('click', () => {
             iframe.src = `${webPageUrl + (webPageUrl.includes('?') ? '&' : '?')}_t=${Date.now()}`;
-        });
-
-        fullscreenBtn.addEventListener('click', () => {
-            if (iframe.requestFullscreen) {
-                iframe.requestFullscreen();
-            } else if (iframe.webkitRequestFullscreen) {
-                iframe.webkitRequestFullscreen();
-            }
         });
 
         return new Promise(resolve => {
@@ -814,6 +832,34 @@ class VideoPlayer {
         if (this.video) {
             this.video.style.display = 'block';
         }
+
+        // 恢复自定义控制栏
+        const overlay = document.getElementById('player-overlay');
+        if (overlay) {
+            overlay.style.display = '';
+            overlay.style.pointerEvents = '';
+        }
+
+        // 恢复右上角控制按钮
+        const topRightControls = document.querySelector('.top-right-controls');
+        if (topRightControls) {
+            topRightControls.style.display = '';
+        }
+
+        // 恢复弹幕容器
+        const danmakuContainer = document.getElementById('danmaku-container');
+        if (danmakuContainer) {
+            danmakuContainer.style.display = '';
+        }
+
+        // 恢复选集面板
+        const episodePanel = document.getElementById('episode-panel');
+        if (episodePanel) {
+            episodePanel.style.display = '';
+        }
+
+        // 重置网页播放模式标记
+        this.isWebPlayerMode = false;
     }
 
     // 加载HLS视频

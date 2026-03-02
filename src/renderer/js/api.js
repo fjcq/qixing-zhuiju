@@ -25,16 +25,16 @@ class ApiService {
     // 初始化API服务
     async initialize() {
         let sites = this.getSites();
+        console.log('[API] 初始化API服务，当前站点数量:', sites.length);
 
-        // 如果没有站点或者现有站点不包含正确的默认站点，重新设置
-        const hasCorrectDefault = sites.some(site =>
-            site.id === 'qxyys' && site.url === 'https://zj.qxyys.com/api.php/provide/vod/'
-        );
-
-        if (sites.length === 0 || !hasCorrectDefault) {
-            console.log('[API] 重新初始化默认站点配置');
+        // 只在站点列表完全为空时才初始化默认站点
+        // 不再强制要求包含特定默认站点，尊重用户的配置
+        if (sites.length === 0) {
+            console.log('[API] 站点列表为空，初始化默认站点配置');
             this.saveSites(this.defaultSites);
             sites = this.defaultSites;
+        } else {
+            console.log('[API] 使用现有站点配置，站点数量:', sites.length);
         }
 
         this.currentSite = this.getActiveSite();
@@ -44,7 +44,9 @@ class ApiService {
     // 获取站点列表
     getSites() {
         const sites = localStorage.getItem('video_sites');
-        return sites ? JSON.parse(sites) : [];
+        const parsedSites = sites ? JSON.parse(sites) : [];
+        console.log('[API] getSites 调用，返回站点数量:', parsedSites.length);
+        return parsedSites;
     }
 
     // 保存站点列表
@@ -103,16 +105,231 @@ class ApiService {
 
     // 删除站点
     deleteSite(siteId) {
+        console.log('[API] ========== 开始删除站点操作 ==========');
+        console.log('[API] 目标站点ID:', siteId);
+        console.log('[API] 站点ID类型:', typeof siteId);
+
+        // 参数验证
+        if (!siteId) {
+            const error = new Error('删除失败：站点ID不能为空');
+            console.error('[API] 错误:', error.message);
+            throw error;
+        }
+
         const sites = this.getSites();
-        const filteredSites = sites.filter(site => site.id !== siteId);
+        console.log('[API] 当前站点列表数量:', sites.length);
+        console.log('[API] 当前站点列表:', sites.map(s => ({ id: s.id, name: s.name, active: s.active })));
+
+        // 查找要删除的站点
+        const siteToDelete = sites.find(site => site.id === siteId);
+        if (!siteToDelete) {
+            const error = new Error(`删除失败：未找到ID为 ${siteId} 的站点`);
+            console.error('[API] 错误:', error.message);
+            throw error;
+        }
+        console.log('[API] 找到要删除的站点:', siteToDelete.name);
+
+        // 备份当前站点配置（用于恢复）
+        const backupKey = `video_sites_backup_${Date.now()}`;
+        try {
+            localStorage.setItem(backupKey, JSON.stringify(sites));
+            console.log('[API] 已备份站点配置到:', backupKey);
+        } catch (backupError) {
+            console.warn('[API] 备份失败，继续删除操作:', backupError);
+        }
+
+        // 执行删除操作 - 使用严格相等比较
+        const filteredSites = sites.filter(site => {
+            const shouldKeep = site.id !== siteId;
+            if (!shouldKeep) {
+                console.log('[API] 将删除站点:', site.name, 'ID:', site.id);
+            }
+            return shouldKeep;
+        });
+
+        console.log('[API] 删除后站点数量:', filteredSites.length);
+        console.log('[API] 删除后站点列表:', filteredSites.map(s => ({ id: s.id, name: s.name })));
+
+        // 验证删除结果
+        if (filteredSites.length === sites.length) {
+            const error = new Error('删除失败：站点未被删除，请重试');
+            console.error('[API] 错误:', error.message);
+            throw error;
+        }
+
+        // 验证是否只删除了一个站点
+        if (filteredSites.length !== sites.length - 1) {
+            console.error('[API] 严重错误：删除了多个站点！');
+            console.error('[API] 原始数量:', sites.length, '删除后数量:', filteredSites.length);
+            // 尝试恢复备份
+            try {
+                const backup = localStorage.getItem(backupKey);
+                if (backup) {
+                    localStorage.setItem('video_sites', backup);
+                    console.log('[API] 已从备份恢复站点配置');
+                }
+            } catch (restoreError) {
+                console.error('[API] 恢复备份失败:', restoreError);
+            }
+            throw new Error('删除操作异常，已自动恢复，请联系开发者');
+        }
+
+        // 保存删除后的站点列表
         this.saveSites(filteredSites);
+        console.log('[API] 站点列表已保存');
 
         // 如果删除的是当前活跃站点，切换到第一个站点
         if (this.currentSite && this.currentSite.id === siteId) {
+            console.log('[API] 删除的是当前激活站点，需要切换');
             if (filteredSites.length > 0) {
+                console.log('[API] 切换到站点:', filteredSites[0].name);
                 this.setActiveSite(filteredSites[0].id);
+            } else {
+                console.log('[API] 没有剩余站点，清空当前站点');
+                this.currentSite = null;
             }
         }
+
+        // 清理备份（保留最近的几个备份）
+        this.cleanupOldBackups();
+
+        console.log('[API] ========== 站点删除操作完成 ==========');
+        return {
+            success: true,
+            deletedSite: siteToDelete,
+            remainingCount: filteredSites.length
+        };
+    }
+
+    // 批量删除站点
+    deleteSites(siteIds) {
+        console.log('[API] ========== 开始批量删除站点操作 ==========');
+        console.log('[API] 目标站点IDs:', siteIds);
+
+        // 参数验证
+        if (!siteIds || !Array.isArray(siteIds) || siteIds.length === 0) {
+            const error = new Error('批量删除失败：站点ID列表不能为空');
+            console.error('[API] 错误:', error.message);
+            throw error;
+        }
+
+        const sites = this.getSites();
+        console.log('[API] 当前站点列表数量:', sites.length);
+
+        // 查找要删除的站点
+        const sitesToDelete = sites.filter(site => siteIds.includes(site.id));
+        if (sitesToDelete.length === 0) {
+            const error = new Error('批量删除失败：未找到任何匹配的站点');
+            console.error('[API] 错误:', error.message);
+            throw error;
+        }
+        console.log('[API] 找到要删除的站点:', sitesToDelete.map(s => s.name).join(', '));
+
+        // 检查是否包含当前活跃站点
+        const hasActiveSite = sitesToDelete.some(s => s.active);
+        console.log('[API] 是否包含活跃站点:', hasActiveSite);
+
+        // 备份当前站点配置
+        const backupKey = `video_sites_backup_${Date.now()}`;
+        try {
+            localStorage.setItem(backupKey, JSON.stringify(sites));
+            console.log('[API] 已备份站点配置到:', backupKey);
+        } catch (backupError) {
+            console.warn('[API] 备份失败，继续删除操作:', backupError);
+        }
+
+        // 执行删除操作
+        const filteredSites = sites.filter(site => !siteIds.includes(site.id));
+        console.log('[API] 删除后站点数量:', filteredSites.length);
+
+        // 验证删除结果
+        const expectedCount = sites.length - siteIds.length;
+        if (filteredSites.length !== expectedCount) {
+            console.error('[API] 严重错误：删除数量不匹配！');
+            console.error('[API] 预期剩余数量:', expectedCount, '实际剩余数量:', filteredSites.length);
+            // 尝试恢复备份
+            try {
+                const backup = localStorage.getItem(backupKey);
+                if (backup) {
+                    localStorage.setItem('video_sites', backup);
+                    console.log('[API] 已从备份恢复站点配置');
+                }
+            } catch (restoreError) {
+                console.error('[API] 恢复备份失败:', restoreError);
+            }
+            throw new Error('批量删除操作异常，已自动恢复，请联系开发者');
+        }
+
+        // 如果删除了活跃站点，设置第一个站点为活跃
+        if (hasActiveSite && filteredSites.length > 0) {
+            filteredSites[0].active = true;
+            console.log('[API] 设置新活跃站点:', filteredSites[0].name);
+        }
+
+        // 保存删除后的站点列表
+        this.saveSites(filteredSites);
+        console.log('[API] 站点列表已保存');
+
+        // 如果删除的是当前活跃站点，更新 currentSite
+        if (hasActiveSite) {
+            if (filteredSites.length > 0) {
+                this.currentSite = filteredSites[0];
+            } else {
+                this.currentSite = null;
+            }
+        }
+
+        // 清理备份
+        this.cleanupOldBackups();
+
+        console.log('[API] ========== 批量删除站点操作完成 ==========');
+        return {
+            success: true,
+            deletedSites: sitesToDelete,
+            deletedCount: sitesToDelete.length,
+            remainingCount: filteredSites.length,
+            hasActiveSiteDeleted: hasActiveSite
+        };
+    }
+
+    // 清理旧的备份
+    cleanupOldBackups() {
+        try {
+            const backupKeys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('video_sites_backup_')) {
+                    backupKeys.push(key);
+                }
+            }
+
+            // 按时间戳排序，保留最近的5个备份
+            backupKeys.sort().reverse();
+            const keysToDelete = backupKeys.slice(5);
+
+            keysToDelete.forEach(key => {
+                localStorage.removeItem(key);
+                console.log('[API] 已清理旧备份:', key);
+            });
+        } catch (error) {
+            console.warn('[API] 清理备份失败:', error);
+        }
+    }
+
+    // 恢复站点配置
+    restoreSitesFromBackup(backupKey) {
+        try {
+            const backup = localStorage.getItem(backupKey);
+            if (backup) {
+                const sites = JSON.parse(backup);
+                this.saveSites(sites);
+                console.log('[API] 已从备份恢复站点配置:', backupKey);
+                return true;
+            }
+        } catch (error) {
+            console.error('[API] 恢复备份失败:', error);
+        }
+        return false;
     }
 
     // 构建API URL

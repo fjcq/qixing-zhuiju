@@ -390,7 +390,9 @@ class StorageService {
     // 导入配置数据
     importAllData(importData, options = {}) {
         try {
-            console.log('[STORAGE] 开始导入数据:', importData);
+            console.log('[STORAGE] ========== 开始导入配置 ==========');
+            console.log('[STORAGE] 导入数据:', importData);
+            console.log('[STORAGE] 导入选项:', options);
 
             // 验证数据格式
             if (!importData || typeof importData !== 'object') {
@@ -400,128 +402,423 @@ class StorageService {
             // 检测并转换特殊格式（如主站信息格式）
             importData = this.convertSpecialFormats(importData);
 
+            // 创建导入前备份（用于撤销）
+            const backupKey = this.createPreImportBackup();
+
             const results = {
                 success: true,
                 imported: [],
                 skipped: [],
-                errors: []
+                overwritten: [],
+                errors: [],
+                backupKey,
+                details: {
+                    sites: { imported: 0, skipped: 0, overwritten: 0 },
+                    routeAliases: { imported: 0, skipped: 0, overwritten: 0 },
+                    userSettings: { imported: 0, skipped: 0, overwritten: 0 },
+                    playHistory: { imported: 0, skipped: 0, overwritten: 0 },
+                    watchProgress: { imported: 0, skipped: 0, overwritten: 0 }
+                }
             };
+
+            // 获取覆盖重复配置选项
+            const overwriteDuplicates = options.overwriteDuplicates || false;
+            console.log('[STORAGE] 覆盖重复配置:', overwriteDuplicates);
 
             // 导入站点配置
             if (importData.sites && Array.isArray(importData.sites)) {
-                try {
-                    // 对于从主站信息格式转换的数据，再次确保所有站点类型为json
-                    if (importData.exportInfo && importData.exportInfo.source &&
-                        importData.exportInfo.source.includes('主站信息格式转换')) {
-                        importData.sites.forEach(site => {
-                            site.type = 'json'; // 强制确保类型为json
-                            console.log(`[STORAGE] 确认站点类型: ${site.name} -> ${site.type}`);
-                        });
-                    }
-
-                    if (options.overwriteSites) {
-                        localStorage.setItem(this.STORAGE_KEYS.VIDEO_SITES, JSON.stringify(importData.sites));
-                        results.imported.push(`站点配置 (${importData.sites.length} 个站点)`);
-                        console.log('[STORAGE] 覆盖模式保存站点数据:', importData.sites.length, '个站点');
-                    } else {
-                        // 合并站点，避免重复
-                        const existingSites = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.VIDEO_SITES) || '[]');
-                        const mergedSites = this.mergeSites(existingSites, importData.sites);
-                        localStorage.setItem(this.STORAGE_KEYS.VIDEO_SITES, JSON.stringify(mergedSites));
-                        results.imported.push(`站点配置 (合并 ${importData.sites.length} 个站点)`);
-                        console.log('[STORAGE] 合并模式保存站点数据:', mergedSites);
-                    }
-
-                    // 验证数据是否正确保存
-                    const savedSites = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.VIDEO_SITES) || '[]');
-                    console.log('[STORAGE] 验证保存结果，站点总数:', savedSites.length);
-                    savedSites.forEach(site => {
-                        console.log(`[STORAGE] 验证站点: ${site.name} (url: ${site.url}, type: ${site.type}, active: ${site.active})`);
-                    });
-                } catch (error) {
-                    results.errors.push(`站点配置导入失败: ${error.message}`);
+                const siteResult = this.importSites(importData.sites, overwriteDuplicates);
+                results.details.sites = siteResult.stats;
+                
+                if (siteResult.imported.length > 0) {
+                    results.imported.push(`站点配置: 新增 ${siteResult.imported.length} 个`);
                 }
+                if (siteResult.overwritten.length > 0) {
+                    results.overwritten.push(`站点配置: 覆盖 ${siteResult.overwritten.length} 个`);
+                }
+                if (siteResult.skipped.length > 0) {
+                    results.skipped.push(`站点配置: 跳过 ${siteResult.skipped.length} 个重复项`);
+                }
+                
+                console.log('[STORAGE] 站点导入结果:', siteResult);
             }
 
             // 导入线路别名
             if (importData.routeAliases && typeof importData.routeAliases === 'object') {
-                try {
-                    if (options.overwriteAliases) {
-                        localStorage.setItem(this.STORAGE_KEYS.ROUTE_ALIASES, JSON.stringify(importData.routeAliases));
-                        results.imported.push(`线路别名 (${Object.keys(importData.routeAliases).length} 个别名)`);
-                    } else {
-                        // 合并别名
-                        const existingAliases = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.ROUTE_ALIASES) || '{}');
-                        const mergedAliases = { ...existingAliases, ...importData.routeAliases };
-                        localStorage.setItem(this.STORAGE_KEYS.ROUTE_ALIASES, JSON.stringify(mergedAliases));
-                        results.imported.push(`线路别名 (合并 ${Object.keys(importData.routeAliases).length} 个别名)`);
-                    }
-                } catch (error) {
-                    results.errors.push(`线路别名导入失败: ${error.message}`);
+                const aliasResult = this.importRouteAliases(importData.routeAliases, overwriteDuplicates);
+                results.details.routeAliases = aliasResult.stats;
+                
+                if (aliasResult.imported.length > 0) {
+                    results.imported.push(`线路别名: 新增 ${aliasResult.imported.length} 个`);
+                }
+                if (aliasResult.overwritten.length > 0) {
+                    results.overwritten.push(`线路别名: 覆盖 ${aliasResult.overwritten.length} 个`);
+                }
+                if (aliasResult.skipped.length > 0) {
+                    results.skipped.push(`线路别名: 跳过 ${aliasResult.skipped.length} 个重复项`);
                 }
             }
 
             // 导入用户设置
             if (importData.userSettings && typeof importData.userSettings === 'object') {
-                try {
-                    if (options.overwriteSettings) {
-                        localStorage.setItem(this.STORAGE_KEYS.USER_SETTINGS, JSON.stringify(importData.userSettings));
-                        results.imported.push('用户设置');
-                    } else {
-                        const existingSettings = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.USER_SETTINGS) || '{}');
-                        const mergedSettings = { ...existingSettings, ...importData.userSettings };
-                        localStorage.setItem(this.STORAGE_KEYS.USER_SETTINGS, JSON.stringify(mergedSettings));
-                        results.imported.push('用户设置 (合并)');
-                    }
-                } catch (error) {
-                    results.errors.push(`用户设置导入失败: ${error.message}`);
+                const settingsResult = this.importUserSettings(importData.userSettings, overwriteDuplicates);
+                results.details.userSettings = settingsResult.stats;
+                
+                if (settingsResult.imported.length > 0) {
+                    results.imported.push(`用户设置: 新增 ${settingsResult.imported.length} 项`);
+                }
+                if (settingsResult.overwritten.length > 0) {
+                    results.overwritten.push(`用户设置: 覆盖 ${settingsResult.overwritten.length} 项`);
                 }
             }
 
             // 导入播放历史（可选）
             if (options.importHistory && importData.playHistory && Array.isArray(importData.playHistory)) {
-                try {
-                    if (options.overwriteHistory) {
-                        localStorage.setItem(this.STORAGE_KEYS.PLAY_HISTORY, JSON.stringify(importData.playHistory));
-                        results.imported.push(`播放历史 (${importData.playHistory.length} 条记录)`);
-                    } else {
-                        const existingHistory = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.PLAY_HISTORY) || '[]');
-                        const mergedHistory = this.mergeHistory(existingHistory, importData.playHistory);
-                        localStorage.setItem(this.STORAGE_KEYS.PLAY_HISTORY, JSON.stringify(mergedHistory));
-                        results.imported.push(`播放历史 (合并 ${importData.playHistory.length} 条记录)`);
-                    }
-                } catch (error) {
-                    results.errors.push(`播放历史导入失败: ${error.message}`);
+                const historyResult = this.importPlayHistory(importData.playHistory, overwriteDuplicates);
+                results.details.playHistory = historyResult.stats;
+                
+                if (historyResult.imported.length > 0) {
+                    results.imported.push(`播放历史: 新增 ${historyResult.imported.length} 条`);
+                }
+                if (historyResult.overwritten.length > 0) {
+                    results.overwritten.push(`播放历史: 覆盖 ${historyResult.overwritten.length} 条`);
+                }
+                if (historyResult.skipped.length > 0) {
+                    results.skipped.push(`播放历史: 跳过 ${historyResult.skipped.length} 条重复项`);
                 }
             } else if (importData.playHistory) {
-                results.skipped.push(`播放历史 (${importData.playHistory.length} 条记录，用户选择跳过)`);
+                results.skipped.push(`播放历史: ${importData.playHistory.length} 条（用户选择跳过）`);
             }
 
             // 导入观看进度（可选）
             if (options.importProgress && importData.watchProgress && typeof importData.watchProgress === 'object') {
-                try {
-                    if (options.overwriteProgress) {
-                        localStorage.setItem(this.STORAGE_KEYS.WATCH_PROGRESS, JSON.stringify(importData.watchProgress));
-                        results.imported.push(`观看进度 (${Object.keys(importData.watchProgress).length} 个进度)`);
-                    } else {
-                        const existingProgress = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.WATCH_PROGRESS) || '{}');
-                        const mergedProgress = { ...existingProgress, ...importData.watchProgress };
-                        localStorage.setItem(this.STORAGE_KEYS.WATCH_PROGRESS, JSON.stringify(mergedProgress));
-                        results.imported.push(`观看进度 (合并 ${Object.keys(importData.watchProgress).length} 个进度)`);
-                    }
-                } catch (error) {
-                    results.errors.push(`观看进度导入失败: ${error.message}`);
+                const progressResult = this.importWatchProgress(importData.watchProgress, overwriteDuplicates);
+                results.details.watchProgress = progressResult.stats;
+                
+                if (progressResult.imported.length > 0) {
+                    results.imported.push(`观看进度: 新增 ${progressResult.imported.length} 个`);
+                }
+                if (progressResult.overwritten.length > 0) {
+                    results.overwritten.push(`观看进度: 覆盖 ${progressResult.overwritten.length} 个`);
                 }
             } else if (importData.watchProgress) {
-                results.skipped.push(`观看进度 (${Object.keys(importData.watchProgress).length} 个进度，用户选择跳过)`);
+                results.skipped.push(`观看进度: ${Object.keys(importData.watchProgress).length} 个（用户选择跳过）`);
             }
 
-            console.log('[STORAGE] 数据导入完成:', results);
+            console.log('[STORAGE] ========== 导入完成 ==========');
+            console.log('[STORAGE] 导入结果:', results);
             return results;
         } catch (error) {
             console.error('[STORAGE] 导入数据失败:', error);
             throw new Error(`导入数据失败: ${error.message}`);
         }
+    }
+
+    // 创建导入前备份
+    createPreImportBackup() {
+        const backupKey = `pre_import_backup_${Date.now()}`;
+        const backupData = {
+            sites: JSON.parse(localStorage.getItem(this.STORAGE_KEYS.VIDEO_SITES) || '[]'),
+            routeAliases: JSON.parse(localStorage.getItem(this.STORAGE_KEYS.ROUTE_ALIASES) || '{}'),
+            userSettings: JSON.parse(localStorage.getItem(this.STORAGE_KEYS.USER_SETTINGS) || '{}'),
+            playHistory: JSON.parse(localStorage.getItem(this.STORAGE_KEYS.PLAY_HISTORY) || '[]'),
+            watchProgress: JSON.parse(localStorage.getItem(this.STORAGE_KEYS.WATCH_PROGRESS) || '{}'),
+            backupTime: Date.now()
+        };
+        
+        localStorage.setItem(backupKey, JSON.stringify(backupData));
+        console.log('[STORAGE] 已创建导入前备份:', backupKey);
+        
+        // 清理旧备份，保留最近10个
+        this.cleanupImportBackups();
+        
+        return backupKey;
+    }
+
+    // 清理旧的导入备份
+    cleanupImportBackups() {
+        try {
+            const backupKeys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('pre_import_backup_')) {
+                    backupKeys.push(key);
+                }
+            }
+
+            // 按时间戳排序，保留最近的10个备份
+            backupKeys.sort().reverse();
+            const keysToDelete = backupKeys.slice(10);
+
+            keysToDelete.forEach(key => {
+                localStorage.removeItem(key);
+                console.log('[STORAGE] 已清理旧备份:', key);
+            });
+        } catch (error) {
+            console.warn('[STORAGE] 清理备份失败:', error);
+        }
+    }
+
+    // 撤销导入（恢复备份）
+    undoImport(backupKey) {
+        try {
+            const backupData = localStorage.getItem(backupKey);
+            if (!backupData) {
+                throw new Error('备份不存在或已过期');
+            }
+
+            const data = JSON.parse(backupData);
+            
+            // 恢复所有配置
+            localStorage.setItem(this.STORAGE_KEYS.VIDEO_SITES, JSON.stringify(data.sites));
+            localStorage.setItem(this.STORAGE_KEYS.ROUTE_ALIASES, JSON.stringify(data.routeAliases));
+            localStorage.setItem(this.STORAGE_KEYS.USER_SETTINGS, JSON.stringify(data.userSettings));
+            localStorage.setItem(this.STORAGE_KEYS.PLAY_HISTORY, JSON.stringify(data.playHistory));
+            localStorage.setItem(this.STORAGE_KEYS.WATCH_PROGRESS, JSON.stringify(data.watchProgress));
+
+            console.log('[STORAGE] 已撤销导入，恢复到备份状态');
+            return true;
+        } catch (error) {
+            console.error('[STORAGE] 撤销导入失败:', error);
+            return false;
+        }
+    }
+
+    // 导入站点配置
+    importSites(newSites, overwriteDuplicates) {
+        const existingSites = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.VIDEO_SITES) || '[]');
+        const result = {
+            imported: [],
+            skipped: [],
+            overwritten: [],
+            stats: { imported: 0, skipped: 0, overwritten: 0 }
+        };
+
+        // 创建现有站点的映射（基于URL作为唯一标识）
+        const existingSiteMap = new Map();
+        existingSites.forEach(site => {
+            const key = site.url || site.api || site.id;
+            if (key) {
+                existingSiteMap.set(key, site);
+            }
+        });
+
+        const mergedSites = [...existingSites];
+
+        newSites.forEach(newSite => {
+            // 规范化站点数据
+            // 确保 type 字段是字符串
+            if (!newSite.type || typeof newSite.type !== 'string') {
+                newSite.type = 'json';
+            }
+            // 确保 url 字段存在
+            if (!newSite.url && newSite.api) {
+                newSite.url = newSite.api;
+            }
+            if (!newSite.url && newSite.ext && typeof newSite.ext === 'string' && newSite.ext.startsWith('http')) {
+                newSite.url = newSite.ext;
+            }
+
+            const siteKey = newSite.url || newSite.api || newSite.id;
+            const siteName = newSite.name || '未命名站点';
+
+            if (!siteKey) {
+                console.warn('[STORAGE] 跳过无效站点（缺少标识）:', newSite);
+                return;
+            }
+
+            if (existingSiteMap.has(siteKey)) {
+                // 存在重复站点
+                if (overwriteDuplicates) {
+                    // 覆盖模式：替换现有站点
+                    const index = mergedSites.findIndex(s => (s.url || s.api || s.id) === siteKey);
+                    if (index !== -1) {
+                        // 保留原站点的active状态
+                        newSite.active = mergedSites[index].active;
+                        mergedSites[index] = { ...newSite };
+                        result.overwritten.push(siteName);
+                        result.stats.overwritten++;
+                        console.log(`[STORAGE] 覆盖站点: ${siteName}`);
+                    }
+                } else {
+                    // 跳过模式：保留现有站点
+                    result.skipped.push(siteName);
+                    result.stats.skipped++;
+                    console.log(`[STORAGE] 跳过重复站点: ${siteName}`);
+                }
+            } else {
+                // 新站点，添加到列表
+                if (!newSite.id || typeof newSite.id !== 'string') {
+                    newSite.id = `imported_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                }
+                if (typeof newSite.active === 'undefined') {
+                    newSite.active = false;
+                }
+                mergedSites.push(newSite);
+                existingSiteMap.set(siteKey, newSite);
+                result.imported.push(siteName);
+                result.stats.imported++;
+                console.log(`[STORAGE] 新增站点: ${siteName}`);
+            }
+        });
+
+        localStorage.setItem(this.STORAGE_KEYS.VIDEO_SITES, JSON.stringify(mergedSites));
+        console.log('[STORAGE] 站点数据已保存到 localStorage，键:', this.STORAGE_KEYS.VIDEO_SITES);
+        console.log('[STORAGE] 保存的站点数量:', mergedSites.length);
+        
+        // 验证保存结果
+        const savedSites = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.VIDEO_SITES) || '[]');
+        console.log('[STORAGE] 验证保存结果，读取到站点数量:', savedSites.length);
+        
+        return result;
+    }
+
+    // 导入线路别名
+    importRouteAliases(newAliases, overwriteDuplicates) {
+        const existingAliases = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.ROUTE_ALIASES) || '{}');
+        const result = {
+            imported: [],
+            skipped: [],
+            overwritten: [],
+            stats: { imported: 0, skipped: 0, overwritten: 0 }
+        };
+
+        Object.entries(newAliases).forEach(([routeName, alias]) => {
+            if (existingAliases.hasOwnProperty(routeName)) {
+                if (overwriteDuplicates) {
+                    existingAliases[routeName] = alias;
+                    result.overwritten.push(routeName);
+                    result.stats.overwritten++;
+                } else {
+                    result.skipped.push(routeName);
+                    result.stats.skipped++;
+                }
+            } else {
+                existingAliases[routeName] = alias;
+                result.imported.push(routeName);
+                result.stats.imported++;
+            }
+        });
+
+        localStorage.setItem(this.STORAGE_KEYS.ROUTE_ALIASES, JSON.stringify(existingAliases));
+        return result;
+    }
+
+    // 导入用户设置
+    importUserSettings(newSettings, overwriteDuplicates) {
+        const existingSettings = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.USER_SETTINGS) || '{}');
+        const result = {
+            imported: [],
+            skipped: [],
+            overwritten: [],
+            stats: { imported: 0, skipped: 0, overwritten: 0 }
+        };
+
+        Object.entries(newSettings).forEach(([key, value]) => {
+            if (existingSettings.hasOwnProperty(key)) {
+                if (overwriteDuplicates) {
+                    existingSettings[key] = value;
+                    result.overwritten.push(key);
+                    result.stats.overwritten++;
+                } else {
+                    result.skipped.push(key);
+                    result.stats.skipped++;
+                }
+            } else {
+                existingSettings[key] = value;
+                result.imported.push(key);
+                result.stats.imported++;
+            }
+        });
+
+        localStorage.setItem(this.STORAGE_KEYS.USER_SETTINGS, JSON.stringify(existingSettings));
+        return result;
+    }
+
+    // 导入播放历史
+    importPlayHistory(newHistory, overwriteDuplicates) {
+        const existingHistory = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.PLAY_HISTORY) || '[]');
+        const result = {
+            imported: [],
+            skipped: [],
+            overwritten: [],
+            stats: { imported: 0, skipped: 0, overwritten: 0 }
+        };
+
+        // 创建现有历史的映射（基于vod_id和site_url作为唯一标识）
+        const existingMap = new Map();
+        existingHistory.forEach(item => {
+            const key = `${item.vod_id}_${item.site_url || ''}`;
+            existingMap.set(key, item);
+        });
+
+        const mergedHistory = [...existingHistory];
+
+        newHistory.forEach(newItem => {
+            if (!newItem.vod_id) return;
+
+            const key = `${newItem.vod_id}_${newItem.site_url || ''}`;
+            const itemName = newItem.vod_name || `视频${newItem.vod_id}`;
+
+            if (existingMap.has(key)) {
+                if (overwriteDuplicates) {
+                    const index = mergedHistory.findIndex(h => 
+                        h.vod_id === newItem.vod_id && (h.site_url || '') === (newItem.site_url || '')
+                    );
+                    if (index !== -1) {
+                        mergedHistory[index] = { ...newItem };
+                        result.overwritten.push(itemName);
+                        result.stats.overwritten++;
+                    }
+                } else {
+                    result.skipped.push(itemName);
+                    result.stats.skipped++;
+                }
+            } else {
+                mergedHistory.unshift(newItem);
+                existingMap.set(key, newItem);
+                result.imported.push(itemName);
+                result.stats.imported++;
+            }
+        });
+
+        // 按时间排序，限制数量
+        mergedHistory.sort((a, b) => (b.watch_time || 0) - (a.watch_time || 0));
+        const limitedHistory = mergedHistory.slice(0, 200);
+
+        localStorage.setItem(this.STORAGE_KEYS.PLAY_HISTORY, JSON.stringify(limitedHistory));
+        return result;
+    }
+
+    // 导入观看进度
+    importWatchProgress(newProgress, overwriteDuplicates) {
+        const existingProgress = JSON.parse(localStorage.getItem(this.STORAGE_KEYS.WATCH_PROGRESS) || '{}');
+        const result = {
+            imported: [],
+            skipped: [],
+            overwritten: [],
+            stats: { imported: 0, skipped: 0, overwritten: 0 }
+        };
+
+        Object.entries(newProgress).forEach(([key, value]) => {
+            if (existingProgress.hasOwnProperty(key)) {
+                if (overwriteDuplicates) {
+                    existingProgress[key] = value;
+                    result.overwritten.push(key);
+                    result.stats.overwritten++;
+                } else {
+                    result.skipped.push(key);
+                    result.stats.skipped++;
+                }
+            } else {
+                existingProgress[key] = value;
+                result.imported.push(key);
+                result.stats.imported++;
+            }
+        });
+
+        localStorage.setItem(this.STORAGE_KEYS.WATCH_PROGRESS, JSON.stringify(existingProgress));
+        return result;
     }
 
     // 合并站点数据，避免重复
@@ -586,33 +883,41 @@ class StorageService {
 
     // 验证导入数据的完整性
     validateImportData(data) {
+        console.log('[STORAGE] 开始验证导入数据:', data);
         const errors = [];
 
         if (!data || typeof data !== 'object') {
             errors.push('数据格式无效');
+            console.log('[STORAGE] 验证结果: 数据格式无效');
             return { isValid: false, errors };
         }
 
         // 检测并转换特殊格式
         const convertedData = this.convertSpecialFormats(data);
+        console.log('[STORAGE] 转换后的数据:', convertedData);
 
         // 检查导出信息（对于标准格式）
         if (!convertedData.exportInfo && !convertedData.站点 && !convertedData.sites) {
+            console.log('[STORAGE] 验证结果: 缺少导出信息');
+            // 不直接返回错误，而是添加警告
             errors.push('缺少导出信息，可能不是有效的配置文件');
+            console.log('[STORAGE] 警告: 缺少导出信息');
         }
-
         // 检查站点数据
         if (convertedData.sites && !Array.isArray(convertedData.sites)) {
             errors.push('站点数据格式无效');
+            console.log('[STORAGE] 验证结果: 站点数据格式无效');
         }
-
         // 检查线路别名数据
         if (convertedData.routeAliases && typeof convertedData.routeAliases !== 'object') {
             errors.push('线路别名数据格式无效');
+            console.log('[STORAGE] 验证结果: 线路别名数据格式无效');
         }
+        const isValid = errors.length === 0;
+        console.log('[STORAGE] 最终验证结果: isValid=', isValid, 'errors=', errors);
 
         return {
-            isValid: errors.length === 0,
+            isValid,
             errors,
             warnings: this.getImportWarnings(convertedData),
             convertedData // 返回转换后的数据
