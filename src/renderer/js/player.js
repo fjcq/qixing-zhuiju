@@ -1128,16 +1128,14 @@ class VideoPlayer {
             this.toggleFullscreen();
             cmdLog.info('🔥 [TRIGGER-DBLCLICK] 双击切换全屏');
 
-            // 200ms后清除双击标记
+            // 300ms后清除双击标记，确保单击事件不会执行
             setTimeout(() => {
                 this.doubleClickFlag = false;
-            }, 200);
+            }, 300);
         });
 
         // 单击切换播放/暂停 - 使用延迟处理避免与双击冲突
         this.video.addEventListener('click', e => {
-            // 移除preventDefault和stopPropagation，允许点击事件正常传递
-
             // 如果是双击的一部分，忽略这次单击
             if (this.doubleClickFlag) {
                 return;
@@ -1148,17 +1146,14 @@ class VideoPlayer {
                 clearTimeout(this.clickTimeout);
             }
 
-            // 延迟150ms执行，如果期间发生双击则会被取消
+            // 延迟250ms执行，如果期间发生双击则会被取消
             this.clickTimeout = setTimeout(() => {
                 if (!this.doubleClickFlag) {
-                    cmdLog.info('🔥 [TRIGGER-2] 视频画面被点击！');
-                    cmdLog.info(`🔥 [TRIGGER-2] 当前视频状态: paused=${this.video?.paused}, currentTime=${this.video?.currentTime}`);
-                    cmdLog.info('🔥 [TRIGGER-2] 准备调用 togglePlayPause()...');
+                    cmdLog.info('🔥 [TRIGGER-CLICK] 视频画面被点击！');
                     this.togglePlayPause();
-                    cmdLog.info('🔥 [TRIGGER-2] togglePlayPause() 调用完成');
                 }
                 this.clickTimeout = null;
-            }, 150);
+            }, 250);
         });
 
         // 确保视频元素可以接收点击事件
@@ -1666,28 +1661,28 @@ class VideoPlayer {
                 if (toggleBtn) {
                     // 清除旧样式
                     toggleBtn.classList.remove('active');
-                    toggleBtn.style.background = '';
-                    toggleBtn.style.transform = '';
 
-                    // 直接更新按钮文本和标题，因为按钮结构是直接包含emoji的
-                    toggleBtn.textContent = isAlwaysOnTop ? '🔒' : '📌';
+                    // 更新按钮标题
                     toggleBtn.title = isAlwaysOnTop ? '取消置顶 (按T键快捷切换)' : '窗口置顶 (按T键快捷切换)';
+
+                    // 切换SVG图标
+                    const iconPin = toggleBtn.querySelector('.icon-pin');
+                    const iconPinned = toggleBtn.querySelector('.icon-pinned');
+                    if (iconPin && iconPinned) {
+                        if (isAlwaysOnTop) {
+                            iconPin.classList.add('hidden');
+                            iconPinned.classList.remove('hidden');
+                        } else {
+                            iconPin.classList.remove('hidden');
+                            iconPinned.classList.add('hidden');
+                        }
+                    }
 
                     if (isAlwaysOnTop) {
                         toggleBtn.classList.add('active');
-                        // 更醒目的置顶状态显示
-                        toggleBtn.style.background = 'rgba(76, 175, 80, 0.9)'; // 更鲜艳的绿色
-                        toggleBtn.style.boxShadow = '0 0 12px rgba(76, 175, 80, 0.6)'; // 发光效果
-                        toggleBtn.style.color = '#fff';
-                        toggleBtn.style.transform = 'scale(1.15)';
-                    } else {
-                        toggleBtn.style.background = 'rgba(0, 0, 0, 0.7)';
-                        toggleBtn.style.boxShadow = 'none';
-                        toggleBtn.style.color = '#fff';
-                        toggleBtn.style.transform = 'scale(1)';
                     }
 
-                    console.log(`[PLAYER] 按钮状态已更新 - 图标: ${toggleBtn.textContent}, 标题: ${toggleBtn.title}`);
+                    console.log(`[PLAYER] 按钮状态已更新 - 标题: ${toggleBtn.title}`);
                 }
 
                 // 显示更明显的通知
@@ -1798,9 +1793,16 @@ class VideoPlayer {
     updateFullscreenButton(isFullscreen) {
         const fullscreenBtn = document.getElementById('fullscreen-btn');
         if (fullscreenBtn) {
-            const icon = fullscreenBtn.querySelector('.icon');
-            if (icon) {
-                icon.textContent = isFullscreen ? '⛶' : '⛶';
+            const maximizeIcon = fullscreenBtn.querySelector('.icon-maximize');
+            const minimizeIcon = fullscreenBtn.querySelector('.icon-minimize');
+            if (maximizeIcon && minimizeIcon) {
+                if (isFullscreen) {
+                    maximizeIcon.classList.add('hidden');
+                    minimizeIcon.classList.remove('hidden');
+                } else {
+                    maximizeIcon.classList.remove('hidden');
+                    minimizeIcon.classList.add('hidden');
+                }
             }
             fullscreenBtn.title = isFullscreen ? '退出全屏' : '全屏';
         }
@@ -2262,9 +2264,9 @@ class VideoPlayer {
     updatePlaybackSpeedButton(speed) {
         const speedBtn = document.getElementById('playback-speed');
         if (speedBtn) {
-            const icon = speedBtn.querySelector('.icon');
-            if (icon) {
-                icon.textContent = `${speed}x`;
+            const speedText = speedBtn.querySelector('.speed-text');
+            if (speedText) {
+                speedText.textContent = `${speed}x`;
             }
             speedBtn.title = `播放速度: ${speed}x`;
         }
@@ -2293,9 +2295,16 @@ class VideoPlayer {
     updatePlayPauseButton(isPlaying) {
         const playPauseBtn = document.getElementById('play-pause-btn');
         if (playPauseBtn) {
-            const icon = playPauseBtn.querySelector('.icon');
-            if (icon) {
-                icon.textContent = isPlaying ? '⏸️' : '▶️';
+            const playIcon = playPauseBtn.querySelector('.icon-play');
+            const pauseIcon = playPauseBtn.querySelector('.icon-pause');
+            if (playIcon && pauseIcon) {
+                if (isPlaying) {
+                    playIcon.classList.add('hidden');
+                    pauseIcon.classList.remove('hidden');
+                } else {
+                    playIcon.classList.remove('hidden');
+                    pauseIcon.classList.add('hidden');
+                }
             }
             playPauseBtn.title = isPlaying ? '暂停' : '播放';
         }
@@ -2305,18 +2314,18 @@ class VideoPlayer {
     updateVolumeButton() {
         const volumeBtn = document.getElementById('volume-btn');
         if (volumeBtn) {
-            const icon = volumeBtn.querySelector('.icon');
-            if (icon) {
-                if (this.video.muted || this.video.volume === 0) {
-                    icon.textContent = '🔇';
-                    volumeBtn.title = '取消静音';
-                } else if (this.video.volume < 0.5) {
-                    icon.textContent = '🔉';
-                    volumeBtn.title = '静音';
+            const volumeHighIcon = volumeBtn.querySelector('.icon-volume-high');
+            const volumeMuteIcon = volumeBtn.querySelector('.icon-volume-mute');
+            if (volumeHighIcon && volumeMuteIcon) {
+                const isMuted = this.video.muted || this.video.volume === 0;
+                if (isMuted) {
+                    volumeHighIcon.classList.add('hidden');
+                    volumeMuteIcon.classList.remove('hidden');
                 } else {
-                    icon.textContent = '🔊';
-                    volumeBtn.title = '静音';
+                    volumeHighIcon.classList.remove('hidden');
+                    volumeMuteIcon.classList.add('hidden');
                 }
+                volumeBtn.title = isMuted ? '取消静音' : '静音';
             }
         }
         // 更新音量条显示
@@ -2355,23 +2364,8 @@ class VideoPlayer {
 
     // 更新音量显示
     updateVolumeDisplay() {
-        const volumeBtn = document.getElementById('volume-btn');
         const volumeFill = document.getElementById('volume-fill');
         const volumeHandle = document.getElementById('volume-handle');
-
-        // 更新音量按钮图标
-        if (volumeBtn) {
-            const icon = volumeBtn.querySelector('.icon');
-            if (icon) {
-                if (this.video.muted || this.video.volume === 0) {
-                    icon.textContent = '🔇';
-                } else if (this.video.volume < 0.5) {
-                    icon.textContent = '🔉';
-                } else {
-                    icon.textContent = '🔊';
-                }
-            }
-        }
 
         // 更新音量条
         if (volumeFill && volumeHandle) {

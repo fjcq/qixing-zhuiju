@@ -249,13 +249,19 @@ select::-webkit-scrollbar-thumb:hover {
     font-style: normal;
 }
 
-/* 图标样式 */
-.icon-home::before { content: '🏠'; }
-.icon-search::before { content: '🔍'; }
-.icon-history::before { content: '📺'; }
-.icon-settings::before { content: '⚙️'; }
-.icon-about::before { content: 'ℹ️'; }
-.icon-update::before { content: '🔄'; }
+.nav-icon {
+    flex-shrink: 0;
+    margin-right: var(--space-3);
+    transition: all var(--duration-fast) var(--ease-default);
+}
+
+.nav-item a:hover .nav-icon {
+    transform: scale(1.1);
+}
+
+.nav-item.active a .nav-icon {
+    filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.5));
+}
 
 /* ==================== 侧边栏更新区域 ==================== */
 
@@ -301,13 +307,18 @@ select::-webkit-scrollbar-thumb:hover {
     cursor: not-allowed;
 }
 
-.check-update-btn.checking .icon-update::before {
+.check-update-btn.checking .update-icon {
     animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
+}
+
+.update-icon {
+    margin-right: var(--space-2);
+    flex-shrink: 0;
 }
 
 .check-update-btn i {
@@ -1237,6 +1248,20 @@ select::-webkit-scrollbar-thumb:hover {
     color: var(--text-primary);
     margin-bottom: var(--space-2);
     font-size: var(--text-base);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.feature-icon {
+    flex-shrink: 0;
+    color: var(--color-primary);
+    transition: all var(--duration-fast) var(--ease-default);
+}
+
+.feature-item:hover .feature-icon {
+    transform: scale(1.1);
+    color: var(--color-primary-hover);
 }
 
 .feature-item p {

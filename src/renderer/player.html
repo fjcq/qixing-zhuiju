@@ -77,17 +77,62 @@
             <div class="player-overlay" id="player-overlay">
                 <!-- 右上角控制按钮 -->
                 <div class="top-right-controls">
-                    <button id="toggle-always-on-top" title="窗口置顶"
-                        style="width: 32px; height: 32px; background: rgba(0, 0, 0, 0.7); border: none; border-radius: 6px; color: white; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 4px; backdrop-filter: blur(10px); transition: all 0.2s ease;">
-                        📌
+                    <button id="toggle-always-on-top" class="btn-top-control" title="窗口置顶">
+                        <svg class="icon-svg icon-pin" viewBox="0 0 24 24" fill="none" stroke="url(#top-pin-gradient)"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <defs>
+                                <linearGradient id="top-pin-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#a78bfa;stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:#7c3aed;stop-opacity:1" />
+                                </linearGradient>
+                            </defs>
+                            <path d="M12 17v5" />
+                            <path
+                                d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4.76z" />
+                        </svg>
+                        <svg class="icon-svg icon-pinned hidden" viewBox="0 0 24 24" fill="none"
+                            stroke="url(#top-pinned-gradient)" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round">
+                            <defs>
+                                <linearGradient id="top-pinned-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#4ade80;stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:#22c55e;stop-opacity:1" />
+                                </linearGradient>
+                            </defs>
+                            <path d="M12 17v5" />
+                            <path
+                                d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4.76z" />
+                            <circle cx="12" cy="12" r="3" fill="url(#top-pinned-gradient)" />
+                        </svg>
                     </button>
-                    <button id="cast-video" title="投屏到电视"
-                        style="width: 32px; height: 32px; background: rgba(0, 0, 0, 0.7); border: none; border-radius: 6px; color: white; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 4px; backdrop-filter: blur(10px); transition: all 0.2s ease;">
-                        📺
+                    <button id="cast-video" class="btn-top-control" title="投屏到电视">
+                        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="url(#top-cast-gradient)"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <defs>
+                                <linearGradient id="top-cast-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#60a5fa;stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:1" />
+                                </linearGradient>
+                            </defs>
+                            <rect x="2" y="7" width="20" height="15" rx="2" ry="2" />
+                            <polyline points="17 2 12 7 7 2" />
+                        </svg>
                     </button>
-                    <button id="share-video" title="分享视频"
-                        style="width: 32px; height: 32px; background: rgba(0, 0, 0, 0.7); border: none; border-radius: 6px; color: white; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; margin: 4px; backdrop-filter: blur(10px); transition: all 0.2s ease;">
-                        📤
+                    <button id="share-video" class="btn-top-control" title="分享视频">
+                        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="url(#top-share-gradient)"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <defs>
+                                <linearGradient id="top-share-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#34d399;stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:#10b981;stop-opacity:1" />
+                                </linearGradient>
+                            </defs>
+                            <circle cx="18" cy="5" r="3" />
+                            <circle cx="6" cy="12" r="3" />
+                            <circle cx="18" cy="19" r="3" />
+                            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                        </svg>
                     </button>
                 </div>
 
@@ -120,13 +165,52 @@
                         <!-- 左侧播放控制 -->
                         <div class="playback-left">
                             <button id="play-pause-btn" class="btn-playback" title="播放/暂停">
-                                <span class="icon">▶️</span>
+                                <svg class="icon-svg icon-play" viewBox="0 0 24 24" fill="url(#btn-play-gradient)">
+                                    <defs>
+                                        <linearGradient id="btn-play-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                            <stop offset="0%" style="stop-color:#f472b6;stop-opacity:1" />
+                                            <stop offset="100%" style="stop-color:#ec4899;stop-opacity:1" />
+                                        </linearGradient>
+                                    </defs>
+                                    <polygon points="5 3 19 12 5 21 5 3" />
+                                </svg>
+                                <svg class="icon-svg icon-pause hidden" viewBox="0 0 24 24"
+                                    fill="url(#btn-pause-gradient)">
+                                    <defs>
+                                        <linearGradient id="btn-pause-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                            <stop offset="0%" style="stop-color:#f472b6;stop-opacity:1" />
+                                            <stop offset="100%" style="stop-color:#ec4899;stop-opacity:1" />
+                                        </linearGradient>
+                                    </defs>
+                                    <rect x="6" y="4" width="4" height="16" />
+                                    <rect x="14" y="4" width="4" height="16" />
+                                </svg>
                             </button>
                             <button id="prev-episode" class="btn-episode" disabled title="上一集">
-                                <span class="icon">⏮️</span>
+                                <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="url(#btn-prev-gradient)"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <defs>
+                                        <linearGradient id="btn-prev-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                            <stop offset="0%" style="stop-color:#fbbf24;stop-opacity:1" />
+                                            <stop offset="100%" style="stop-color:#f59e0b;stop-opacity:1" />
+                                        </linearGradient>
+                                    </defs>
+                                    <polygon points="19 20 9 12 19 4 19 20" />
+                                    <line x1="5" y1="19" x2="5" y2="5" />
+                                </svg>
                             </button>
                             <button id="next-episode" class="btn-episode" title="下一集">
-                                <span class="icon">⏭️</span>
+                                <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="url(#btn-next-gradient)"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <defs>
+                                        <linearGradient id="btn-next-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                            <stop offset="0%" style="stop-color:#fbbf24;stop-opacity:1" />
+                                            <stop offset="100%" style="stop-color:#f59e0b;stop-opacity:1" />
+                                        </linearGradient>
+                                    </defs>
+                                    <polygon points="5 4 15 12 5 20 5 4" />
+                                    <line x1="19" y1="5" x2="19" y2="19" />
+                                </svg>
                             </button>
                             <div class="time-info">
                                 <span id="current-time">00:00</span>
@@ -148,17 +232,60 @@
                         <!-- 右侧控制 -->
                         <div class="playback-right">
                             <button id="toggle-episodes" class="btn-episode" title="显示/隐藏选集">
-                                <span class="icon">📋</span>
+                                <svg class="icon-svg" viewBox="0 0 24 24" fill="url(#btn-list-gradient)">
+                                    <defs>
+                                        <linearGradient id="btn-list-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                            <stop offset="0%" style="stop-color:#a78bfa;stop-opacity:1" />
+                                            <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+                                        </linearGradient>
+                                    </defs>
+                                    <rect x="3" y="5" width="18" height="2" rx="1" />
+                                    <rect x="3" y="11" width="18" height="2" rx="1" />
+                                    <rect x="3" y="17" width="18" height="2" rx="1" />
+                                </svg>
                             </button>
                             <button id="toggle-danmaku" class="btn-episode" title="切换弹幕">
-                                <span class="icon">💬</span>
+                                <svg class="icon-svg" viewBox="0 0 24 24" fill="url(#btn-danmaku-gradient)">
+                                    <defs>
+                                        <linearGradient id="btn-danmaku-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                            <stop offset="0%" style="stop-color:#67e8f9;stop-opacity:1" />
+                                            <stop offset="100%" style="stop-color:#22d3ee;stop-opacity:1" />
+                                        </linearGradient>
+                                    </defs>
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                                </svg>
                             </button>
                             <button id="playback-speed" class="btn-episode" title="播放速度">
-                                <span class="icon">1.0x</span>
+                                <span class="speed-text">1.0x</span>
                             </button>
                             <div class="volume-control">
                                 <button id="volume-btn" class="btn-volume" title="静音/恢复">
-                                    <span class="icon">🔊</span>
+                                    <svg class="icon-svg icon-volume-high" viewBox="0 0 24 24" fill="none"
+                                        stroke="url(#btn-volume-gradient)" stroke-width="2" stroke-linecap="round"
+                                        stroke-linejoin="round">
+                                        <defs>
+                                            <linearGradient id="btn-volume-gradient" x1="0%" y1="0%" x2="100%"
+                                                y2="100%">
+                                                <stop offset="0%" style="stop-color:#4ade80;stop-opacity:1" />
+                                                <stop offset="100%" style="stop-color:#22c55e;stop-opacity:1" />
+                                            </linearGradient>
+                                        </defs>
+                                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                                    </svg>
+                                    <svg class="icon-svg icon-volume-mute hidden" viewBox="0 0 24 24" fill="none"
+                                        stroke="url(#btn-mute-gradient)" stroke-width="2" stroke-linecap="round"
+                                        stroke-linejoin="round">
+                                        <defs>
+                                            <linearGradient id="btn-mute-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                <stop offset="0%" style="stop-color:#f87171;stop-opacity:1" />
+                                                <stop offset="100%" style="stop-color:#ef4444;stop-opacity:1" />
+                                            </linearGradient>
+                                        </defs>
+                                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                                        <line x1="23" y1="9" x2="17" y2="15" />
+                                        <line x1="17" y1="9" x2="23" y2="15" />
+                                    </svg>
                                 </button>
                                 <div class="volume-bar-container">
                                     <div class="volume-bar" id="volume-bar">
@@ -168,7 +295,32 @@
                                 </div>
                             </div>
                             <button id="fullscreen-btn" class="btn-fullscreen" title="全屏/退出全屏">
-                                <span class="icon">⛶</span>
+                                <svg class="icon-svg icon-maximize" viewBox="0 0 24 24" fill="none"
+                                    stroke="url(#btn-fullscreen-gradient)" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <defs>
+                                        <linearGradient id="btn-fullscreen-gradient" x1="0%" y1="0%" x2="100%"
+                                            y2="100%">
+                                            <stop offset="0%" style="stop-color:#fb923c;stop-opacity:1" />
+                                            <stop offset="100%" style="stop-color:#f97316;stop-opacity:1" />
+                                        </linearGradient>
+                                    </defs>
+                                    <path
+                                        d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                                </svg>
+                                <svg class="icon-svg icon-minimize hidden" viewBox="0 0 24 24" fill="none"
+                                    stroke="url(#btn-exit-fullscreen-gradient)" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <defs>
+                                        <linearGradient id="btn-exit-fullscreen-gradient" x1="0%" y1="0%" x2="100%"
+                                            y2="100%">
+                                            <stop offset="0%" style="stop-color:#fb923c;stop-opacity:1" />
+                                            <stop offset="100%" style="stop-color:#f97316;stop-opacity:1" />
+                                        </linearGradient>
+                                    </defs>
+                                    <path
+                                        d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+                                </svg>
                             </button>
                         </div>
                     </div>
@@ -181,7 +333,17 @@
                     <div class="danmaku-panel-header">
                         <span>弹幕设置</span>
                         <button id="close-danmaku-panel" class="btn-close-panel" title="关闭弹幕面板">
-                            <span class="icon">❌</span>
+                            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="url(#panel-close-gradient)"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <defs>
+                                    <linearGradient id="panel-close-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                        <stop offset="0%" style="stop-color:#f87171;stop-opacity:1" />
+                                        <stop offset="100%" style="stop-color:#ef4444;stop-opacity:1" />
+                                    </linearGradient>
+                                </defs>
+                                <line x1="18" y1="6" x2="6" y2="18" />
+                                <line x1="6" y1="6" x2="18" y2="18" />
+                            </svg>
                         </button>
                     </div>
                     <div class="danmaku-settings">
