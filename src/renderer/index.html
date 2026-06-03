@@ -87,13 +87,23 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a href="#" data-page="play-url">
+                            <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10" />
+                                <polygon points="10 8 16 12 10 16 10 8" />
+                            </svg>
+                            <span>外链</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a href="#" data-page="history">
                             <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
                                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <circle cx="12" cy="12" r="10" />
                                 <polyline points="12 6 12 12 16 14" />
                             </svg>
-                            <span>播放历史</span>
+                            <span>历史</span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -201,6 +211,81 @@
                     </div>
                 </div>
 
+                <!-- 播放链接页面 -->
+                <div id="play-url-page" class="page">
+                    <div class="page-content">
+                        <div class="page-header">
+                            <h2>外链</h2>
+                        </div>
+                        <div class="play-url-content">
+                            <!-- URL输入区域 -->
+                            <div class="url-input-section">
+                                <h3>网络链接</h3>
+                                <p class="section-description">支持 m3u8、mp4、mkv 等格式的网络视频链接，以及磁力链接</p>
+                                <div class="url-input-box">
+                                    <input type="text" id="video-url-input" placeholder="输入视频链接、磁力链接或info hash...">
+                                    <button id="play-url-btn" class="btn-primary">播放</button>
+                                </div>
+                                <div class="url-type-info">
+                                    <span class="type-hint">支持的链接类型：</span>
+                                    <span class="type-tag">HTTP/HTTPS</span>
+                                    <span class="type-tag">M3U8</span>
+                                    <span class="type-tag">磁力链</span>
+                                    <span class="type-tag">Info Hash</span>
+                                </div>
+                            </div>
+
+                            <!-- 本地文件选择区域 -->
+                            <div class="local-file-section">
+                                <h3>本地文件</h3>
+                                <p class="section-description">选择本地视频文件进行播放</p>
+                                <div class="file-select-box">
+                                    <button id="select-file-btn" class="btn-secondary">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                            <polyline points="17 8 12 3 7 8"/>
+                                            <line x1="12" y1="3" x2="12" y2="15"/>
+                                        </svg>
+                                        选择视频文件
+                                    </button>
+                                    <span id="selected-file-path" class="file-path">未选择文件</span>
+                                </div>
+                                <div class="file-type-info">
+                                    <span class="type-hint">支持的文件格式：</span>
+                                    <span class="type-tag">MP4</span>
+                                    <span class="type-tag">MKV</span>
+                                    <span class="type-tag">WebM</span>
+                                    <span class="type-tag">AVI</span>
+                                </div>
+                            </div>
+
+                            <!-- 磁力链下载进度区域 -->
+                            <div id="magnet-progress-section" class="magnet-progress-section hidden">
+                                <h3>磁力链解析进度</h3>
+                                <div class="progress-info">
+                                    <div class="progress-bar-container">
+                                        <div id="magnet-progress-bar" class="progress-bar-fill" style="width: 0%"></div>
+                                    </div>
+                                    <div class="progress-text">
+                                        <span id="magnet-status">正在连接...</span>
+                                        <span id="magnet-speed"></span>
+                                    </div>
+                                </div>
+                                <div id="magnet-files-list" class="magnet-files-list"></div>
+                            </div>
+
+                            <!-- 播放历史 -->
+                            <div class="url-history-section">
+                                <div class="history-header">
+                                    <h3>历史</h3>
+                                    <button id="clear-url-history-btn" class="btn-secondary">清空</button>
+                                </div>
+                                <div id="url-history-list" class="url-history-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 详情页面 -->
                 <div id="detail-page" class="page">
                     <div class="page-content">
@@ -216,8 +301,8 @@
                 <div id="history-page" class="page">
                     <div class="page-content">
                         <div class="page-header">
-                            <h2>播放历史</h2>
-                            <button id="clear-history-btn" class="btn-secondary">清空历史</button>
+                            <h2>历史</h2>
+                            <button id="clear-history-btn" class="btn-secondary">清空</button>
                         </div>
                         <div id="history-list" class="history-list"></div>
                     </div>
@@ -446,6 +531,7 @@
     <script src="js/controllers/SearchController.js"></script>
     <script src="js/controllers/HistoryController.js"></script>
     <script src="js/controllers/SettingsController.js"></script>
+    <script src="js/controllers/PlayUrlController.js"></script>
     <script src="js/app.js"></script>
 </body>
 

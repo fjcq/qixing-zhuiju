@@ -237,25 +237,67 @@ class VideoPlayer {
             this.videoData.episode_name = data.episodeName;
         }
 
-        // 从routes中获取所有线路信息
-        if (data.videoData?.routes && Array.isArray(data.videoData.routes)) {
-            this.allRoutes = data.videoData.routes;
-            this.currentRouteIndex = data.videoData.currentRoute || 0;
-            const currentRoute = this.allRoutes[this.currentRouteIndex];
-            this.allEpisodes = currentRoute?.episodes || [];
-            console.log('[PLAYER] 所有线路:', this.allRoutes.length);
-            console.log('[PLAYER] 当前线路:', currentRoute?.name);
-            console.log('[PLAYER] 剧集数量:', this.allEpisodes.length);
-            console.log('[PLAYER] 当前集数索引:', this.currentEpisodeIndex);
-        } else {
+        // 检查是否为直接播放模式
+        if (data.isDirectPlay) {
+            console.log('[PLAYER] 直接播放模式');
+            this.isDirectPlayMode = true;
+            this.playSource = data.playSource || 'unknown';
+            
+            // 隐藏选集面板和线路选择器
+            const episodePanel = document.getElementById('episode-panel');
+            const routeSelection = document.getElementById('route-selection');
+            const toggleEpisodesBtn = document.getElementById('toggle-episodes');
+            
+            if (episodePanel) {
+                episodePanel.style.display = 'none';
+            }
+            if (routeSelection) {
+                routeSelection.style.display = 'none';
+            }
+            if (toggleEpisodesBtn) {
+                toggleEpisodesBtn.style.display = 'none';
+            }
+            
+            // 禁用上一集/下一集按钮
+            const prevBtn = document.getElementById('prev-episode');
+            const nextBtn = document.getElementById('next-episode');
+            if (prevBtn) {
+                prevBtn.disabled = true;
+                prevBtn.style.display = 'none';
+            }
+            if (nextBtn) {
+                nextBtn.disabled = true;
+                nextBtn.style.display = 'none';
+            }
+            
+            // 清空剧集数据
             this.allRoutes = [];
             this.allEpisodes = [];
+        } else {
+            // 正常模式：从routes中获取所有线路信息
+            if (data.videoData?.routes && Array.isArray(data.videoData.routes)) {
+                this.allRoutes = data.videoData.routes;
+                this.currentRouteIndex = data.videoData.currentRoute || 0;
+                const currentRoute = this.allRoutes[this.currentRouteIndex];
+                this.allEpisodes = currentRoute?.episodes || [];
+                console.log('[PLAYER] 所有线路:', this.allRoutes.length);
+                console.log('[PLAYER] 当前线路:', currentRoute?.name);
+                console.log('[PLAYER] 剧集数量:', this.allEpisodes.length);
+                console.log('[PLAYER] 当前集数索引:', this.currentEpisodeIndex);
+            } else {
+                this.allRoutes = [];
+                this.allEpisodes = [];
+            }
         }
 
         // 更新界面信息
         this.updateVideoInfo();
-        this.createRouteSelector();
-        this.createEpisodeList();
+        
+        // 只有非直接播放模式才创建选集和线路选择器
+        if (!data.isDirectPlay) {
+            this.createRouteSelector();
+            this.createEpisodeList();
+        }
 
         // 开始播放
         if (data.url) {
@@ -978,6 +1020,27 @@ class VideoPlayer {
         window.lastLoadedVideoUrl = videoUrl;
         console.log('[DLNA] 普通视频URL保存到全局变量:', videoUrl);
 
+        // 磁力链视频加载超时检测
+        const isMagnetSource = this.playSource === 'magnet';
+        let loadingTimeout = null;
+        let loadingWarningTimeout = null;
+
+        if (isMagnetSource) {
+            // 15秒后显示加载提示
+            loadingWarningTimeout = setTimeout(() => {
+                if (this.video.readyState < 2) {
+                    this.showLoadingHint('视频正在缓冲中，请稍候...');
+                }
+            }, 15000);
+
+            // 60秒后显示超时提示
+            loadingTimeout = setTimeout(() => {
+                if (this.video.readyState < 2) {
+                    this.showLoadingHint('加载超时，该资源可能做种者不足，请尝试其他资源');
+                }
+            }, 60000);
+        }
+
         return new Promise((resolve, reject) => {
             const onLoadedMetadata = () => {
                 console.log('[PLAYER] 视频元数据加载完成:', {
@@ -985,6 +1048,10 @@ class VideoPlayer {
                     videoHeight: this.video.videoHeight,
                     duration: this.video.duration
                 });
+
+                clearTimeout(loadingTimeout);
+                clearTimeout(loadingWarningTimeout);
+                this.hideLoadingHint();
 
                 // 确保URL被正确保存和备份
                 this.forceSetVideoUrl(videoUrl);
@@ -996,6 +1063,9 @@ class VideoPlayer {
             };
 
             const onError = () => {
+                clearTimeout(loadingTimeout);
+                clearTimeout(loadingWarningTimeout);
+                this.hideLoadingHint();
                 this.video.removeEventListener('loadedmetadata', onLoadedMetadata);
                 this.video.removeEventListener('error', onError);
                 reject(new Error('视频加载失败'));
@@ -1004,6 +1074,35 @@ class VideoPlayer {
             this.video.addEventListener('loadedmetadata', onLoadedMetadata);
             this.video.addEventListener('error', onError);
         });
+    }
+
+    /**
+     * 显示加载提示（覆盖在视频上方）
+     * @param {string} message - 提示消息
+     */
+    showLoadingHint(message) {
+        let hint = document.getElementById('magnet-loading-hint');
+        if (!hint) {
+            hint = document.createElement('div');
+            hint.id = 'magnet-loading-hint';
+            hint.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
+                'background:rgba(0,0,0,0.8);color:#fff;padding:16px 24px;border-radius:8px;' +
+                'font-size:14px;z-index:100;text-align:center;max-width:80%;pointer-events:none;';
+            const container = document.querySelector('.video-container') || document.body;
+            container.appendChild(hint);
+        }
+        hint.textContent = message;
+        hint.style.display = 'block';
+    }
+
+    /**
+     * 隐藏加载提示
+     */
+    hideLoadingHint() {
+        const hint = document.getElementById('magnet-loading-hint');
+        if (hint) {
+            hint.style.display = 'none';
+        }
     }
 
     // 设置视频事件

@@ -32,21 +32,61 @@ contextBridge.exposeInMainWorld('electron', {
                 'write-clipboard',
                 'player-log',
                 'player-episode-changed',
-                'fetch-remote-content'
+                'fetch-remote-content',
+                'select-video-file',
+                'handle-magnet-link',
+                'play-magnet-file'
             ];
             if (validChannels.includes(channel)) {
                 return ipcRenderer.invoke(channel, data);
             }
+        },
+        onMagnetProgress: callback => {
+            ipcRenderer.on('magnet-progress', (event, data) => callback(data));
+        },
+        removeMagnetProgressListener: () => {
+            ipcRenderer.removeAllListeners('magnet-progress');
         },
         on: (channel, func) => {
             const validChannels = [
                 'player-closed',
                 'video-progress',
                 'video-data',
-                'episode-changed'
+                'episode-changed',
+                'magnet-download-progress'
             ];
             if (validChannels.includes(channel)) {
-                ipcRenderer.on(channel, (event, ...args) => func(...args));
+                const wrappedFunc = (event, ...args) => func(...args);
+                // 保存映射关系，以便removeListener能正确移除
+                if (!global._ipcListenerMap) {
+                    global._ipcListenerMap = new Map();
+                }
+                const key = channel + '_' + func.toString().substring(0, 100);
+                global._ipcListenerMap.set(key, { original: func, wrapped: wrappedFunc });
+                ipcRenderer.on(channel, wrappedFunc);
+            }
+        },
+        removeListener: (channel, func) => {
+            const validChannels = [
+                'player-closed',
+                'video-progress',
+                'video-data',
+                'episode-changed',
+                'magnet-download-progress'
+            ];
+            if (validChannels.includes(channel)) {
+                // 查找包装后的函数引用
+                if (global._ipcListenerMap) {
+                    for (const [key, { original, wrapped }] of global._ipcListenerMap) {
+                        if (original === func && key.startsWith(channel + '_')) {
+                            ipcRenderer.removeListener(channel, wrapped);
+                            global._ipcListenerMap.delete(key);
+                            return;
+                        }
+                    }
+                }
+                // 回退：直接尝试移除原始函数
+                ipcRenderer.removeListener(channel, func);
             }
         }
     },

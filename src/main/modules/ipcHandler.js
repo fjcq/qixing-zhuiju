@@ -1,4 +1,4 @@
-const { ipcMain, BrowserWindow } = require('electron');
+const { ipcMain, BrowserWindow, app } = require('electron');
 const {
     validateVideoData,
     validateDeviceId,
@@ -42,6 +42,8 @@ function setupIPC(qixingApp) {
     // 关闭播放器窗口
     ipcMain.handle('close-player', () => {
         try {
+            // 清理磁力链子进程资源
+            cleanupMagnetProcess();
             if (qixingApp.playerWindow) {
                 qixingApp.playerWindow.close();
             }
@@ -484,6 +486,344 @@ function setupIPC(qixingApp) {
             });
         } catch (error) {
             console.error('[MAIN] 获取远程内容失败:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    // 选择视频文件
+    ipcMain.handle('select-video-file', async event => {
+        console.log('[MAIN] 收到选择视频文件请求');
+        try {
+            const { dialog } = require('electron');
+
+            const result = await dialog.showOpenDialog({
+                title: '选择视频文件',
+                filters: [
+                    { name: '视频文件', extensions: ['mp4', 'mkv', 'webm', 'avi', 'mov', 'm3u8', 'flv', 'wmv'] },
+                    { name: '所有文件', extensions: ['*'] }
+                ],
+                properties: ['openFile']
+            });
+
+            if (result.canceled || result.filePaths.length === 0) {
+                return { success: false, message: '未选择文件' };
+            }
+
+            const filePath = result.filePaths[0];
+            console.log('[MAIN] 选择的文件:', filePath);
+
+            return { success: true, filePath };
+        } catch (error) {
+            console.error('[MAIN] 选择视频文件失败:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    // 磁力链子进程管理器
+    let magnetProcess = null;
+    let magnetMessageId = 0;
+    const magnetPendingRequests = new Map(); // id -> { resolve, reject, timeout }
+
+    /**
+     * 启动磁力链子进程
+     * 使用系统Node.js运行ESM脚本，NODE_PATH指向magnet-runtime目录
+     */
+    function startMagnetProcess() {
+        if (magnetProcess && !magnetProcess.killed) {
+            return magnetProcess;
+        }
+
+        const { spawn } = require('child_process');
+        const path = require('path');
+
+        // 使用系统Node.js运行磁力链处理脚本（ESM模块，.mjs扩展名）
+        const scriptPath = path.join(__dirname, '..', 'scripts', 'magnetHandler.mjs');
+
+        // magnet-runtime目录：开发环境在项目根目录，打包后在resources目录
+        let magnetRuntimeDir;
+        if (app.isPackaged) {
+            // 打包后：extraResources放在resources/magnet-runtime
+            magnetRuntimeDir = path.join(process.resourcesPath, 'magnet-runtime');
+        } else {
+            // 开发环境：项目根目录/magnet-runtime
+            magnetRuntimeDir = path.join(__dirname, '..', '..', '..', 'magnet-runtime');
+        }
+        const nodeModulesPath = path.join(magnetRuntimeDir, 'node_modules');
+        console.log('[MAIN] 启动磁力链子进程, 脚本:', scriptPath);
+        console.log('[MAIN] NODE_PATH:', nodeModulesPath);
+
+        magnetProcess = spawn('node', [scriptPath], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            env: {
+                ...process.env,
+                NODE_PATH: nodeModulesPath,
+                ELECTRON_RUN_AS_NODE: ''
+            }
+        });
+
+        // 处理stdout消息
+        let buffer = '';
+        magnetProcess.stdout.on('data', data => {
+            buffer += data.toString();
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // 保留不完整的行
+
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const msg = JSON.parse(line);
+                    handleMagnetMessage(msg);
+                } catch (err) {
+                    console.log('[MAIN] 磁力链子进程输出:', line);
+                }
+            }
+        });
+
+        // 处理stderr日志
+        magnetProcess.stderr.on('data', data => {
+            console.log('[MAIN] 磁力链子进程日志:', data.toString().trim());
+        });
+
+        magnetProcess.on('error', err => {
+            console.error('[MAIN] 磁力链子进程启动失败:', err.message);
+            magnetProcess = null;
+        });
+
+        magnetProcess.on('exit', (code, signal) => {
+            console.log('[MAIN] 磁力链子进程退出, code:', code, 'signal:', signal);
+            magnetProcess = null;
+        });
+
+        return magnetProcess;
+    }
+
+    /**
+     * 清理磁力链子进程资源
+     * 在关闭播放器或应用退出时调用
+     */
+    function cleanupMagnetProcess() {
+        if (magnetProcess && !magnetProcess.killed) {
+            try {
+                // 发送destroy命令让子进程优雅关闭
+                magnetProcess.stdin.write(JSON.stringify({ action: 'destroy' }) + '\n');
+                // 给子进程1秒时间清理，然后强制退出
+                setTimeout(() => {
+                    if (magnetProcess && !magnetProcess.killed) {
+                        magnetProcess.kill();
+                        magnetProcess = null;
+                    }
+                }, 1000);
+            } catch (err) {
+                magnetProcess.kill();
+                magnetProcess = null;
+            }
+        }
+        // 清理所有pending请求
+        for (const [id, pending] of magnetPendingRequests) {
+            clearTimeout(pending.timeout);
+            pending.reject(new Error('播放器已关闭'));
+        }
+        magnetPendingRequests.clear();
+    }
+
+    /**
+     * 发送消息到磁力链子进程并等待响应
+     */
+    function sendMagnetMessage(msg) {
+        return new Promise((resolve, reject) => {
+            const proc = startMagnetProcess();
+            if (!proc) {
+                reject(new Error('无法启动磁力链子进程'));
+                return;
+            }
+
+            const id = ++magnetMessageId;
+            msg.id = id;
+
+            const timeout = setTimeout(() => {
+                magnetPendingRequests.delete(id);
+                reject(new Error('磁力链处理超时'));
+            }, 120000); // 2分钟超时
+
+            magnetPendingRequests.set(id, { resolve, reject, timeout });
+            proc.stdin.write(JSON.stringify(msg) + '\n');
+        });
+    }
+
+    /**
+     * 处理磁力链子进程的消息
+     */
+    function handleMagnetMessage(msg) {
+        // 日志消息直接输出
+        if (msg.type === 'log') {
+            console.log('[MAIN] [MAGNET]', msg.message);
+            return;
+        }
+
+        if (msg.type === 'wire') {
+            console.log('[MAIN] [MAGNET] wire连接:', msg.address);
+            return;
+        }
+
+        if (msg.type === 'warning') {
+            console.warn('[MAIN] [MAGNET] 警告:', msg.message);
+            return;
+        }
+
+        if (msg.type === 'progress') {
+            // 转发下载进度到渲染进程
+            if (qixingApp.mainWindow && !qixingApp.mainWindow.isDestroyed()) {
+                qixingApp.mainWindow.webContents.send('magnet-download-progress', {
+                    fileName: msg.fileName,
+                    progress: msg.progress,
+                    downloaded: msg.downloaded,
+                    total: msg.total,
+                    wires: msg.wires,
+                    downloadSpeed: msg.downloadSpeed,
+                    status: msg.progress >= 100 ? 'completed' : 'downloading'
+                });
+            }
+            return;
+        }
+
+        if (msg.type === 'done') {
+            console.log('[MAIN] [MAGNET] 下载完成');
+            return;
+        }
+
+        if (msg.type === 'destroyed') {
+            console.log('[MAIN] [MAGNET] 子进程资源已释放');
+            return;
+        }
+
+        // 带id的响应消息，匹配到pending request
+        if (msg.id && magnetPendingRequests.has(msg.id)) {
+            const pending = magnetPendingRequests.get(msg.id);
+            clearTimeout(pending.timeout);
+            magnetPendingRequests.delete(msg.id);
+
+            if (msg.type === 'error') {
+                pending.reject(new Error(msg.error));
+            } else {
+                pending.resolve(msg);
+            }
+            return;
+        }
+
+        // 没有id的消息（如子进程启动通知）
+        if (msg.type === 'ready' && msg.message) {
+            console.log('[MAIN] [MAGNET]', msg.message);
+            return;
+        }
+
+        console.log('[MAIN] [MAGNET] 未处理消息:', msg.type);
+    }
+
+    // 处理磁力链接
+    ipcMain.handle('handle-magnet-link', async (event, magnetUri) => {
+        console.log('[MAIN] 收到磁力链接处理请求:', magnetUri);
+        try {
+            // 验证磁力链接格式（支持标准格式和纯info hash）
+            if (typeof magnetUri !== 'string') {
+                return { success: false, error: '无效的磁力链接格式' };
+            }
+
+            // 如果不是magnet:开头，检查是否为纯info hash
+            let normalizedUri = magnetUri;
+            let infoHash = '';
+            if (!magnetUri.startsWith('magnet:')) {
+                // 检查是否为40字符十六进制或32字符base32
+                if (/^[a-fA-F0-9]{40}$/i.test(magnetUri)) {
+                    infoHash = magnetUri.toLowerCase();
+                    normalizedUri = `magnet:?xt=urn:btih:${magnetUri}`;
+                    console.log('[MAIN] 纯info hash转换为磁力链接:', normalizedUri);
+                } else if (/^[A-Z2-7]{32}$/i.test(magnetUri)) {
+                    normalizedUri = `magnet:?xt=urn:btih:${magnetUri}`;
+                    console.log('[MAIN] Base32 info hash转换为磁力链接:', normalizedUri);
+                } else {
+                    return { success: false, error: '无效的磁力链接格式' };
+                }
+            }
+
+            // 从磁力链接中提取infoHash
+            if (!infoHash) {
+                const hashMatch = normalizedUri.match(/btih:([a-fA-F0-9]{40})/i);
+                if (hashMatch) {
+                    infoHash = hashMatch[1].toLowerCase();
+                }
+            }
+
+            // 发送进度到渲染进程
+            event.sender.send('magnet-progress', {
+                status: '正在解析磁力链接...',
+                progress: 0
+            });
+
+            // 使用子进程（系统Node.js + webtorrent v3.x）解析磁力链接
+            const result = await sendMagnetMessage({
+                action: 'resolve',
+                magnetUri: normalizedUri,
+                infoHash
+            });
+
+            if (result.type === 'files') {
+                console.log('[MAIN] 磁力链接解析成功, 文件数:', result.files.length);
+                return { success: true, files: result.files, infoHash };
+            } else {
+                return { success: false, error: result.error || '解析失败' };
+            }
+        } catch (error) {
+            console.error('[MAIN] 处理磁力链接失败:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    // 播放磁力链接中的文件
+    ipcMain.handle('play-magnet-file', async (event, { magnetUri, fileName, infoHash }) => {
+        console.log('[MAIN] 收到播放磁力文件请求:', fileName, 'infoHash:', infoHash);
+        try {
+            // 发送初始进度
+            event.sender.send('magnet-download-progress', {
+                fileName,
+                progress: 0,
+                downloaded: 0,
+                total: 0,
+                wires: 0,
+                downloadSpeed: 0,
+                status: 'connecting'
+            });
+
+            // 使用子进程播放磁力文件
+            // 查找resolve阶段子进程已缓存的torrent文件路径，避免重复获取
+            let cachedTorrentPath = null;
+            const os = require('os');
+            const path = require('path');
+            const fs = require('fs');
+            const torrentCachePath = path.join(os.tmpdir(), 'qixing-torrents', `${infoHash}.torrent`);
+            if (fs.existsSync(torrentCachePath)) {
+                cachedTorrentPath = torrentCachePath;
+            }
+
+            const result = await sendMagnetMessage({
+                action: 'play',
+                magnetUri,
+                fileName,
+                infoHash,
+                cachedTorrentPath: cachedTorrentPath || undefined
+            });
+
+            if (result.type === 'ready') {
+                console.log('[MAIN] 磁力文件流URL:', result.streamUrl, 'isLocal:', result.isLocal);
+                return {
+                    success: true,
+                    streamUrl: result.streamUrl,
+                    isLocal: result.isLocal || false
+                };
+            } else {
+                return { success: false, error: result.error || '播放失败' };
+            }
+        } catch (error) {
+            console.error('[MAIN] 播放磁力文件失败:', error);
             return { success: false, error: error.message };
         }
     });

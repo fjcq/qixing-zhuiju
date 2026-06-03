@@ -350,6 +350,10 @@ class QixingZhuijuApp {
                         // 加载搜索历史
                         this.loadSearchHistory();
                         break;
+                    case 'play-url':
+                        console.log('[APP] 加载播放链接页面');
+                        this.initializePlayUrlPage();
+                        break;
                     case 'history':
                         console.log('[APP] 加载播放历史页面');
                         this.loadPlayHistory();
@@ -364,6 +368,14 @@ class QixingZhuijuApp {
                 console.error('[APP] 页面数据加载失败:', error);
             }
         }, 50); // 延迟50ms执行，确保UI切换完成
+    }
+
+    // 初始化播放链接页面
+    initializePlayUrlPage() {
+        if (!this.playUrlController) {
+            this.playUrlController = new PlayUrlController(this);
+        }
+        this.playUrlController.initialize();
     }
 
     // 加载初始数据

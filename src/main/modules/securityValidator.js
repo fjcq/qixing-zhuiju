@@ -41,9 +41,20 @@ function validateMediaUrl(url) {
         return { valid: false, error: 'URL长度超过限制' };
     }
 
-    // 检查危险协议
-    const dangerousProtocols = ['javascript:', 'data:', 'vbscript:', 'file:'];
+    // 检查危险协议（file:协议允许用于本地磁力链缓存文件）
+    const dangerousProtocols = ['javascript:', 'data:', 'vbscript:'];
     const lowerUrl = url.toLowerCase().trim();
+
+    // file:协议仅允许指向系统临时目录的磁力链缓存文件
+    if (lowerUrl.startsWith('file:')) {
+        const os = require('os');
+        const tempDir = os.tmpdir().replace(/\\/g, '/').toLowerCase();
+        const urlPath = decodeURIComponent(lowerUrl.replace(/^file:\/+/, '')).replace(/\\/g, '/').toLowerCase();
+        if (urlPath.startsWith(tempDir)) {
+            return { valid: true };
+        }
+        return { valid: false, error: `不允许的协议: file:` };
+    }
 
     for (const protocol of dangerousProtocols) {
         if (lowerUrl.startsWith(protocol)) {

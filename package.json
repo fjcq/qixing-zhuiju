@@ -1,6 +1,6 @@
 {
     "name": "qixing-zhuiju",
-    "version": "1.5.2",
+    "version": "1.6.0",
     "description": "七星追剧 - 播放苹果CMS资源站的影视节目",
     "main": "main.js",
     "scripts": {
@@ -75,7 +75,9 @@
         "iconv-lite": "^0.7.2",
         "jsonfile": "^6.1.0",
         "safer-buffer": "^2.1.2",
+        "torrent-stream": "^1.2.1",
         "universalify": "^2.0.0",
+        "webtorrent": "^1.9.7",
         "ws": "^8.14.2"
     },
     "build": {
@@ -100,12 +102,30 @@
             "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}",
             "!**/*.map",
             "!**/dist/**",
-            "!**/.trae/**"
+            "!**/.trae/**",
+            "!magnet-runtime/node_modules/webtorrent/node_modules/**/test/**",
+            "!magnet-runtime/node_modules/webtorrent/node_modules/**/example/**",
+            "!magnet-runtime/node_modules/**/*.md"
+        ],
+        "extraResources": [
+            {
+                "from": "magnet-runtime",
+                "to": "magnet-runtime",
+                "filter": [
+                    "**/*",
+                    "!**/*.md",
+                    "!**/test/**",
+                    "!**/example/**",
+                    "!**/.bin/**"
+                ]
+            }
         ],
         "win": {
             "target": [
-                "nsis",
-                "dir"
+                {
+                    "target": "portable",
+                    "arch": ["x64"]
+                }
             ],
             "icon": "assets/icon.ico"
         },
