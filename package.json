@@ -75,9 +75,6 @@
         "iconv-lite": "^0.7.2",
         "jsonfile": "^6.1.0",
         "safer-buffer": "^2.1.2",
-        "torrent-stream": "^1.2.1",
-        "universalify": "^2.0.0",
-        "webtorrent": "^1.9.7",
         "ws": "^8.14.2"
     },
     "build": {
