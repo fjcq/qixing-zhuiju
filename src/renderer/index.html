@@ -22,6 +22,7 @@
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/components.css">
     <link rel="stylesheet" href="css/routes.css">
+    <link rel="stylesheet" href="css/play-url.css">
     <!-- 版本配置 -->
     <script src="../config/version.js"></script>
     <!-- 更新日志配置 -->
@@ -211,77 +212,52 @@
                     </div>
                 </div>
 
-                <!-- 播放链接页面 -->
+                <!-- 外链页面 -->
                 <div id="play-url-page" class="page">
                     <div class="page-content">
                         <div class="page-header">
                             <h2>外链</h2>
+                            <button class="page-header-btn" id="play-url-clear-btn" title="清空输入">清空</button>
                         </div>
-                        <div class="play-url-content">
-                            <!-- URL输入区域 -->
-                            <div class="url-input-section">
-                                <h3>网络链接</h3>
-                                <p class="section-description">支持 m3u8、mp4、mkv 等格式的网络视频链接，以及磁力链接</p>
-                                <div class="url-input-box">
-                                    <input type="text" id="video-url-input" placeholder="输入视频链接、磁力链接或info hash...">
-                                    <button id="play-url-btn" class="btn-primary">播放</button>
-                                </div>
-                                <div class="url-type-info">
-                                    <span class="type-hint">支持的链接类型：</span>
-                                    <span class="type-tag">HTTP/HTTPS</span>
-                                    <span class="type-tag">M3U8</span>
-                                    <span class="type-tag">磁力链</span>
-                                    <span class="type-tag">Info Hash</span>
-                                </div>
-                            </div>
 
-                            <!-- 本地文件选择区域 -->
-                            <div class="local-file-section">
-                                <h3>本地文件</h3>
-                                <p class="section-description">选择本地视频文件进行播放</p>
-                                <div class="file-select-box">
-                                    <button id="select-file-btn" class="btn-secondary">
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                            <polyline points="17 8 12 3 7 8"/>
-                                            <line x1="12" y1="3" x2="12" y2="15"/>
-                                        </svg>
-                                        选择视频文件
-                                    </button>
-                                    <span id="selected-file-path" class="file-path">未选择文件</span>
-                                </div>
-                                <div class="file-type-info">
-                                    <span class="type-hint">支持的文件格式：</span>
-                                    <span class="type-tag">MP4</span>
-                                    <span class="type-tag">MKV</span>
-                                    <span class="type-tag">WebM</span>
-                                    <span class="type-tag">AVI</span>
-                                </div>
-                            </div>
+                        <div class="play-url-input-wrapper">
+                            <textarea
+                                id="play-url-input"
+                                class="play-url-input"
+                                placeholder="输入视频链接 / 磁力链 / 本地路径 / Info Hash..."
+                                spellcheck="false"
+                                autocomplete="off"></textarea>
+                            <span class="play-url-badge is-empty" id="play-url-badge">🌐 URL</span>
+                        </div>
 
-                            <!-- 磁力链下载进度区域 -->
-                            <div id="magnet-progress-section" class="magnet-progress-section hidden">
-                                <h3>磁力链解析进度</h3>
-                                <div class="progress-info">
-                                    <div class="progress-bar-container">
-                                        <div id="magnet-progress-bar" class="progress-bar-fill" style="width: 0%"></div>
-                                    </div>
-                                    <div class="progress-text">
-                                        <span id="magnet-status">正在连接...</span>
-                                        <span id="magnet-speed"></span>
-                                    </div>
-                                </div>
-                                <div id="magnet-files-list" class="magnet-files-list"></div>
-                            </div>
+                        <button class="play-url-primary-action" id="play-url-submit" disabled>
+                            <span>▶</span>
+                            <span>立即播放</span>
+                        </button>
 
-                            <!-- 播放历史 -->
-                            <div class="url-history-section">
-                                <div class="history-header">
-                                    <h3>历史</h3>
-                                    <button id="clear-url-history-btn" class="btn-secondary">清空</button>
-                                </div>
-                                <div id="url-history-list" class="url-history-list"></div>
+                        <div class="play-url-progress" id="play-url-progress" style="display: none;">
+                            <div class="play-url-progress-header">
+                                <span id="play-url-progress-status">解析中...</span>
+                                <button class="play-url-progress-cancel" id="play-url-progress-cancel">取消</button>
                             </div>
+                            <div class="play-url-progress-bar">
+                                <div class="play-url-progress-fill" id="play-url-progress-fill" style="width: 0%;"></div>
+                            </div>
+                        </div>
+
+                        <div class="play-url-files" id="play-url-files"></div>
+
+                        <div class="play-url-buttons">
+                            <button class="play-url-secondary-btn" id="play-url-pick-file" type="button">📁 选择本地文件</button>
+                            <button class="play-url-secondary-btn" id="play-url-toggle-history" type="button">🕘 查看历史</button>
+                        </div>
+
+                        <div class="play-url-history-drawer" id="play-url-history-drawer">
+                            <div class="play-url-history-header">
+                                <span>历史记录</span>
+                                <button class="play-url-history-action" id="play-url-history-clear" type="button" title="清空历史">清空</button>
+                            </div>
+                            <div id="play-url-history-list"></div>
                         </div>
                     </div>
                 </div>
