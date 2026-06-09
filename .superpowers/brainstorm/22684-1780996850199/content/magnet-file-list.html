@@ -1,0 +1,107 @@
+<h2>磁力链解析后 · 文件列表展示方式</h2>
+<p class="subtitle">当用户输入磁力链解析完成，文件列表出现在哪、怎么呈现。挑一个最贴近你想要的方向。</p>
+
+<div class="options" data-multiselect>
+    <div class="option" data-choice="A" onclick="toggleSelect(this)">
+        <div class="letter">A</div>
+        <div class="content">
+            <h3>原位下方展开 · 紧凑列表</h3>
+            <p>解析完成后直接在输入区下方展开文件列表，不跳转不弹窗。最连贯。</p>
+            <div class="mockup">
+                <div class="mockup-header">A · 原位展开</div>
+                <div class="mockup-body" style="padding:0; background:#1a1d24;">
+                    <div style="padding:24px 24px 0;">
+                        <div class="mock-input" style="margin-bottom:10px; font-size:12px; opacity:0.7;">magnet:?xt=urn:btih:abc123...</div>
+                        <button class="mock-button" style="width:100%; padding:10px; font-size:13px;">▶ 立即播放</button>
+                    </div>
+                    <div style="padding:18px 24px;">
+                        <div style="color:#fff; font-size:12px; opacity:0.6; margin-bottom:8px;">解析到 3 个文件 · 请选择：</div>
+                        <div style="background:#222632; border:1px solid #2d3340; border-radius:6px; padding:10px 12px; margin-bottom:6px; color:#fff; font-size:12px; display:flex; justify-content:space-between;">
+                            <span>🎬 movie.mp4 <span style="color:#888; font-size:11px;">(1.2 GB)</span></span>
+                            <span style="color:#a78bfa;">▶</span>
+                        </div>
+                        <div style="background:#222632; border:1px solid #2d3340; border-radius:6px; padding:10px 12px; margin-bottom:6px; color:#fff; font-size:12px; display:flex; justify-content:space-between;">
+                            <span>📄 readme.txt <span style="color:#888; font-size:11px;">(2 KB)</span></span>
+                            <span style="color:#888;">—</span>
+                        </div>
+                        <div style="background:#222632; border:1px solid #2d3340; border-radius:6px; padding:10px 12px; color:#fff; font-size:12px; display:flex; justify-content:space-between;">
+                            <span>🎬 sample.mkv <span style="color:#888; font-size:11px;">(380 MB)</span></span>
+                            <span style="color:#a78bfa;">▶</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="option" data-choice="B" onclick="toggleSelect(this)">
+        <div class="letter">B</div>
+        <div class="content">
+            <h3>底部抽屉滑出 · 详细信息</h3>
+            <p>主输入区收到底部，文件列表从底部抽屉滑出。展示更丰富（缩略图、时长、清晰度）。</p>
+            <div class="mockup">
+                <div class="mockup-header">B · 底部抽屉</div>
+                <div class="mockup-body" style="padding:0; background:#1a1d24; position:relative; height:300px;">
+                    <div style="padding:24px;">
+                        <div class="mock-input" style="margin-bottom:10px; font-size:12px; opacity:0.7;">magnet:?xt=urn:btih:abc123...</div>
+                    </div>
+                    <div style="position:absolute; bottom:0; left:0; right:0; max-height:200px; background:#222632; border-top:1px solid #2d3340; border-radius:14px 14px 0 0; padding:14px;">
+                        <div style="color:#fff; font-size:12px; opacity:0.6; margin-bottom:10px; display:flex; justify-content:space-between;">
+                            <span>解析到 3 个文件</span><span style="color:#888;">▾</span>
+                        </div>
+                        <div style="display:flex; gap:10px;">
+                            <div style="flex:1; background:#1a1d24; border:1px solid #2d3340; border-radius:6px; padding:8px; text-align:center;">
+                                <div style="background:#333; height:50px; border-radius:4px; margin-bottom:6px;"></div>
+                                <div style="color:#fff; font-size:11px;">movie.mp4</div>
+                                <div style="color:#888; font-size:10px;">1.2 GB · 1080p</div>
+                            </div>
+                            <div style="flex:1; background:#1a1d24; border:1px solid #2d3340; border-radius:6px; padding:8px; text-align:center;">
+                                <div style="background:#333; height:50px; border-radius:4px; margin-bottom:6px;"></div>
+                                <div style="color:#fff; font-size:11px;">sample.mkv</div>
+                                <div style="color:#888; font-size:10px;">380 MB · 720p</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="option" data-choice="C" onclick="toggleSelect(this)">
+        <div class="letter">C</div>
+        <div class="content">
+            <h3>全屏替换 · 大尺寸卡片</h3>
+            <p>解析完成时整页切换为文件选择视图，每个文件是大卡片。焦点最明确，但需多一步"返回"。</p>
+            <div class="mockup">
+                <div class="mockup-header">C · 全屏替换</div>
+                <div class="mockup-body" style="padding:0; background:#1a1d24;">
+                    <div style="padding:14px 20px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #2d3340;">
+                        <span style="color:#888; font-size:13px;">← 返回</span>
+                        <span style="color:#fff; font-size:13px;">选择播放文件</span>
+                        <span style="color:#888; font-size:13px;">3 个</span>
+                    </div>
+                    <div style="padding:14px 20px;">
+                        <div style="background:#222632; border:1px solid #2d3340; border-radius:10px; padding:14px; margin-bottom:10px; display:flex; gap:14px; align-items:center;">
+                            <div style="width:80px; height:50px; background:#333; border-radius:6px; flex-shrink:0;"></div>
+                            <div style="flex:1;">
+                                <div style="color:#fff; font-size:14px;">movie.mp4</div>
+                                <div style="color:#888; font-size:11px; margin-top:4px;">1.2 GB · 1080p · 02:14:30</div>
+                            </div>
+                            <button class="mock-button" style="padding:8px 16px; font-size:12px;">播放</button>
+                        </div>
+                        <div style="background:#222632; border:1px solid #2d3340; border-radius:10px; padding:14px; display:flex; gap:14px; align-items:center;">
+                            <div style="width:80px; height:50px; background:#333; border-radius:6px; flex-shrink:0;"></div>
+                            <div style="flex:1;">
+                                <div style="color:#fff; font-size:14px;">sample.mkv</div>
+                                <div style="color:#888; font-size:11px; margin-top:4px;">380 MB · 720p · 00:42:10</div>
+                            </div>
+                            <button class="mock-button" style="padding:8px 16px; font-size:12px;">播放</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<p class="subtitle" style="margin-top:20px; opacity:0.7;">可以多选感兴趣的，或者只选一个最贴近的。在终端告诉我你的选择。</p>

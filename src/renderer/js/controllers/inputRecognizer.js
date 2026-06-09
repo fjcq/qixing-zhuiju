@@ -2,15 +2,21 @@
  * inputRecognizer
  * 智能识别用户输入内容的类型：URL / 本地文件 / 磁力链 / 未知
  * 纯函数，无副作用，可独立单测
+ *
+ * 模块包在 IIFE 内，避免 const 与其他子模块（urlHistoryManager / fileListRenderer）
+ * 的同名常量冲突（所有 <script> 共享全局作用域）
  */
 
-const TYPE_URL = 'url';
-const TYPE_LOCAL = 'local';
-const TYPE_MAGNET = 'magnet';
-const TYPE_UNKNOWN = 'unknown';
-const TYPE_EMPTY = 'empty';
+(function () {
+    'use strict';
 
-const VIDEO_EXTS = ['m3u8', 'mp4', 'mkv', 'webm', 'avi', 'flv'];
+    const TYPE_URL = 'url';
+    const TYPE_LOCAL = 'local';
+    const TYPE_MAGNET = 'magnet';
+    const TYPE_UNKNOWN = 'unknown';
+    const TYPE_EMPTY = 'empty';
+
+    const VIDEO_EXTS = ['m3u8', 'mp4', 'mkv', 'webm', 'avi', 'flv'];
 
 /**
  * 检测输入内容类型
@@ -119,13 +125,25 @@ function fileUriToPath(uri) {
     return decodeURIComponent(p);
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        detectInputType,
-        TYPE_URL,
-        TYPE_LOCAL,
-        TYPE_MAGNET,
-        TYPE_UNKNOWN,
-        TYPE_EMPTY
-    };
-}
+    // IIFE 内部导出，外部通过 window.inputRecognizer / module.exports 访问
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = {
+            detectInputType,
+            TYPE_URL,
+            TYPE_LOCAL,
+            TYPE_MAGNET,
+            TYPE_UNKNOWN,
+            TYPE_EMPTY
+        };
+    }
+    if (typeof window !== 'undefined') {
+        window.inputRecognizer = {
+            detectInputType,
+            TYPE_URL,
+            TYPE_LOCAL,
+            TYPE_MAGNET,
+            TYPE_UNKNOWN,
+            TYPE_EMPTY
+        };
+    }
+})();

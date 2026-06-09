@@ -115,12 +115,20 @@
                     "!**/example/**",
                     "!**/.bin/**"
                 ]
+            },
+            {
+                "from": "src/main/scripts",
+                "to": "magnet-scripts",
+                "filter": [
+                    "*.mjs",
+                    "*.js"
+                ]
             }
         ],
         "win": {
             "target": [
                 {
-                    "target": "portable",
+                    "target": "nsis",
                     "arch": ["x64"]
                 }
             ],

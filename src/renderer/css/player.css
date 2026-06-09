@@ -2449,3 +2449,62 @@ body.fullscreen-mode .btn-playback,
     height: 32px !important;
     font-size: var(--font-size-sm) !important;
 }
+
+/* =================== 磁力链下载信息栏 =================== */
+.magnet-info-bar {
+    position: fixed;
+    top: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 16px;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.9);
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    white-space: nowrap;
+}
+
+.magnet-info-bar.hidden {
+    display: none;
+}
+
+.magnet-info-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.magnet-info-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+.magnet-info-divider {
+    width: 1px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* 下载速度高亮 */
+.magnet-info-bar.speed-high #magnet-speed {
+    color: #4ade80;
+}
+
+.magnet-info-bar.speed-low #magnet-speed {
+    color: #fbbf24;
+}
+
+.magnet-info-bar.speed-zero #magnet-speed {
+    color: #f87171;
+}

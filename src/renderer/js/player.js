@@ -154,6 +154,14 @@ class VideoPlayer {
                 console.log('[PLAYER] 收到视频数据:', data);
                 this.loadVideoData(data);
             });
+
+            // 监听磁力链下载进度
+            this._magnetProgressHandler = (data) => {
+                // 一旦收到磁力链进度事件，强制设置播放源为 magnet 并显示信息栏
+                this.playSource = 'magnet';
+                this.updateMagnetInfo(data);
+            };
+            window.electron.ipcRenderer.on('magnet-download-progress', this._magnetProgressHandler);
         } else {
             console.error('[PLAYER] Electron IPC 不可用');
         }
@@ -237,12 +245,40 @@ class VideoPlayer {
             this.videoData.episode_name = data.episodeName;
         }
 
+        // ====== 提前处理磁力链信息栏：任何路径都会执行 ======
+        // 从 data.playSource 或 data.videoData.playSource 中识别
+        // 注意：磁力链信息栏真正的显示触发点是收到 magnet-download-progress 事件
+        // 此处仅在明确知道 playSource 是 magnet 时显示，避免误显示
+        const incomingPlaySource = data.playSource || data.videoData?.playSource || '';
+        if (incomingPlaySource === 'magnet') {
+            this.playSource = 'magnet';
+            this.isDirectPlayMode = true;
+            // 仅在未显示 completed 状态时，显示初始 connecting
+            // 避免覆盖子进程已发送的 100% completed 消息
+            if (!this._magnetCompletedShown) {
+                this.updateMagnetInfo({
+                    downloadSpeed: 0,
+                    wires: 0,
+                    numPeers: 0,
+                    progress: 0,
+                    status: 'connecting'
+                });
+                console.log('[PLAYER] 磁力链源：信息栏已显示');
+            }
+        } else if (this.playSource === 'magnet' && incomingPlaySource && incomingPlaySource !== 'magnet') {
+            // 切换到非磁力链源时隐藏
+            this.playSource = incomingPlaySource;
+            this.hideMagnetInfo();
+        } else if (incomingPlaySource) {
+            this.playSource = incomingPlaySource;
+            // 非磁力链源：不要主动隐藏信息栏，避免误隐藏（由事件流管理）
+        }
+
         // 检查是否为直接播放模式
         if (data.isDirectPlay) {
             console.log('[PLAYER] 直接播放模式');
             this.isDirectPlayMode = true;
-            this.playSource = data.playSource || 'unknown';
-            
+            // 磁力链信息栏的创建/隐藏已在方法入口处统一处理，此处不再重复
             // 隐藏选集面板和线路选择器
             const episodePanel = document.getElementById('episode-panel');
             const routeSelection = document.getElementById('route-selection');
@@ -1102,6 +1138,112 @@ class VideoPlayer {
         const hint = document.getElementById('magnet-loading-hint');
         if (hint) {
             hint.style.display = 'none';
+        }
+    }
+
+    /**
+     * 创建磁力链下载信息栏（动态插入DOM）
+     */
+    createMagnetInfoBar() {
+        if (document.getElementById('magnet-info-bar')) return;
+
+        const bar = document.createElement('div');
+        bar.id = 'magnet-info-bar';
+        bar.className = 'magnet-info-bar hidden';
+        bar.innerHTML =
+            '<span id="magnet-speed">0 KB/s</span>' +
+            '<span class="magnet-info-divider">|</span>' +
+            '<span id="magnet-peers">0/0</span>' +
+            '<span class="magnet-info-divider">|</span>' +
+            '<span id="magnet-progress-text">0%</span>';
+        document.body.appendChild(bar);
+        console.log('[PLAYER] 磁力链信息栏已创建');
+    }
+
+    /**
+     * 更新磁力链下载信息显示
+     * @param {Object} data - 进度数据
+     */
+    updateMagnetInfo(data) {
+        this.createMagnetInfoBar();
+
+        const infoBar = document.getElementById('magnet-info-bar');
+        if (!infoBar) return;
+
+        // 防止低优先级消息覆盖已显示的 completed 100%
+        // 如果当前已显示 100% completed，且新消息 progress=0 且 status='connecting'/'reconnected'，忽略
+        if (this._magnetCompletedShown) {
+            const isLowPriorityUpdate = (data.progress === 0 || !data.progress) &&
+                (data.status === 'connecting' || data.status === 'reconnected' || data.status === 'reconnected-late');
+            if (isLowPriorityUpdate) {
+                // 忽略低优先级更新，保留 100% 显示
+                return;
+            }
+        }
+
+        // 显示信息栏
+        infoBar.style.display = 'flex';
+
+        // 格式化下载速度
+        const speedElement = document.getElementById('magnet-speed');
+        if (speedElement) {
+            const speed = data.downloadSpeed || 0;
+            if (speed === 0) {
+                speedElement.textContent = '0 KB/s';
+                speedElement.style.color = '#f87171';
+            } else if (speed < 1024) {
+                speedElement.textContent = `${speed.toFixed(0)} B/s`;
+                speedElement.style.color = '#fbbf24';
+            } else if (speed < 1024 * 1024) {
+                speedElement.textContent = `${(speed / 1024).toFixed(1)} KB/s`;
+                speedElement.style.color = '#fbbf24';
+            } else {
+                speedElement.textContent = `${(speed / 1024 / 1024).toFixed(1)} MB/s`;
+                speedElement.style.color = '#4ade80';
+            }
+        }
+
+        // 格式化连接数/种子数
+        const peersElement = document.getElementById('magnet-peers');
+        if (peersElement) {
+            const wires = data.wires || 0;
+            const numPeers = data.numPeers || 0;
+            peersElement.textContent = `${wires}/${numPeers}`;
+        }
+
+        // 格式化下载进度
+        const progressElement = document.getElementById('magnet-progress-text');
+        if (progressElement) {
+            const progress = data.progress || 0;
+            progressElement.textContent = `${Math.min(progress, 100)}%`;
+        }
+
+        // 下载完成时5秒后自动隐藏（只在真正 completed 状态时隐藏，且清除之前的timer）
+        const isCompleted = data.status === 'completed' || data.status === 'done' || data.progress >= 100;
+        if (isCompleted) {
+            // 标记 completed 已显示，避免后续 connecting 状态覆盖
+            this._magnetCompletedShown = true;
+            if (this._magnetHideTimer) clearTimeout(this._magnetHideTimer);
+            this._magnetHideTimer = setTimeout(() => {
+                this.hideMagnetInfo();
+                this._magnetCompletedShown = false;
+            }, 5000);
+        } else {
+            // 非 completed 状态：清除隐藏定时器，确保信息栏保持显示
+            if (this._magnetHideTimer) {
+                clearTimeout(this._magnetHideTimer);
+                this._magnetHideTimer = null;
+            }
+        }
+    }
+
+    /**
+     * 隐藏磁力链下载信息栏
+     */
+    hideMagnetInfo() {
+        const infoBar = document.getElementById('magnet-info-bar');
+        if (infoBar) {
+            infoBar.classList.add('hidden');
         }
     }
 
@@ -3141,6 +3283,15 @@ class VideoPlayer {
             this.video.src = '';
             this.video.load();
         }
+
+        // 移除磁力链下载进度监听
+        if (window.electron && window.electron.ipcRenderer && this._magnetProgressHandler) {
+            window.electron.ipcRenderer.removeListener('magnet-download-progress', this._magnetProgressHandler);
+            this._magnetProgressHandler = null;
+        }
+
+        // 隐藏磁力链下载信息
+        this.hideMagnetInfo();
 
         // 清理弹幕
         if (window.danmakuSystem) {

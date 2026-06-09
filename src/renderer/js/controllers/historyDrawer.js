@@ -9,20 +9,25 @@
  * - onItemClick: (item: object) => void 点击项回调
  *
  * 兼容 Node.js (Jest) 和 Electron renderer (无 nodeIntegration)
+ *
+ * 模块包在 IIFE 内，避免 const 污染全局
  */
 
-const TYPE_ICONS = {
-    magnet: '🧲',
-    url: '🌐',
-    local: '📁',
-    unknown: '❓'
-};
-const TYPE_LABELS = {
-    magnet: '磁力',
-    url: 'URL',
-    local: '本地',
-    unknown: '未知'
-};
+(function () {
+    'use strict';
+
+    const TYPE_ICONS = {
+        magnet: '🧲',
+        url: '🌐',
+        local: '📁',
+        unknown: '❓'
+    };
+    const TYPE_LABELS = {
+        magnet: '磁力',
+        url: 'URL',
+        local: '本地',
+        unknown: '未知'
+    };
 
 class HistoryDrawer {
     /**
@@ -220,3 +225,7 @@ class HistoryDrawer {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { HistoryDrawer };
 }
+if (typeof window !== 'undefined') {
+    window.HistoryDrawer = HistoryDrawer;
+}
+})();

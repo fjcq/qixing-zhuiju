@@ -171,6 +171,10 @@ async function main() {
     // 监听应用退出事件
     app.on('will-quit', () => {
         console.log('[MAIN] 应用即将退出');
+        // 兜底清理磁力链子进程，防止主窗口关闭后播放器窗口残留下载
+        if (qixingApp && typeof qixingApp.cleanupMagnetProcess === 'function') {
+            qixingApp.cleanupMagnetProcess();
+        }
     });
 }
 

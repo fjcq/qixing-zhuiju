@@ -166,6 +166,19 @@ async function createMainWindow(qixingApp) {
 function createPlayerWindow(qixingApp, videoData) {
     if (isDev) console.log('[MAIN] 创建播放器窗口:', videoData?.title || '未知视频');
 
+    // 自动识别播放源类型（magnet/local/http）
+    if (videoData && !videoData.playSource) {
+        if (videoData.url && videoData.url.startsWith('magnet:')) {
+            videoData.playSource = 'magnet';
+        } else if (videoData.isLocal || (videoData.url && videoData.url.startsWith('http://127.0.0.1:'))) {
+            // 本地流（包括磁力链 HTTP 流服务器），需要从其他字段辅助判断
+            videoData.playSource = videoData.isMagnet ? 'magnet' : 'local';
+        } else if (videoData.url) {
+            videoData.playSource = 'http';
+        }
+        if (isDev) console.log('[MAIN] 自动识别播放源:', videoData.playSource);
+    }
+
     if (qixingApp.playerWindow) {
         if (isDev) console.log('[MAIN] 播放器窗口已存在，发送新视频数据并聚焦窗口');
         // 发送新的视频数据到现有播放器窗口
@@ -231,6 +244,11 @@ function createPlayerWindow(qixingApp, videoData) {
     qixingApp.playerWindow.on('closed', () => {
         if (isDev) console.log('[MAIN] 播放器窗口已关闭');
         qixingApp.playerWindow = null;
+        // 兜底清理磁力链子进程，覆盖 X 按钮/Alt+F4/程序关闭等所有关闭路径
+        // （close-player IPC 已会清理，这里是保险，防止某些路径漏掉）
+        if (typeof qixingApp.cleanupMagnetProcess === 'function') {
+            qixingApp.cleanupMagnetProcess();
+        }
     });
 
     // 播放器窗口错误处理

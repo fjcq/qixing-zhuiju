@@ -1,412 +1,437 @@
 /**
- * 播放链接控制器
- * 负责处理网络链接、本地文件和磁力链的播放功能
+ * PlayUrlController
+ * 外链页面主控制器：协调 5 个子模块，实现状态机驱动的智能识别播放流程
+ *
+ * 依赖模块（通过 window 全局访问）：
+ * - inputRecognizer.detectInputType 智能识别输入类型
+ * - UrlHistoryManager 播放历史管理（包装 storage.js）
+ * - fileListRenderer 磁力链文件列表渲染
+ * - MagnetParserAdapter 磁力链 IPC 适配器
+ * - HistoryDrawer 历史抽屉 UI
+ *
+ * 状态机：IDLE → EDITING → RECOGNIZED → PARSE_PROGRESS → FILES_READY → PLAYING
  */
-class PlayUrlController {
-    constructor(app) {
-        this.app = app;
-        this.storageService = app.storageService;
-        this.componentService = app.componentService;
-        this.urlHistory = this.loadUrlHistory();
-    }
+(function () {
+    'use strict';
 
-    /**
-     * 初始化播放链接页面
-     */
-    initialize() {
-        console.log('[PlayUrlController] 初始化播放链接页面');
-        this.setupEventListeners();
-        this.loadUrlHistoryDisplay();
-    }
+    // 状态机常量
+    const STATE = {
+        IDLE: 'idle',
+        EDITING: 'editing',
+        RECOGNIZED: 'recognized',
+        PARSE_PROGRESS: 'parse_progress',
+        FILES_READY: 'files_ready',
+        PLAYING: 'playing'
+    };
 
-    /**
-     * 设置事件监听器
-     */
-    setupEventListeners() {
-        // 播放URL按钮
-        const playUrlBtn = document.getElementById('play-url-btn');
-        if (playUrlBtn) {
-            playUrlBtn.addEventListener('click', () => this.handlePlayUrl());
+    // 徽章显示配置
+    const BADGE_CONFIG = {
+        empty: { text: '🌐 URL', cls: 'is-empty' },
+        url: { text: '🌐 URL', cls: 'is-url' },
+        local: { text: '📁 本地', cls: 'is-local' },
+        magnet: { text: '🧲 磁力', cls: 'is-magnet' },
+        unknown: { text: '❓ 未知', cls: 'is-unknown' }
+    };
+
+    class PlayUrlController {
+        /**
+         * @param {object} app - 主应用实例（提供 componentService / storageService）
+         */
+        constructor(app) {
+            this.app = app;
+            this.componentService = (app && app.componentService) || (window.app && window.app.componentService);
+            this.state = STATE.IDLE;
+            this._lastInput = '';
+            this._currentMagnetUri = '';
+            this._currentInfoHash = '';
+            this._parseCancelled = false;
+            this._detectTimer = null;
+
+            // 子模块：延迟创建，确保全局已就绪
+            this._historyManager = null;
+            this._magnetParser = null;
+            this._historyDrawer = null;
+            this._dom = null;
         }
 
-        // URL输入框回车事件
-        const urlInput = document.getElementById('video-url-input');
-        if (urlInput) {
-            urlInput.addEventListener('keypress', e => {
-                if (e.key === 'Enter') {
-                    this.handlePlayUrl();
+        /**
+         * 初始化页面
+         */
+        initialize() {
+            this._cacheDom();
+            if (!this._dom || !this._dom.input) {
+                console.warn('[PlayUrlController] DOM 未就绪，跳过初始化');
+                return;
+            }
+            this._initSubModules();
+            this._setupInputEvents();
+            this._setupActionButtons();
+            this._setupDropZone();
+            this._updateBadge('empty');
+            this._updateSubmitState();
+        }
+
+        /**
+         * 缓存 DOM 引用
+         */
+        _cacheDom() {
+            this._dom = {
+                page: document.getElementById('play-url-page'),
+                input: document.getElementById('play-url-input'),
+                badge: document.getElementById('play-url-badge'),
+                submit: document.getElementById('play-url-submit'),
+                clearBtn: document.getElementById('play-url-clear-btn'),
+                pickFileBtn: document.getElementById('play-url-pick-file'),
+                toggleHistoryBtn: document.getElementById('play-url-toggle-history'),
+                progress: document.getElementById('play-url-progress'),
+                progressStatus: document.getElementById('play-url-progress-status'),
+                progressFill: document.getElementById('play-url-progress-fill'),
+                progressCancel: document.getElementById('play-url-progress-cancel'),
+                files: document.getElementById('play-url-files'),
+                historyDrawer: document.getElementById('play-url-history-drawer'),
+                historyList: document.getElementById('play-url-history-list'),
+                historyClear: document.getElementById('play-url-history-clear')
+            };
+        }
+
+        /**
+         * 初始化子模块
+         */
+        _initSubModules() {
+            // 历史管理
+            if (window.UrlHistoryManager) {
+                try {
+                    this._historyManager = new window.UrlHistoryManager();
+                } catch (e) {
+                    console.error('[PlayUrlController] 初始化 UrlHistoryManager 失败:', e);
+                }
+            }
+
+            // 磁力链解析适配器
+            if (window.MagnetParserAdapter) {
+                this._magnetParser = new window.MagnetParserAdapter();
+                // 订阅进度事件
+                this._magnetParser.onProgress(data => this._handleMagnetProgress(data));
+            }
+
+            // 历史抽屉
+            if (window.HistoryDrawer && this._dom.historyDrawer && this._historyManager) {
+                this._historyDrawer = new window.HistoryDrawer({
+                    container: this._dom.historyDrawer,
+                    historyManager: this._historyManager,
+                    inferType: item => this._historyManager.inferType(item),
+                    onItemClick: item => this._handleHistoryItemClick(item)
+                });
+            }
+        }
+
+        /**
+         * 设置输入框事件
+         */
+        _setupInputEvents() {
+            const { input } = this._dom;
+            if (!input) return;
+
+            // 输入变化：防抖识别类型
+            input.addEventListener('input', () => {
+                this._lastInput = input.value;
+                this._scheduleDetect();
+            });
+
+            // Ctrl+Enter 提交
+            input.addEventListener('keydown', e => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    this._handleSubmit();
                 }
             });
+
+            // 失焦时也立即识别一次（防抖场景下用户可能已停止输入）
+            input.addEventListener('blur', () => {
+                if (this._detectTimer) {
+                    clearTimeout(this._detectTimer);
+                    this._detectTimer = null;
+                }
+                this._detect();
+            });
+
+            // 拖拽文件时显示视觉反馈（具体处理在 _setupDropZone）
         }
 
-        // 选择本地文件按钮
-        const selectFileBtn = document.getElementById('select-file-btn');
-        if (selectFileBtn) {
-            selectFileBtn.addEventListener('click', () => this.selectLocalFile());
+        /**
+         * 设置操作按钮事件
+         */
+        _setupActionButtons() {
+            const { submit, clearBtn, pickFileBtn, toggleHistoryBtn, progressCancel, historyClear } = this._dom;
+
+            if (submit) {
+                submit.addEventListener('click', () => this._handleSubmit());
+            }
+
+            if (clearBtn) {
+                clearBtn.addEventListener('click', () => this._handleClear());
+            }
+
+            if (pickFileBtn) {
+                pickFileBtn.addEventListener('click', () => this._handlePickFile());
+            }
+
+            if (toggleHistoryBtn) {
+                toggleHistoryBtn.addEventListener('click', () => this._toggleHistory());
+            }
+
+            if (progressCancel) {
+                progressCancel.addEventListener('click', () => this._handleParseCancel());
+            }
+
+            if (historyClear) {
+                historyClear.addEventListener('click', () => this._handleClearHistory());
+            }
         }
 
-        // 清空URL历史按钮
-        const clearHistoryBtn = document.getElementById('clear-url-history-btn');
-        if (clearHistoryBtn) {
-            clearHistoryBtn.addEventListener('click', () => this.clearUrlHistory());
-        }
-    }
+        /**
+         * 设置拖拽支持（拖入本地文件直接填入输入框）
+         */
+        _setupDropZone() {
+            const { page, input } = this._dom;
+            const dropZone = page || input;
+            if (!dropZone) return;
 
-    /**
-     * 处理播放URL
-     */
-    async handlePlayUrl() {
-        const urlInput = document.getElementById('video-url-input');
-        const url = urlInput?.value?.trim();
-
-        if (!url) {
-            this.componentService.showNotification('请输入视频链接', 'warning');
-            return;
-        }
-
-        console.log('[PlayUrlController] 处理播放URL:', url);
-
-        // 判断URL类型
-        if (this.isMagnetLink(url)) {
-            // 磁力链接
-            await this.handleMagnetLink(url);
-        } else if (this.isNetworkUrl(url)) {
-            // 网络链接
-            await this.playNetworkUrl(url);
-        } else {
-            this.componentService.showNotification('不支持的链接格式', 'error');
-        }
-    }
-
-    /**
-     * 判断是否为磁力链接
-     * 支持格式：
-     * 1. 标准磁力链接：magnet:?xt=urn:btih:...
-     * 2. 纯info hash：40字符或32字符的十六进制字符串
-     * @param {string} url - URL字符串
-     * @returns {boolean}
-     */
-    isMagnetLink(url) {
-        // 标准磁力链接格式
-        if (url.startsWith('magnet:') || url.includes('magnet:?')) {
-            return true;
-        }
-
-        // 纯info hash格式（40字符十六进制 = SHA1，或32字符 = base32）
-        const cleanUrl = url.trim();
-        if (/^[a-fA-F0-9]{40}$/i.test(cleanUrl) || /^[A-Z2-7]{32}$/i.test(cleanUrl)) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * 将纯info hash转换为标准磁力链接
-     * @param {string} url - URL或info hash
-     * @returns {string} 标准磁力链接
-     */
-    normalizeMagnetLink(url) {
-        // 如果已经是标准磁力链接，直接返回
-        if (url.startsWith('magnet:')) {
-            return url;
-        }
-
-        // 如果是纯info hash，转换为磁力链接格式
-        const cleanUrl = url.trim();
-        if (/^[a-fA-F0-9]{40}$/i.test(cleanUrl) || /^[A-Z2-7]{32}$/i.test(cleanUrl)) {
-            return `magnet:?xt=urn:btih:${cleanUrl}`;
-        }
-
-        return url;
-    }
-
-    /**
-     * 判断是否为网络URL
-     * @param {string} url - URL字符串
-     * @returns {boolean}
-     */
-    isNetworkUrl(url) {
-        return url.startsWith('http://') || url.startsWith('https://');
-    }
-
-    /**
-     * 播放网络URL
-     * @param {string} url - 视频URL
-     */
-    async playNetworkUrl(url) {
-        try {
-            console.log('[PlayUrlController] 播放网络URL:', url);
-
-            // 保存到历史记录
-            this.saveUrlToHistory(url, 'network');
-
-            // 构建视频数据
-            const videoData = {
-                url: url,
-                title: this.extractFileName(url) || '网络视频',
-                vod_name: this.extractFileName(url) || '网络视频',
-                episode_name: '正片',
-                isDirectPlay: true, // 标记为直接播放模式
-                playSource: 'network'
+            // Electron 中，拖入的 File 对象有 path 属性
+            const isFileDrag = e => {
+                if (!e.dataTransfer || !e.dataTransfer.types) return false;
+                return Array.from(e.dataTransfer.types).includes('Files');
             };
 
-            // 打开播放器
-            await this.openPlayer(videoData);
-
-            this.componentService.showNotification('正在加载视频...', 'info');
-        } catch (error) {
-            console.error('[PlayUrlController] 播放网络URL失败:', error);
-            this.componentService.showNotification(`播放失败: ${error.message}`, 'error');
-        }
-    }
-
-    /**
-     * 处理磁力链接
-     * @param {string} magnetUri - 磁力链接或info hash
-     */
-    async handleMagnetLink(magnetUri) {
-        try {
-            console.log('[PlayUrlController] 处理磁力链接:', magnetUri);
-
-            // 转换为标准磁力链接格式
-            const normalizedUri = this.normalizeMagnetLink(magnetUri);
-            console.log('[PlayUrlController] 标准化磁力链接:', normalizedUri);
-
-            // 显示进度区域
-            const progressSection = document.getElementById('magnet-progress-section');
-            if (progressSection) {
-                progressSection.classList.remove('hidden');
-            }
-
-            // 更新状态
-            this.updateMagnetStatus('正在解析磁力链接...', 0);
-
-            // 保存到历史记录（保存原始输入）
-            this.saveUrlToHistory(magnetUri, 'magnet');
-
-            // 设置进度监听
-            if (window.electron && window.electron.onMagnetProgress) {
-                window.electron.onMagnetProgress(data => {
-                    this.updateMagnetStatus(data.status, data.progress);
-                });
-            }
-
-            // 调用主进程处理磁力链接
-            if (window.electron && window.electron.ipcRenderer) {
-                const result = await window.electron.ipcRenderer.invoke('handle-magnet-link', normalizedUri);
-
-                // 移除进度监听
-                if (window.electron && window.electron.removeMagnetProgressListener) {
-                    window.electron.removeMagnetProgressListener();
+            dropZone.addEventListener('dragover', e => {
+                if (isFileDrag(e)) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'copy';
                 }
-
-                if (result && result.success) {
-                    // 保存infoHash供后续播放使用
-                    this._currentMagnetInfoHash = result.infoHash || '';
-                    // 显示文件列表供用户选择
-                    this.showMagnetFilesList(result.files, normalizedUri);
-                } else {
-                    throw new Error(result?.error || '磁力链接解析失败');
-                }
-            } else {
-                throw new Error('Electron IPC不可用');
-            }
-        } catch (error) {
-            console.error('[PlayUrlController] 处理磁力链接失败:', error);
-            // 移除进度监听
-            if (window.electron && window.electron.removeMagnetProgressListener) {
-                window.electron.removeMagnetProgressListener();
-            }
-            this.componentService.showNotification(`磁力链接处理失败: ${error.message}`, 'error');
-            this.hideMagnetProgress();
-        }
-    }
-
-    /**
-     * 显示磁力链接文件列表
-     * @param {Array} files - 文件列表
-     * @param {string} magnetUri - 磁力链接
-     */
-    showMagnetFilesList(files, magnetUri) {
-        const filesListContainer = document.getElementById('magnet-files-list');
-        if (!filesListContainer) return;
-
-        // 过滤视频文件
-        const videoFiles = files.filter(file => this.isVideoFile(file.name));
-
-        if (videoFiles.length === 0) {
-            filesListContainer.innerHTML = '<p class="no-files">未找到视频文件</p>';
-            return;
-        }
-
-        filesListContainer.innerHTML = `
-            <p class="files-hint">找到 ${videoFiles.length} 个视频文件，点击播放：</p>
-            <div class="magnet-file-list">
-                ${videoFiles.map((file, index) => `
-                    <div class="magnet-file-item" data-index="${index}" data-name="${file.name}">
-                        <span class="file-icon">🎬</span>
-                        <span class="file-name">${file.name}</span>
-                        <span class="file-size">${this.formatFileSize(file.length)}</span>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-
-        // 添加点击事件
-        const fileItems = filesListContainer.querySelectorAll('.magnet-file-item');
-        fileItems.forEach(item => {
-            item.addEventListener('click', () => {
-                const index = parseInt(item.dataset.index);
-                this.playMagnetFile(magnetUri, videoFiles[index]);
             });
-        });
-    }
 
-    /**
-     * 播放磁力链接中的文件
-     * @param {string} magnetUri - 磁力链接
-     * @param {object} file - 文件信息
-     */
-    async playMagnetFile(magnetUri, file) {
-        // 将进度监听器声明提升到try外部，确保catch块能访问以正确移除
-        let progressHandler = null;
-
-        try {
-            console.log('[PlayUrlController] 播放磁力文件:', file.name);
-
-            this.updateMagnetStatus(`正在准备: ${file.name}`, 0);
-
-            // 监听下载进度
-            if (window.electron && window.electron.ipcRenderer) {
-                progressHandler = (data) => {
-                    if (data.fileName === file.name) {
-                        const statusText = this.getMagnetStatusText(data);
-                        this.updateMagnetStatus(statusText, data.progress);
-
-                        // 下载完成后移除监听
-                        if (data.progress >= 100 || data.status === 'done') {
-                            window.electron.ipcRenderer.removeListener('magnet-download-progress', progressHandler);
-                            progressHandler = null;
-                        }
-                    }
-                };
-                window.electron.ipcRenderer.on('magnet-download-progress', progressHandler);
-
-                const result = await window.electron.ipcRenderer.invoke('play-magnet-file', {
-                    magnetUri,
-                    fileName: file.name,
-                    infoHash: this._currentMagnetInfoHash || ''
-                });
-
-                if (result && result.success) {
-                    // 构建视频数据
-                    const videoData = {
-                        url: result.streamUrl,
-                        title: file.name,
-                        vod_name: file.name,
-                        episode_name: '正片',
-                        isDirectPlay: true,
-                        playSource: 'magnet',
-                        isStreaming: !result.isLocal,
-                        isLocal: result.isLocal || false
-                    };
-
-                    await this.openPlayer(videoData);
-                } else {
-                    throw new Error(result?.error || '播放失败');
+            dropZone.addEventListener('drop', e => {
+                if (!isFileDrag(e)) return;
+                e.preventDefault();
+                const file = e.dataTransfer.files && e.dataTransfer.files[0];
+                if (!file) return;
+                // Electron 扩展：file.path 是绝对路径
+                const filePath = file.path || file.name;
+                if (input) {
+                    input.value = filePath;
+                    this._lastInput = filePath;
+                    this._detect();
                 }
+            });
+        }
+
+        /**
+         * 防抖触发识别
+         */
+        _scheduleDetect() {
+            if (this._detectTimer) {
+                clearTimeout(this._detectTimer);
             }
-        } catch (error) {
-            console.error('[PlayUrlController] 播放磁力文件失败:', error);
-            this.componentService.showNotification(`播放失败: ${error.message}`, 'error');
-            this.hideMagnetProgress();
-        } finally {
-            // 无论成功还是失败，都确保移除监听器防止内存泄漏
-            if (progressHandler && window.electron && window.electron.ipcRenderer) {
-                window.electron.ipcRenderer.removeListener('magnet-download-progress', progressHandler);
+            this._detectTimer = setTimeout(() => {
+                this._detectTimer = null;
+                this._detect();
+            }, 150);
+        }
+
+        /**
+         * 识别当前输入并更新徽章与按钮状态
+         */
+        _detect() {
+            const input = this._dom && this._dom.input;
+            if (!input) return;
+            const value = input.value;
+            this._lastInput = value;
+
+            if (!window.inputRecognizer) {
+                this._updateBadge('unknown');
+                this._updateSubmitState();
+                return;
+            }
+
+            const result = window.inputRecognizer.detectInputType(value);
+            let badgeKey = 'unknown';
+            if (result.type === 'empty') {
+                badgeKey = 'empty';
+            } else if (result.type === 'url') {
+                badgeKey = 'url';
+            } else if (result.type === 'local') {
+                badgeKey = 'local';
+            } else if (result.type === 'magnet') {
+                badgeKey = 'magnet';
+            }
+
+            this._updateBadge(badgeKey);
+            this._setState(result.type === 'empty' || result.type === 'unknown' ? STATE.EDITING : STATE.RECOGNIZED);
+            this._updateSubmitState();
+        }
+
+        /**
+         * 更新徽章
+         */
+        _updateBadge(key) {
+            const { badge } = this._dom;
+            if (!badge) return;
+            const config = BADGE_CONFIG[key] || BADGE_CONFIG.unknown;
+            badge.textContent = config.text;
+            // 移除所有 is-* class，再添加新的
+            badge.className = 'play-url-badge ' + config.cls;
+        }
+
+        /**
+         * 更新提交按钮可用状态
+         */
+        _updateSubmitState() {
+            const { submit, input } = this._dom;
+            if (!submit || !input) return;
+            if (!window.inputRecognizer) {
+                submit.disabled = true;
+                return;
+            }
+            const result = window.inputRecognizer.detectInputType(input.value);
+            const enabled = result.type === 'url' || result.type === 'local' || result.type === 'magnet';
+            submit.disabled = !enabled;
+        }
+
+        /**
+         * 设置状态（带 UI 反馈）
+         */
+        _setState(newState) {
+            this.state = newState;
+        }
+
+        /**
+         * 处理提交（点立即播放）
+         */
+        _handleSubmit() {
+            if (!window.inputRecognizer) return;
+            if (this._dom && this._dom.submit && this._dom.submit.disabled) return;
+
+            const result = window.inputRecognizer.detectInputType(this._lastInput);
+            if (result.type === 'empty' || result.type === 'unknown') {
+                this._notify('请输入有效的视频链接、磁力链或本地路径', 'warning');
+                return;
+            }
+
+            if (result.type === 'magnet') {
+                const magnetUri = result.magnetUri || ('magnet:?xt=urn:btih:' + result.hash);
+                this._handleMagnet(magnetUri, result.hash || '');
+            } else if (result.type === 'url') {
+                this._handleNetworkUrl(result.url || this._lastInput);
+            } else if (result.type === 'local') {
+                this._handleLocalFile(result.path || this._lastInput);
             }
         }
-    }
 
-    /**
-     * 根据状态数据生成提示文本
-     * @param {object} data - 进度数据
-     * @returns {string} 状态文本
-     */
-    getMagnetStatusText(data) {
-        const speed = data.downloadSpeed > 0
-            ? ` (${(data.downloadSpeed / 1024 / 1024).toFixed(1)} MB/s)`
-            : '';
-        const wires = data.wires > 0 ? ` [${data.wires}个连接]` : '';
-        const peers = data.numPeers > 0 ? ` [发现${data.numPeers}个节点]` : '';
-
-        switch (data.status) {
-            case 'connecting':
-                return '正在连接做种者，请稍候...';
-            case 'no-peers':
-                return '正在寻找做种者...';
-            case 'no-peers-warning':
-                return '⚠ 30秒内未找到做种者，该资源可能无人做种，继续尝试中...';
-            case 'connected-waiting':
-                return `已连接${data.wires}个节点，等待数据传输...`;
-            case 'slow-warning':
-                return `⚠ 60秒内无数据下载，该资源可能做种者不活跃，继续尝试中...`;
-            case 'downloading':
-                return `下载中: ${data.progress}%${speed}${wires}`;
-            case 'done':
-                return '下载完成';
-            default:
-                if (data.progress > 0) {
-                    return `下载中: ${data.progress}%${speed}${wires}`;
-                }
-                return '正在准备...';
+        /**
+         * 处理清空
+         */
+        _handleClear() {
+            const { input, files } = this._dom;
+            if (input) {
+                input.value = '';
+                this._lastInput = '';
+            }
+            if (files) {
+                files.innerHTML = '';
+            }
+            this._hideProgress();
+            this._updateBadge('empty');
+            this._setState(STATE.IDLE);
+            this._updateSubmitState();
         }
-    }
 
-    /**
-     * 选择本地文件
-     */
-    async selectLocalFile() {
-        try {
-            console.log('[PlayUrlController] 选择本地文件');
-
-            // 调用主进程打开文件选择对话框
-            if (window.electron && window.electron.ipcRenderer) {
+        /**
+         * 处理选择本地文件
+         */
+        async _handlePickFile() {
+            if (!window.electron || !window.electron.ipcRenderer) {
+                this._notify('Electron 环境不可用', 'error');
+                return;
+            }
+            try {
                 const result = await window.electron.ipcRenderer.invoke('select-video-file');
-
-                if (result && result.success && result.filePath) {
-                    // 更新显示的文件路径
-                    const filePathElement = document.getElementById('selected-file-path');
-                    if (filePathElement) {
-                        filePathElement.textContent = result.filePath;
-                    }
-
-                    // 播放本地文件
-                    await this.playLocalFile(result.filePath);
+                if (!result || !result.success) {
+                    return; // 用户取消
                 }
-            } else {
-                this.componentService.showNotification('Electron IPC不可用', 'error');
+                const filePath = result.filePath;
+                if (this._dom.input) {
+                    this._dom.input.value = filePath;
+                    this._lastInput = filePath;
+                }
+                this._detect();
+                // 自动播放
+                await this._handleLocalFile(filePath);
+            } catch (error) {
+                console.error('[PlayUrlController] 选择文件失败:', error);
+                this._notify(`选择文件失败: ${error.message}`, 'error');
             }
-        } catch (error) {
-            console.error('[PlayUrlController] 选择文件失败:', error);
-            this.componentService.showNotification(`选择文件失败: ${error.message}`, 'error');
         }
-    }
 
-    /**
-     * 播放本地文件
-     * @param {string} filePath - 本地文件路径
-     */
-    async playLocalFile(filePath) {
-        try {
-            console.log('[PlayUrlController] 播放本地文件:', filePath);
+        /**
+         * 切换历史抽屉
+         */
+        _toggleHistory() {
+            if (!this._historyDrawer) {
+                this._notify('历史功能暂不可用', 'warning');
+                return;
+            }
+            this._historyDrawer.toggle();
+        }
 
-            // 保存到历史记录
-            this.saveUrlToHistory(filePath, 'local');
+        /**
+         * 处理清空历史
+         */
+        _handleClearHistory() {
+            if (!this._historyManager) return;
+            if (!confirm('确定要清空所有播放历史吗？')) return;
+            const list = this._historyManager.getList() || [];
+            // 逐条删除（保留 addPlayHistory 的 try-catch 容错）
+            list.forEach(item => {
+                if (item && item.vod_id) {
+                    this._historyManager.removeItem(item.vod_id);
+                }
+            });
+            if (this._historyDrawer) {
+                this._historyDrawer.render();
+            }
+            this._notify('播放历史已清空', 'success');
+        }
 
-            // 构建视频数据
-            const fileName = this.extractFileName(filePath);
+        /**
+         * 处理网络 URL
+         * @param {string} url
+         */
+        async _handleNetworkUrl(url) {
+            if (!url) return;
+            this._setState(STATE.PLAYING);
+            this._addHistory(url, '外链', 'url');
+            const fileName = this._extractFileName(url) || '网络视频';
+            const videoData = {
+                url,
+                title: fileName,
+                vod_name: fileName,
+                episode_name: '正片',
+                isDirectPlay: true,
+                playSource: 'network'
+            };
+            await this._openPlayer(videoData);
+            this._notify('正在加载视频...', 'info');
+        }
+
+        /**
+         * 处理本地文件
+         * @param {string} filePath
+         */
+        async _handleLocalFile(filePath) {
+            if (!filePath) return;
+            this._setState(STATE.PLAYING);
+            this._addHistory(filePath, '本地', 'local');
+            const fileName = this._extractFileName(filePath) || '本地视频';
             const videoData = {
                 url: `file://${filePath}`,
                 title: fileName,
@@ -416,270 +441,286 @@ class PlayUrlController {
                 playSource: 'local',
                 localPath: filePath
             };
-
-            await this.openPlayer(videoData);
-
-            this.componentService.showNotification('正在加载本地视频...', 'info');
-        } catch (error) {
-            console.error('[PlayUrlController] 播放本地文件失败:', error);
-            this.componentService.showNotification(`播放失败: ${error.message}`, 'error');
+            await this._openPlayer(videoData);
+            this._notify('正在加载本地视频...', 'info');
         }
-    }
 
-    /**
-     * 打开播放器
-     * @param {object} videoData - 视频数据
-     */
-    async openPlayer(videoData) {
-        try {
-            if (window.electron && window.electron.ipcRenderer) {
-                const result = await window.electron.ipcRenderer.invoke('open-player', videoData);
+        /**
+         * 处理磁力链
+         * @param {string} magnetUri
+         * @param {string} infoHash
+         */
+        async _handleMagnet(magnetUri, infoHash) {
+            if (!this._magnetParser || !this._magnetParser.isAvailable()) {
+                this._notify('磁力链功能不可用（Electron IPC 缺失）', 'error');
+                return;
+            }
+            this._currentMagnetUri = magnetUri;
+            this._currentInfoHash = infoHash || '';
+            this._parseCancelled = false;
+            this._setState(STATE.PARSE_PROGRESS);
+            this._showProgress('正在解析磁力链接...', 0, 'info');
+            this._addHistory(magnetUri, '磁力', 'magnet');
 
+            try {
+                const result = await this._magnetParser.parse(magnetUri);
+                if (this._parseCancelled) {
+                    return;
+                }
                 if (result && result.success) {
-                    console.log('[PlayUrlController] 播放器已打开');
+                    this._currentInfoHash = result.infoHash || this._currentInfoHash;
+                    this._hideProgress();
+                    this._renderFilesList(result.files || [], magnetUri);
+                    this._setState(STATE.FILES_READY);
                 } else {
-                    throw new Error(result?.message || '打开播放器失败');
+                    throw new Error((result && result.error) || '磁力链解析失败');
                 }
-            } else {
-                throw new Error('Electron IPC不可用');
+            } catch (error) {
+                if (this._parseCancelled) {
+                    return;
+                }
+                console.error('[PlayUrlController] 磁力链解析失败:', error);
+                this._showProgress(`解析失败: ${error.message}`, 0, 'error');
+                this._setState(STATE.EDITING);
+                this._notify(`磁力链解析失败: ${error.message}`, 'error');
             }
-        } catch (error) {
-            console.error('[PlayUrlController] 打开播放器失败:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * 更新磁力链接状态
-     * @param {string} status - 状态文本
-     * @param {number} progress - 进度百分比
-     */
-    updateMagnetStatus(status, progress) {
-        const statusElement = document.getElementById('magnet-status');
-        const progressBar = document.getElementById('magnet-progress-bar');
-
-        if (statusElement) {
-            statusElement.textContent = status;
         }
 
-        if (progressBar) {
-            progressBar.style.width = `${progress}%`;
-        }
-    }
-
-    /**
-     * 隐藏磁力进度区域
-     */
-    hideMagnetProgress() {
-        const progressSection = document.getElementById('magnet-progress-section');
-        if (progressSection) {
-            progressSection.classList.add('hidden');
-        }
-    }
-
-    /**
-     * 判断是否为视频文件
-     * @param {string} fileName - 文件名
-     * @returns {boolean}
-     */
-    isVideoFile(fileName) {
-        const videoExtensions = ['.mp4', '.mkv', '.webm', '.avi', '.mov', '.m3u8', '.mpd', '.flv', '.wmv'];
-        const lowerName = fileName.toLowerCase();
-        return videoExtensions.some(ext => lowerName.endsWith(ext));
-    }
-
-    /**
-     * 提取文件名
-     * @param {string} urlOrPath - URL或路径
-     * @returns {string}
-     */
-    extractFileName(urlOrPath) {
-        try {
-            const parts = urlOrPath.split('/');
-            const lastPart = parts[parts.length - 1];
-            // 移除查询参数
-            return lastPart.split('?')[0] || '视频';
-        } catch {
-            return '视频';
-        }
-    }
-
-    /**
-     * 格式化文件大小
-     * @param {number} bytes - 字节数
-     * @returns {string}
-     */
-    formatFileSize(bytes) {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-
-    /**
-     * 保存URL到历史记录
-     * @param {string} url - URL
-     * @param {string} type - 类型 (network/local/magnet)
-     */
-    saveUrlToHistory(url, type) {
-        const history = this.loadUrlHistory();
-
-        // 移除重复项
-        const filtered = history.filter(item => item.url !== url);
-
-        // 添加新记录
-        filtered.unshift({
-            url,
-            type,
-            name: this.extractFileName(url),
-            time: Date.now()
-        });
-
-        // 限制数量
-        const limited = filtered.slice(0, 20);
-
-        // 保存
-        localStorage.setItem('URL_PLAY_HISTORY', JSON.stringify(limited));
-        this.urlHistory = limited;
-
-        // 更新显示
-        this.loadUrlHistoryDisplay();
-    }
-
-    /**
-     * 加载URL历史记录
-     * @returns {Array}
-     */
-    loadUrlHistory() {
-        try {
-            return JSON.parse(localStorage.getItem('URL_PLAY_HISTORY') || '[]');
-        } catch {
-            return [];
-        }
-    }
-
-    /**
-     * 加载URL历史记录显示
-     */
-    loadUrlHistoryDisplay() {
-        const historyList = document.getElementById('url-history-list');
-        if (!historyList) return;
-
-        const history = this.loadUrlHistory();
-
-        if (history.length === 0) {
-            historyList.innerHTML = '<div class="empty-history">暂无播放历史</div>';
-            return;
+        /**
+         * 处理磁力链进度事件（来自主进程）
+         * @param {{ status: string, progress: number, source?: string }} data
+         */
+        _handleMagnetProgress(data) {
+            if (!data) return;
+            // 只在 PARSE_PROGRESS 或 PLAYING 状态下更新
+            if (this.state !== STATE.PARSE_PROGRESS && this.state !== STATE.PLAYING) {
+                return;
+            }
+            const status = data.status || (data.progress >= 100 ? '完成' : '处理中...');
+            // 主进程日志转发的 progress 通常是 0（不确定进度），下载阶段是 0-100
+            const pct = typeof data.progress === 'number' ? data.progress : 0;
+            this._showProgress(status, pct, 'info');
         }
 
-        historyList.innerHTML = history.map(item => `
-            <div class="url-history-item" data-url="${item.url}" data-type="${item.type}">
-                <span class="history-icon">${this.getTypeIcon(item.type)}</span>
-                <span class="history-name" title="${item.url}">${item.name}</span>
-                <span class="history-time">${this.formatTime(item.time)}</span>
-                <button class="history-remove" title="删除">×</button>
-            </div>
-        `).join('');
+        /**
+         * 取消正在进行的解析
+         */
+        _handleParseCancel() {
+            this._parseCancelled = true;
+            this._hideProgress();
+            this._setState(STATE.EDITING);
+            this._notify('已取消磁力链解析', 'info');
+        }
 
-        // 添加点击事件
-        const items = historyList.querySelectorAll('.url-history-item');
-        items.forEach(item => {
-            // 点击播放
-            item.addEventListener('click', e => {
-                if (!e.target.classList.contains('history-remove')) {
-                    this.replayHistoryItem(item.dataset.url, item.dataset.type);
-                }
+        /**
+         * 渲染磁力链文件列表
+         * @param {Array} files
+         * @param {string} magnetUri
+         */
+        _renderFilesList(files, magnetUri) {
+            const { files: container } = this._dom;
+            if (!container) return;
+            if (!window.fileListRenderer) {
+                container.innerHTML = '<div class="play-url-empty"><p>文件列表渲染器不可用</p></div>';
+                return;
+            }
+            window.fileListRenderer.renderFileList(container, files, (file, index) => {
+                this._playMagnetFile(magnetUri, file);
             });
+        }
 
-            // 删除按钮
-            const removeBtn = item.querySelector('.history-remove');
-            if (removeBtn) {
-                removeBtn.addEventListener('click', e => {
-                    e.stopPropagation();
-                    this.removeHistoryItem(item.dataset.url);
-                });
+        /**
+         * 播放磁力链指定文件
+         * @param {string} magnetUri
+         * @param {{ name: string, length: number, [k: string]: any }} file
+         */
+        async _playMagnetFile(magnetUri, file) {
+            if (!this._magnetParser || !file) return;
+            this._setState(STATE.PLAYING);
+            this._showProgress(`正在准备: ${file.name}`, 0, 'info');
+            try {
+                const result = await this._magnetParser.play(magnetUri, file.name, this._currentInfoHash);
+                if (this._parseCancelled) {
+                    return;
+                }
+                if (result && result.success) {
+                    const videoData = {
+                        url: result.streamUrl,
+                        title: file.name,
+                        vod_name: file.name,
+                        episode_name: '正片',
+                        isDirectPlay: true,
+                        playSource: 'magnet',
+                        isStreaming: !result.isLocal,
+                        isLocal: !!result.isLocal
+                    };
+                    await this._openPlayer(videoData);
+                    this._hideProgress();
+                } else {
+                    throw new Error((result && result.error) || '播放失败');
+                }
+            } catch (error) {
+                console.error('[PlayUrlController] 播放磁力文件失败:', error);
+                this._showProgress(`播放失败: ${error.message}`, 0, 'error');
+                this._notify(`播放失败: ${error.message}`, 'error');
             }
-        });
-    }
+        }
 
-    /**
-     * 获取类型图标
-     * @param {string} type - 类型
-     * @returns {string}
-     */
-    getTypeIcon(type) {
-        switch (type) {
-            case 'network':
-                return '🌐';
-            case 'local':
-                return '📁';
-            case 'magnet':
-                return '🧲';
-            default:
-                return '🎬';
+        /**
+         * 打开播放器
+         * @param {object} videoData
+         */
+        async _openPlayer(videoData) {
+            if (!window.electron || !window.electron.ipcRenderer) {
+                this._notify('Electron 环境不可用', 'error');
+                return;
+            }
+            try {
+                const result = await window.electron.ipcRenderer.invoke('open-player', videoData);
+                if (!result || !result.success) {
+                    throw new Error((result && result.message) || '打开播放器失败');
+                }
+            } catch (error) {
+                console.error('[PlayUrlController] 打开播放器失败:', error);
+                this._notify(`打开播放器失败: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+        /**
+         * 处理历史项点击
+         * @param {{ vod_id: string, vod_name: string, type_name?: string }} item
+         */
+        async _handleHistoryItemClick(item) {
+            if (!item || !item.vod_id) return;
+            const vodId = item.vod_id;
+            // 折叠抽屉
+            if (this._historyDrawer) {
+                this._historyDrawer.close();
+            }
+            // 填入输入框
+            if (this._dom.input) {
+                this._dom.input.value = vodId;
+                this._lastInput = vodId;
+            }
+            this._detect();
+            // 自动播放
+            if (!this._historyManager) {
+                this._notify('历史管理不可用', 'error');
+                return;
+            }
+            const type = this._historyManager.inferType(item);
+            if (type === 'magnet') {
+                await this._handleMagnet(vodId);
+            } else if (type === 'local') {
+                const localPath = vodId.startsWith('file://') ? vodId.replace(/^file:\/\/\//, '') : vodId;
+                await this._handleLocalFile(localPath);
+            } else if (type === 'url') {
+                await this._handleNetworkUrl(vodId);
+            } else {
+                // 未知类型，尝试作为 URL
+                await this._handleNetworkUrl(vodId);
+            }
+        }
+
+        /**
+         * 添加历史
+         * @param {string} vodId
+         * @param {string} typeName
+         * @param {'magnet'|'local'|'url'} internalType
+         */
+        _addHistory(vodId, typeName, internalType) {
+            if (!this._historyManager) return;
+            this._historyManager.addItem({
+                vod_id: vodId,
+                vod_name: this._extractDisplayName(vodId, internalType),
+                type_name: typeName
+            });
+            if (this._historyDrawer && this._historyDrawer.isOpen()) {
+                this._historyDrawer.render();
+            }
+        }
+
+        /**
+         * 提取显示名称
+         */
+        _extractDisplayName(input, type) {
+            if (type === 'magnet') {
+                // 尝试从 dn 参数提取，否则用 hash 前 8 位
+                const dnMatch = input.match(/[?&]dn=([^&]*)/i);
+                if (dnMatch && dnMatch[1]) {
+                    try {
+                        return decodeURIComponent(dnMatch[1]);
+                    } catch (e) {
+                        return dnMatch[1];
+                    }
+                }
+                const hashMatch = input.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7]{32})/i);
+                if (hashMatch && hashMatch[1]) {
+                    return `磁力资源 ${hashMatch[1].substring(0, 8)}`;
+                }
+                return '磁力链接';
+            }
+            return this._extractFileName(input) || input;
+        }
+
+        /**
+         * 提取文件名
+         */
+        _extractFileName(urlOrPath) {
+            try {
+                const cleaned = String(urlOrPath).split('?')[0].split('#')[0];
+                const parts = cleaned.split(/[\\/]/);
+                return parts[parts.length - 1] || '';
+            } catch (e) {
+                return '';
+            }
+        }
+
+        /**
+         * 显示进度条
+         * @param {string} status
+         * @param {number} pct
+         * @param {'info'|'warning'|'error'} variant
+         */
+        _showProgress(status, pct, variant) {
+            const { progress, progressStatus, progressFill } = this._dom;
+            if (!progress || !progressStatus || !progressFill) return;
+            progressStatus.textContent = status || '处理中...';
+            const clamped = Math.max(0, Math.min(100, Number(pct) || 0));
+            progressFill.style.width = clamped + '%';
+            progress.style.display = 'block';
+            progress.className = 'play-url-progress' + (variant && variant !== 'info' ? ' is-' + variant : '');
+        }
+
+        /**
+         * 隐藏进度条
+         */
+        _hideProgress() {
+            const { progress } = this._dom;
+            if (progress) {
+                progress.style.display = 'none';
+            }
+        }
+
+        /**
+         * 显示通知（统一封装）
+         */
+        _notify(message, type) {
+            if (this.componentService && typeof this.componentService.showNotification === 'function') {
+                this.componentService.showNotification(message, type || 'info');
+            } else {
+                console.log('[PlayUrlController]', type || 'info', message);
+            }
         }
     }
 
-    /**
-     * 格式化时间
-     * @param {number} timestamp - 时间戳
-     * @returns {string}
-     */
-    formatTime(timestamp) {
-        const now = Date.now();
-        const diff = now - timestamp;
-
-        if (diff < 60000) return '刚刚';
-        if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
-        if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
-        return `${Math.floor(diff / 86400000)}天前`;
+    // 暴露到 window（兼容浏览器脚本加载）
+    if (typeof window !== 'undefined') {
+        window.PlayUrlController = PlayUrlController;
     }
-
-    /**
-     * 重新播放历史项
-     * @param {string} url - URL
-     * @param {string} type - 类型
-     */
-    async replayHistoryItem(url, type) {
-        const urlInput = document.getElementById('video-url-input');
-        if (urlInput) {
-            urlInput.value = url;
-        }
-
-        if (type === 'local') {
-            await this.playLocalFile(url.replace('file://', ''));
-        } else if (type === 'magnet') {
-            await this.handleMagnetLink(url);
-        } else {
-            await this.playNetworkUrl(url);
-        }
+    // CommonJS 兼容（Jest 测试）
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = { PlayUrlController, STATE, BADGE_CONFIG };
     }
-
-    /**
-     * 移除历史项
-     * @param {string} url - URL
-     */
-    removeHistoryItem(url) {
-        const history = this.loadUrlHistory();
-        const filtered = history.filter(item => item.url !== url);
-        localStorage.setItem('URL_PLAY_HISTORY', JSON.stringify(filtered));
-        this.urlHistory = filtered;
-        this.loadUrlHistoryDisplay();
-    }
-
-    /**
-     * 清空URL历史
-     */
-    clearUrlHistory() {
-        if (confirm('确定要清空所有播放历史吗？')) {
-            localStorage.removeItem('URL_PLAY_HISTORY');
-            this.urlHistory = [];
-            this.loadUrlHistoryDisplay();
-            this.componentService.showNotification('播放历史已清空', 'success');
-        }
-    }
-}
-
-// 导出控制器
-window.PlayUrlController = PlayUrlController;
+})();

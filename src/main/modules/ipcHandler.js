@@ -536,8 +536,13 @@ function setupIPC(qixingApp) {
         const { spawn } = require('child_process');
         const path = require('path');
 
-        // 使用系统Node.js运行磁力链处理脚本（ESM模块，.mjs扩展名）
-        const scriptPath = path.join(__dirname, '..', 'scripts', 'magnetHandler.mjs');
+        // 脚本路径：打包后在resources/magnet-scripts，开发环境在src/main/scripts
+        let scriptPath;
+        if (app.isPackaged) {
+            scriptPath = path.join(process.resourcesPath, 'magnet-scripts', 'magnetHandler.mjs');
+        } else {
+            scriptPath = path.join(__dirname, '..', 'scripts', 'magnetHandler.mjs');
+        }
 
         // magnet-runtime目录：开发环境在项目根目录，打包后在resources目录
         let magnetRuntimeDir;
@@ -574,7 +579,7 @@ function setupIPC(qixingApp) {
                     const msg = JSON.parse(line);
                     handleMagnetMessage(msg);
                 } catch (err) {
-                    console.log('[MAIN] 磁力链子进程输出:', line);
+                    console.log('[MAIN] 磁力链子进程输出(非JSON):', line.substring(0, 200));
                 }
             }
         });
@@ -600,22 +605,26 @@ function setupIPC(qixingApp) {
     /**
      * 清理磁力链子进程资源
      * 在关闭播放器或应用退出时调用
+     * 使用局部 proc 变量 + 立即置空全局引用的方式实现可重入：
+     * 多次调用不会重复写 stdin 也不会重复 schedule kill
      */
     function cleanupMagnetProcess() {
-        if (magnetProcess && !magnetProcess.killed) {
+        // 立即取出引用并清空全局变量，避免重入时重复处理同一个进程
+        const proc = magnetProcess;
+        magnetProcess = null;
+
+        if (proc && !proc.killed) {
             try {
                 // 发送destroy命令让子进程优雅关闭
-                magnetProcess.stdin.write(JSON.stringify({ action: 'destroy' }) + '\n');
+                proc.stdin.write(JSON.stringify({ action: 'destroy' }) + '\n');
                 // 给子进程1秒时间清理，然后强制退出
                 setTimeout(() => {
-                    if (magnetProcess && !magnetProcess.killed) {
-                        magnetProcess.kill();
-                        magnetProcess = null;
+                    if (!proc.killed) {
+                        proc.kill();
                     }
                 }, 1000);
             } catch (err) {
-                magnetProcess.kill();
-                magnetProcess = null;
+                proc.kill();
             }
         }
         // 清理所有pending请求
@@ -625,6 +634,9 @@ function setupIPC(qixingApp) {
         }
         magnetPendingRequests.clear();
     }
+
+    // 暴露到 qixingApp 实例，供 windowManager 等其他模块在窗口关闭时调用
+    qixingApp.cleanupMagnetProcess = cleanupMagnetProcess;
 
     /**
      * 发送消息到磁力链子进程并等待响应
@@ -654,9 +666,18 @@ function setupIPC(qixingApp) {
      * 处理磁力链子进程的消息
      */
     function handleMagnetMessage(msg) {
-        // 日志消息直接输出
+        // 日志消息：主进程控制台输出 + 转发为 magnet-progress 事件到主窗口
+        // 解决 resolve 阶段 60s 阻塞等待期间，渲染端进度区一直卡在 0% 的问题
         if (msg.type === 'log') {
             console.log('[MAIN] [MAGNET]', msg.message);
+            if (qixingApp.mainWindow && !qixingApp.mainWindow.isDestroyed()) {
+                qixingApp.mainWindow.webContents.send('magnet-progress', {
+                    status: msg.message,
+                    progress: 0,
+                    source: 'log',
+                    timestamp: Date.now()
+                });
+            }
             return;
         }
 
@@ -671,17 +692,24 @@ function setupIPC(qixingApp) {
         }
 
         if (msg.type === 'progress') {
-            // 转发下载进度到渲染进程
+            // 构建进度数据（保留原始status和numPeers字段）
+            const progressData = {
+                fileName: msg.fileName,
+                progress: msg.progress,
+                downloaded: msg.downloaded,
+                total: msg.total,
+                wires: msg.wires,
+                downloadSpeed: msg.downloadSpeed,
+                numPeers: msg.numPeers,
+                status: msg.status || (msg.progress >= 100 ? 'completed' : 'downloading')
+            };
+            // 转发下载进度到主窗口
             if (qixingApp.mainWindow && !qixingApp.mainWindow.isDestroyed()) {
-                qixingApp.mainWindow.webContents.send('magnet-download-progress', {
-                    fileName: msg.fileName,
-                    progress: msg.progress,
-                    downloaded: msg.downloaded,
-                    total: msg.total,
-                    wires: msg.wires,
-                    downloadSpeed: msg.downloadSpeed,
-                    status: msg.progress >= 100 ? 'completed' : 'downloading'
-                });
+                qixingApp.mainWindow.webContents.send('magnet-download-progress', progressData);
+            }
+            // 同时转发到播放器窗口
+            if (qixingApp.playerWindow && !qixingApp.playerWindow.isDestroyed()) {
+                qixingApp.playerWindow.webContents.send('magnet-download-progress', progressData);
             }
             return;
         }
@@ -783,15 +811,43 @@ function setupIPC(qixingApp) {
         console.log('[MAIN] 收到播放磁力文件请求:', fileName, 'infoHash:', infoHash);
         try {
             // 发送初始进度
-            event.sender.send('magnet-download-progress', {
+            const initialProgress = {
                 fileName,
                 progress: 0,
                 downloaded: 0,
                 total: 0,
                 wires: 0,
                 downloadSpeed: 0,
+                numPeers: 0,
                 status: 'connecting'
-            });
+            };
+            event.sender.send('magnet-download-progress', initialProgress);
+            // 同时发送到播放器窗口
+            if (qixingApp.playerWindow && !qixingApp.playerWindow.isDestroyed()) {
+                qixingApp.playerWindow.webContents.send('magnet-download-progress', initialProgress);
+            } else {
+                console.log('[MAIN] 播放器窗口尚未创建，稍后重试发送初始进度');
+                // 延迟 500ms 再次尝试，应对播放器窗口创建慢的情况
+                setTimeout(() => {
+                    if (qixingApp.playerWindow && !qixingApp.playerWindow.isDestroyed()) {
+                        qixingApp.playerWindow.webContents.send('magnet-download-progress', {
+                            ...initialProgress,
+                            status: 'reconnected'
+                        });
+                        console.log('[MAIN] 延迟重试：初始进度已发送至播放器窗口');
+                    }
+                }, 500);
+                // 再延迟 2s 尝试
+                setTimeout(() => {
+                    if (qixingApp.playerWindow && !qixingApp.playerWindow.isDestroyed()) {
+                        qixingApp.playerWindow.webContents.send('magnet-download-progress', {
+                            ...initialProgress,
+                            status: 'reconnected-late'
+                        });
+                        console.log('[MAIN] 第二次延迟重试：进度已发送至播放器窗口');
+                    }
+                }, 2000);
+            }
 
             // 使用子进程播放磁力文件
             // 查找resolve阶段子进程已缓存的torrent文件路径，避免重复获取

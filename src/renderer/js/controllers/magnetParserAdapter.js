@@ -10,7 +10,12 @@
  * 兼容 Electron renderer (nodeIntegration: false)，通过 window.electron 访问
  *
  * 单一职责：仅做 IPC 转发与进度订阅，不做 UI 渲染，不做状态管理。
+ *
+ * 模块包在 IIFE 内，避免 const 污染全局
  */
+
+(function () {
+    'use strict';
 
 /**
  * 进度数据约定（来自 ipcHandler.js 在 resolve 阶段通过 event.sender.send 发送）：
@@ -153,3 +158,4 @@ if (typeof module !== 'undefined' && module.exports) {
 if (typeof window !== 'undefined') {
     window.MagnetParserAdapter = MagnetParserAdapter;
 }
+})();

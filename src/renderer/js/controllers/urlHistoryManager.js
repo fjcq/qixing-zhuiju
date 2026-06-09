@@ -6,7 +6,12 @@
  * 严格遵循 project memory 规范：
  * - 正常路径不输出 [STORAGE] 日志
  * - 异常路径 console.error 后降级（getList 返回 []，写入静默失败）
+ *
+ * 模块包在 IIFE 内，避免 const 与 inputRecognizer.js 的同名常量冲突
  */
+
+(function () {
+    'use strict';
 
 /**
  * 兼容 Node.js (Jest) 和 Electron renderer (无 nodeIntegration)
@@ -123,6 +128,10 @@ class UrlHistoryManager {
     }
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { UrlHistoryManager };
-}
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = { UrlHistoryManager };
+    }
+    if (typeof window !== 'undefined') {
+        window.UrlHistoryManager = UrlHistoryManager;
+    }
+})();
