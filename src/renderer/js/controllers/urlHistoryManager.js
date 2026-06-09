@@ -8,7 +8,21 @@
  * - 异常路径 console.error 后降级（getList 返回 []，写入静默失败）
  */
 
-const { StorageService } = require('../storage');
+/**
+ * 兼容 Node.js (Jest) 和 Electron renderer (无 nodeIntegration)
+ * 优先用 require（Jest 测试），失败则降级到 window.StorageService 全局
+ */
+let StorageService;
+if (typeof require !== 'undefined' && typeof window === 'undefined') {
+    try {
+        StorageService = require('../storage').StorageService;
+    } catch (e) {
+        // ignored
+    }
+}
+if (!StorageService && typeof window !== 'undefined' && window.StorageService) {
+    StorageService = window.StorageService;
+}
 
 const TYPE_MAGNET = 'magnet';
 const TYPE_URL = 'url';

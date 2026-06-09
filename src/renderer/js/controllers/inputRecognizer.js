@@ -37,8 +37,8 @@ function detectInputType(input) {
         };
     }
 
-    // 3. 纯 32 位 base32 Info Hash
-    if (/^[A-Z2-7]{32}$/i.test(str)) {
+    // 3. 纯 32 位 base32 Info Hash（严格大写无 /i 标志）
+    if (/^[A-Z2-7]{32}$/.test(str)) {
         return {
             type: TYPE_MAGNET,
             hash: str,

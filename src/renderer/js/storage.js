@@ -12,10 +12,15 @@ class StorageService {
 
     // 获取播放历史
     getPlayHistory() {
-        const history = localStorage.getItem(this.STORAGE_KEYS.PLAY_HISTORY);
-        const parsedHistory = history ? JSON.parse(history) : [];
+        try {
+            const history = localStorage.getItem(this.STORAGE_KEYS.PLAY_HISTORY);
+            const parsedHistory = history ? JSON.parse(history) : [];
 
-        return parsedHistory;
+            return parsedHistory;
+        } catch (error) {
+            console.error('[STORAGE] 读取播放历史失败:', error);
+            return [];
+        }
     }
 
     // 添加播放历史
@@ -80,9 +85,13 @@ class StorageService {
 
     // 删除播放历史项
     removePlayHistory(vodId) {
-        let history = this.getPlayHistory();
-        history = history.filter(item => item.vod_id !== vodId);
-        localStorage.setItem(this.STORAGE_KEYS.PLAY_HISTORY, JSON.stringify(history));
+        try {
+            let history = this.getPlayHistory();
+            history = history.filter(item => item.vod_id !== vodId);
+            localStorage.setItem(this.STORAGE_KEYS.PLAY_HISTORY, JSON.stringify(history));
+        } catch (error) {
+            console.error('[STORAGE] 删除播放历史失败:', error);
+        }
     }
 
     // 清空播放历史
@@ -100,47 +109,49 @@ class StorageService {
 
     // 保存观看进度
     saveWatchProgress(vodId, episode, currentTime, duration) {
-        const progress = localStorage.getItem(this.STORAGE_KEYS.WATCH_PROGRESS);
-        const progressData = progress ? JSON.parse(progress) : {};
+        try {
+            const progress = localStorage.getItem(this.STORAGE_KEYS.WATCH_PROGRESS);
+            const progressData = progress ? JSON.parse(progress) : {};
 
-        const key = `${vodId}_${episode}`;
-        const percentage = duration > 0 ? Math.round((currentTime / duration) * 100) : 0;
+            const key = `${vodId}_${episode}`;
+            const percentage = duration > 0 ? Math.round((currentTime / duration) * 100) : 0;
 
-        progressData[key] = {
-            currentTime: Math.round(currentTime),
-            duration: Math.round(duration),
-            percentage,
-            updateTime: Date.now()
-        };
+            progressData[key] = {
+                currentTime: Math.round(currentTime),
+                duration: Math.round(duration),
+                percentage,
+                updateTime: Date.now()
+            };
 
-        localStorage.setItem(this.STORAGE_KEYS.WATCH_PROGRESS, JSON.stringify(progressData));
+            localStorage.setItem(this.STORAGE_KEYS.WATCH_PROGRESS, JSON.stringify(progressData));
 
-        // 同时更新播放历史中的进度和播放时长
-        this.updateHistoryProgress(vodId, episode, percentage, Math.round(currentTime));
+            // 同时更新播放历史中的进度和播放时长
+            this.updateHistoryProgress(vodId, episode, percentage, Math.round(currentTime));
+        } catch (error) {
+            console.error('[STORAGE] 保存观看进度失败:', error);
+        }
     }
 
     // 更新历史记录中的进度
     updateHistoryProgress(vodId, episode, percentage, playDuration = null) {
-        const history = this.getPlayHistory();
-        const historyItem = history.find(item => item.vod_id === vodId);
+        try {
+            const history = this.getPlayHistory();
+            const historyItem = history.find(item => item.vod_id === vodId);
 
-        if (historyItem) {
-            historyItem.current_episode = episode;
-            historyItem.progress = percentage;
-            historyItem.watch_time = Date.now();
+            if (historyItem) {
+                historyItem.current_episode = episode;
+                historyItem.progress = percentage;
+                historyItem.watch_time = Date.now();
 
-            // 更新播放时长（如果提供了的话）
-            if (playDuration !== null && playDuration > 0) {
-                historyItem.play_duration = playDuration;
-                console.log('[STORAGE] 更新播放历史时长:', {
-                    vodId,
-                    episode,
-                    playDuration,
-                    vodName: historyItem.vod_name
-                });
+                // 更新播放时长（如果提供了的话）
+                if (playDuration !== null && playDuration > 0) {
+                    historyItem.play_duration = playDuration;
+                }
+
+                localStorage.setItem(this.STORAGE_KEYS.PLAY_HISTORY, JSON.stringify(history));
             }
-
-            localStorage.setItem(this.STORAGE_KEYS.PLAY_HISTORY, JSON.stringify(history));
+        } catch (error) {
+            console.error('[STORAGE] 更新历史进度失败:', error);
         }
     }
 
@@ -1036,5 +1047,10 @@ class StorageService {
     }
 }
 
-// 导出存储服务实例
-window.StorageService = StorageService;
+// 导出存储服务实例（兼容浏览器全局和 CommonJS）
+if (typeof window !== 'undefined') {
+    window.StorageService = StorageService;
+}
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { StorageService };
+}
