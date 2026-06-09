@@ -10,7 +10,7 @@ const TYPE_MAGNET = 'magnet';
 const TYPE_UNKNOWN = 'unknown';
 const TYPE_EMPTY = 'empty';
 
-const VIDEO_EXTS = ['m3u8', 'mp4', 'mkv', 'webm', 'avi', 'flv', 'mov', 'wmv'];
+const VIDEO_EXTS = ['m3u8', 'mp4', 'mkv', 'webm', 'avi', 'flv'];
 
 /**
  * 检测输入内容类型
