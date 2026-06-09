@@ -15,16 +15,16 @@ const {
 describe('detectInputType', () => {
     describe('magnet 识别', () => {
         it('应识别标准 magnet: URI', () => {
-            const r = detectInputType('magnet:?xt=urn:btih:abc123def456abc123def456abc123def45678');
+            const r = detectInputType('magnet:?xt=urn:btih:abc123def456abc123def456abc123def45678ab');
             expect(r.type).toBe(TYPE_MAGNET);
-            expect(r.hash).toBe('abc123def456abc123def456abc123def45678');
+            expect(r.hash).toBe('abc123def456abc123def456abc123def45678ab');
         });
 
         it('应自动补全 40 位 hex Info Hash 的 magnet: 前缀', () => {
-            const r = detectInputType('ABC123def456abc123def456abc123def45678');
+            const r = detectInputType('ABC123def456abc123def456abc123def45678ab');
             expect(r.type).toBe(TYPE_MAGNET);
-            expect(r.hash).toBe('ABC123def456abc123def456abc123def45678');
-            expect(r.magnetUri).toBe('magnet:?xt=urn:btih:ABC123def456abc123def456abc123def45678');
+            expect(r.hash).toBe('ABC123def456abc123def456abc123def45678ab');
+            expect(r.magnetUri).toBe('magnet:?xt=urn:btih:ABC123def456abc123def456abc123def45678ab');
         });
 
         it('应自动补全 32 位 base32 Info Hash 的 magnet: 前缀', () => {

@@ -83,7 +83,7 @@ function detectInputType(input) {
  * @returns {{ type: string, hash: string, magnetUri: string }}
  */
 function parseMagnetUri(uri) {
-    const match = uri.match(/urn:btih:([a-zA-Z0-9]+)/);
+    const match = uri.match(/urn:btih:([a-fA-F0-9]{40}|[A-Z2-7]{32})/i);
     return {
         type: TYPE_MAGNET,
         hash: match ? match[1] : '',
