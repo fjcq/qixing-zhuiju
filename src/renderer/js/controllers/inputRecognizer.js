@@ -28,8 +28,8 @@ function detectInputType(input) {
         return parseMagnetUri(str);
     }
 
-    // 2. 纯 hex Info Hash (32-40 位)
-    if (/^[a-fA-F0-9]{32,40}$/.test(str)) {
+    // 2. 纯 40 位 hex Info Hash
+    if (/^[a-fA-F0-9]{40}$/.test(str)) {
         return {
             type: TYPE_MAGNET,
             hash: str,
