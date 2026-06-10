@@ -36,6 +36,285 @@ const cmdLog = {
     }
 };
 
+/**
+ * 格式化下载速度（B/s）
+ * 自动选择 B/s / KB/s / MB/s 单位
+ * @param {number} bytesPerSec
+ * @returns {string}
+ */
+function formatDownloadSpeed(bytesPerSec) {
+    const speed = Number(bytesPerSec) || 0;
+    if (speed === 0) return '0 B/s';
+    if (speed < 1024) {
+        return `${speed.toFixed(0)} B/s`;
+    }
+    if (speed < 1024 * 1024) {
+        // < 1MB/s 用 1 位小数
+        return `${(speed / 1024).toFixed(1)} KB/s`;
+    }
+    return `${(speed / 1024 / 1024).toFixed(2)} MB/s`;
+}
+
+/**
+ * 格式化剩余时间 ETA（秒）
+ * 返回 mm:ss 或 hh:mm:ss
+ * @param {number} seconds
+ * @returns {string}
+ */
+function formatEta(seconds) {
+    // 顺序：先 null/undefined（用 == null 一次抓两个），再 !isFinite（挡 NaN/Infinity/-Infinity），再负数
+    if (seconds == null || !isFinite(seconds) || seconds < 0) {
+        return '--:--';
+    }
+    const s = Math.round(seconds);
+    if (s < 60) {
+        return `0:${s.toString().padStart(2, '0')}`;
+    }
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    if (m < 60) {
+        return `${m}:${sec.toString().padStart(2, '0')}`;
+    }
+    const h = Math.floor(m / 60);
+    const min = m % 60;
+    return `${h}:${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+}
+
+/**
+ * 自定义 Tooltip 工具
+ * 接管整个 document 上的 [title] 元素，替代浏览器默认 tooltip
+ * 特性：
+ *   - 500ms 延迟显示（避免误触）
+ *   - 200ms 延迟隐藏（鼠标移出到 tooltip 上时不消失）
+ *   - 临时清空原生 title（避免原生 tooltip 和自定义 tooltip 同时显示）
+ *   - 自动边界保护（顶部空间不足时显示在目标上方）
+ *   - 共享一个 DOM 节点（性能开销极低）
+ */
+const CustomTooltip = (() => {
+    // 显示/隐藏的延迟（毫秒）
+    const SHOW_DELAY = 500;
+    const HIDE_DELAY = 200;
+    // 距离目标/屏幕边缘的间距
+    const OFFSET = 8;
+    const MARGIN = 8;
+
+    let tipEl = null;
+    let showTimer = null;
+    let hideTimer = null;
+    let currentTarget = null;
+
+    /**
+     * 创建共享 tooltip DOM 节点（首次调用时执行）
+     */
+    function createTip() {
+        if (tipEl) return;
+        tipEl = document.createElement('div');
+        tipEl.className = 'custom-tooltip';
+        tipEl.setAttribute('role', 'tooltip');
+        document.body.appendChild(tipEl);
+
+        // 鼠标进入 tooltip：取消隐藏（允许用户从 target 移到 tooltip 上不消失）
+        tipEl.addEventListener('mouseenter', () => {
+            if (hideTimer) {
+                clearTimeout(hideTimer);
+                hideTimer = null;
+            }
+        });
+        // 鼠标离开 tooltip：彻底隐藏
+        tipEl.addEventListener('mouseleave', () => {
+            hide();
+        });
+    }
+
+    /**
+     * 沿 DOM 树向上查找最近的带 title 的元素
+     */
+    function findTooltipTarget(el) {
+        while (el && el !== document.body) {
+            if (el.nodeType === 1 && el.hasAttribute && el.hasAttribute('data-original-title')) {
+                return el;
+            }
+            el = el.parentElement;
+        }
+        return null;
+    }
+
+    /**
+     * 恢复 target 的原生 title（避免双重 tooltip）
+     */
+    function restoreOriginalTitle(target) {
+        if (target && target.hasAttribute('data-original-title')) {
+            target.setAttribute('title', target.getAttribute('data-original-title'));
+            target.removeAttribute('data-original-title');
+        }
+    }
+
+    /**
+     * 计算 tooltip 位置（屏幕边界保护 + 顶部空间不足时显示在上方）
+     */
+    function positionTip(target) {
+        const rect = target.getBoundingClientRect();
+        // 先让 tooltip 可见才能测量尺寸
+        tipEl.classList.add('is-visible');
+        const tipRect = tipEl.getBoundingClientRect();
+
+        let left = rect.left + rect.width / 2 - tipRect.width / 2;
+        let top = rect.bottom + OFFSET;
+        let above = false;
+
+        // 顶部空间不足时显示在 target 上方
+        if (top + tipRect.height > window.innerHeight - MARGIN) {
+            top = rect.top - tipRect.height - OFFSET;
+            above = true;
+        }
+
+        // 左右边界保护
+        if (left < MARGIN) left = MARGIN;
+        if (left + tipRect.width > window.innerWidth - MARGIN) {
+            left = window.innerWidth - tipRect.width - MARGIN;
+        }
+
+        tipEl.style.left = `${left}px`;
+        tipEl.style.top = `${top}px`;
+        if (above) {
+            tipEl.classList.add('is-above');
+        } else {
+            tipEl.classList.remove('is-above');
+        }
+    }
+
+    /**
+     * 显示 tooltip
+     */
+    function show(target) {
+        if (!target) return;
+        const text = target.getAttribute('data-original-title');
+        if (!text) return;
+
+        // 取消隐藏
+        if (hideTimer) {
+            clearTimeout(hideTimer);
+            hideTimer = null;
+        }
+        // 取消上一次 show
+        if (showTimer) clearTimeout(showTimer);
+
+        showTimer = setTimeout(() => {
+            tipEl.textContent = text;
+            positionTip(target);
+        }, SHOW_DELAY);
+    }
+
+    /**
+     * 隐藏 tooltip（200ms 延迟）
+     */
+    function hide() {
+        if (showTimer) {
+            clearTimeout(showTimer);
+            showTimer = null;
+        }
+        if (hideTimer) clearTimeout(hideTimer);
+        hideTimer = setTimeout(() => {
+            if (tipEl) tipEl.classList.remove('is-visible', 'is-above');
+            // 如果目标还在屏幕上，恢复 title（让屏幕阅读器能读）
+            if (currentTarget) {
+                restoreOriginalTitle(currentTarget);
+            }
+        }, HIDE_DELAY);
+    }
+
+    /**
+     * 恢复 target 的原生 title（避免双重 tooltip）
+     */
+    function restoreOriginalTitle(target) {
+        if (target && target.hasAttribute('data-original-title')) {
+            target.setAttribute('title', target.getAttribute('data-original-title'));
+            target.removeAttribute('data-original-title');
+        }
+    }
+
+    /**
+     * 初始化时一次性预处理：把页面上所有原生 title 迁移到 data-original-title
+     * 这样：
+     *   1. 浏览器原生 tooltip 不再触发
+     *   2. 鼠标移入任意带 title 的元素都能被 CustomTooltip 接管
+     * 对动态插入的 DOM（信息栏等）通过 MutationObserver 自动处理
+     */
+    function migrateTitles(root) {
+        const scope = root || document;
+        const all = scope.querySelectorAll ? scope.querySelectorAll('[title]') : [];
+        all.forEach(el => {
+            const text = el.getAttribute('title');
+            if (text && text.trim()) {
+                el.setAttribute('data-original-title', text);
+                el.setAttribute('title', '');
+            }
+        });
+        // 根节点本身如果是带 title 的元素，也要迁移
+        if (root && root.nodeType === 1 && root.hasAttribute && root.hasAttribute('title')) {
+            const text = root.getAttribute('title');
+            if (text && text.trim()) {
+                root.setAttribute('data-original-title', text);
+                root.setAttribute('title', '');
+            }
+        }
+    }
+
+    /**
+     * 初始化：绑定 document 级别的事件监听
+     */
+    function init() {
+        createTip();
+        // 迁移已存在的 title
+        migrateTitles();
+
+        // 使用捕获阶段 + mouseover 事件，跨过可能 stopPropagation 的子元素
+        document.addEventListener('mouseover', e => {
+            const target = findTooltipTarget(e.target);
+            if (!target) return;
+            // 同一个 target 不重复处理
+            if (target === currentTarget) return;
+            // 切换 target：恢复上一个，恢复原 title 由 hide() 处理
+            if (currentTarget && currentTarget !== target) {
+                restoreOriginalTitle(currentTarget);
+            }
+            currentTarget = target;
+            show(target);
+        }, true);
+
+        document.addEventListener('mouseout', e => {
+            if (!currentTarget) return;
+            // 鼠标移出当前 target（或其子元素）
+            if (e.target === currentTarget || currentTarget.contains(e.target)) {
+                // 注意：只有真正离开 target 区域时才隐藏
+                // relatedTarget 在子元素上时不隐藏
+                const related = e.relatedTarget;
+                if (related && currentTarget.contains(related)) return;
+                currentTarget = null;
+                hide();
+            }
+        }, true);
+
+        // 页面滚动/窗口大小变化时立即隐藏（位置可能已失效）
+        window.addEventListener('scroll', hide, true);
+        window.addEventListener('resize', hide);
+
+        // 监听动态插入的 DOM（如 createMagnetInfoBar 创建的信息栏）
+        // 找到带 title 属性的新节点时立即迁移，避免原生 tooltip 闪现
+        const observer = new MutationObserver(mutations => {
+            mutations.forEach(m => {
+                m.addedNodes.forEach(node => {
+                    if (node.nodeType !== 1) return;
+                    migrateTitles(node);
+                });
+            });
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    return { init };
+})();
+
 class VideoPlayer {
     constructor() {
         this.video = null;
@@ -342,6 +621,45 @@ class VideoPlayer {
         }
     }
 
+    // 解析当前视频的源标签（用于显示）
+    // - 站内视频：返回 siteName/site_name
+    // - 外链 URL：返回 hostname（如 example.com），区分度更高
+    // - 本地/磁力：返回 "本地"/"磁力"
+    // - 兜底：未知站点
+    _resolveSourceLabel() {
+        const v = this.videoData || {};
+        // 优先取直接传入的 siteName
+        if (v.siteName) return v.siteName;
+        if (v.site_name) return v.site_name;
+        // 外链 URL：取 hostname
+        if (v.type_name === '外链') {
+            const host = this._extractHostname(v.url) || this._extractHostname(v.vod_id);
+            if (host) return host;
+        }
+        // 外链其他类型
+        if (v.type_name === '本地') return '本地';
+        if (v.type_name === '磁力') return '磁力';
+        // playSource 兜底（如 type_name 缺失但 playSource 明确）
+        if (this.playSource === 'network') {
+            const host = this._extractHostname(v.url) || this._extractHostname(v.vod_id);
+            if (host) return host;
+            return '外链';
+        }
+        if (this.playSource === 'local') return '本地';
+        if (this.playSource === 'magnet') return '磁力';
+        return '未知站点';
+    }
+
+    // 从 URL 提取 hostname（解析失败返空）
+    _extractHostname(url) {
+        if (!url || typeof url !== 'string') return '';
+        try {
+            return new URL(url).hostname;
+        } catch (e) {
+            return '';
+        }
+    }
+
     // 更新视频信息
     updateVideoInfo() {
         const titleElement = document.getElementById('video-title');
@@ -377,13 +695,17 @@ class VideoPlayer {
             }
         }
 
-        // 获取站点名称
-        const siteName = this.videoData?.siteName || this.videoData?.site_name || '未知站点';
+        // 获取站点名称（外链 URL 取 hostname，本地/磁力取 type_name）
+        const siteName = this._resolveSourceLabel();
 
         // 获取线路名称（优先使用别名）
         const currentRoute = this.allRoutes[this.currentRouteIndex];
         const originalRouteName = currentRoute?.name || '未知线路';
         const routeName = this.storageService ? this.storageService.getRouteAlias(originalRouteName) : originalRouteName;
+
+        // 判断是否为外链直接播放（无线路选择概念）
+        const isExternalDirectPlay = this.isDirectPlayMode &&
+            ['外链', '本地', '磁力'].includes(this.videoData?.type_name);
 
         // 更新UI元素
         if (titleElement) {
@@ -394,8 +716,11 @@ class VideoPlayer {
             episodeElement.textContent = episodeText;
         }
 
-        // 构建新的窗口标题: "当前剧名 - 第几集 （站点名 - 线路名）"
-        const newTitle = `${videoTitle} - ${episodeText} （${siteName} - ${routeName}）`;
+        // 构建窗口标题：外链无线路概念，简化为 "剧名 - 集数 （来源）"
+        const titleSuffix = isExternalDirectPlay
+            ? `（${siteName}）`
+            : `（${siteName} - ${routeName}）`;
+        const newTitle = `${videoTitle} - ${episodeText} ${titleSuffix}`;
 
         // 更新自定义标题栏
         if (customTitlebarElement) {
@@ -1143,19 +1468,52 @@ class VideoPlayer {
 
     /**
      * 创建磁力链下载信息栏（动态插入DOM）
+     * 结构：速度 | 连接数 | 剩余时间 | 进度条 | 百分比
      */
     createMagnetInfoBar() {
         if (document.getElementById('magnet-info-bar')) return;
 
         const bar = document.createElement('div');
         bar.id = 'magnet-info-bar';
-        bar.className = 'magnet-info-bar hidden';
-        bar.innerHTML =
-            '<span id="magnet-speed">0 KB/s</span>' +
-            '<span class="magnet-info-divider">|</span>' +
-            '<span id="magnet-peers">0/0</span>' +
-            '<span class="magnet-info-divider">|</span>' +
-            '<span id="magnet-progress-text">0%</span>';
+        // 默认 is-hidden 隐藏，等待 updateMagnetInfo 切换显示
+        bar.className = 'magnet-info-bar is-hidden';
+        // 可访问性：屏幕阅读器可读
+        bar.setAttribute('role', 'status');
+        bar.setAttribute('aria-live', 'polite');
+        bar.setAttribute('aria-label', '磁力链下载进度');
+        // 关键字段加 title 鼠标提示，方便用户理解每项数据含义
+        bar.innerHTML = `
+            <span class="magnet-info-item" title="下载速度">
+                <svg class="magnet-info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 5v14"/>
+                    <path d="M19 12l-7 7-7-7"/>
+                </svg>
+                <span id="magnet-speed-text" title="下载速度">0 B/s</span>
+            </span>
+            <span class="magnet-info-divider"></span>
+            <span class="magnet-info-item" title="连接节点">
+                <svg class="magnet-info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                </svg>
+                <span id="magnet-peers-text" title="活跃/总节点">0/0</span>
+            </span>
+            <span class="magnet-info-divider"></span>
+            <span class="magnet-info-item" title="剩余时间">
+                <svg class="magnet-info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                <span id="magnet-eta-text" title="剩余时间">--:--</span>
+            </span>
+            <span class="magnet-info-divider"></span>
+            <span class="magnet-info-progress" aria-hidden="true" title="下载进度">
+                <span class="magnet-info-progress-fill" id="magnet-progress-fill"></span>
+            </span>
+            <span id="magnet-progress-text" title="下载进度">0%</span>
+        `;
         document.body.appendChild(bar);
         console.log('[PLAYER] 磁力链信息栏已创建');
     }
@@ -1165,6 +1523,7 @@ class VideoPlayer {
      * @param {Object} data - 进度数据
      */
     updateMagnetInfo(data) {
+        if (!data) return;
         this.createMagnetInfoBar();
 
         const infoBar = document.getElementById('magnet-info-bar');
@@ -1176,52 +1535,67 @@ class VideoPlayer {
             const isLowPriorityUpdate = (data.progress === 0 || !data.progress) &&
                 (data.status === 'connecting' || data.status === 'reconnected' || data.status === 'reconnected-late');
             if (isLowPriorityUpdate) {
-                // 忽略低优先级更新，保留 100% 显示
                 return;
             }
         }
 
-        // 显示信息栏
-        infoBar.style.display = 'flex';
+        // 节流：500ms 内同 progress 不重复刷新 DOM（节流高频 torrent.on('download')）
+        // completed 必须立刻响应，不参与节流
+        const now = Date.now();
+        const isCompletedUpdate = data.status === 'completed' || data.status === 'done' || data.progress >= 100;
+        if (!isCompletedUpdate && this._magnetLastUpdate && (now - this._magnetLastUpdate) < 500) {
+            return;
+        }
+        this._magnetLastUpdate = now;
+
+        // 显示信息栏：用类名切换，避开与 .is-hidden 的 CSS 冲突
+        infoBar.classList.remove('is-hidden');
 
         // 格式化下载速度
-        const speedElement = document.getElementById('magnet-speed');
-        if (speedElement) {
-            const speed = data.downloadSpeed || 0;
-            if (speed === 0) {
-                speedElement.textContent = '0 KB/s';
-                speedElement.style.color = '#f87171';
-            } else if (speed < 1024) {
-                speedElement.textContent = `${speed.toFixed(0)} B/s`;
-                speedElement.style.color = '#fbbf24';
-            } else if (speed < 1024 * 1024) {
-                speedElement.textContent = `${(speed / 1024).toFixed(1)} KB/s`;
-                speedElement.style.color = '#fbbf24';
-            } else {
-                speedElement.textContent = `${(speed / 1024 / 1024).toFixed(1)} MB/s`;
-                speedElement.style.color = '#4ade80';
-            }
+        const speed = Number(data.downloadSpeed) || 0;
+        const speedText = document.getElementById('magnet-speed-text');
+        if (speedText) {
+            speedText.textContent = formatDownloadSpeed(speed);
+        }
+        // 速度档位（颜色 + 类名，作为色盲冗余编码）
+        infoBar.classList.remove('speed-zero', 'speed-low', 'speed-high');
+        if (speed === 0) {
+            infoBar.classList.add('speed-zero');
+        } else if (speed < 1024 * 1024) {
+            infoBar.classList.add('speed-low');
+        } else {
+            infoBar.classList.add('speed-high');
         }
 
         // 格式化连接数/种子数
-        const peersElement = document.getElementById('magnet-peers');
-        if (peersElement) {
+        const peersText = document.getElementById('magnet-peers-text');
+        if (peersText) {
             const wires = data.wires || 0;
             const numPeers = data.numPeers || 0;
-            peersElement.textContent = `${wires}/${numPeers}`;
+            peersText.textContent = `${wires}/${numPeers}`;
         }
 
-        // 格式化下载进度
-        const progressElement = document.getElementById('magnet-progress-text');
-        if (progressElement) {
-            const progress = data.progress || 0;
-            progressElement.textContent = `${Math.min(progress, 100)}%`;
+        // 剩余时间 ETA
+        const etaText = document.getElementById('magnet-eta-text');
+        if (etaText) {
+            etaText.textContent = formatEta(data.eta);
         }
 
-        // 下载完成时5秒后自动隐藏（只在真正 completed 状态时隐藏，且清除之前的timer）
-        const isCompleted = data.status === 'completed' || data.status === 'done' || data.progress >= 100;
-        if (isCompleted) {
-            // 标记 completed 已显示，避免后续 connecting 状态覆盖
+        // 格式化下载进度（数字 + 进度条）
+        const progress = Math.max(0, Math.min(100, Number(data.progress) || 0));
+        const progressText = document.getElementById('magnet-progress-text');
+        if (progressText) {
+            progressText.textContent = `${Math.round(progress)}%`;
+        }
+        const progressFill = document.getElementById('magnet-progress-fill');
+        if (progressFill) {
+            progressFill.style.width = `${progress}%`;
+        }
+
+        // 下载完成时 5 秒后自动隐藏
+        if (isCompletedUpdate) {
+            infoBar.classList.remove('is-stale');
+            infoBar.classList.add('is-completed');
             this._magnetCompletedShown = true;
             if (this._magnetHideTimer) clearTimeout(this._magnetHideTimer);
             this._magnetHideTimer = setTimeout(() => {
@@ -1229,22 +1603,51 @@ class VideoPlayer {
                 this._magnetCompletedShown = false;
             }, 5000);
         } else {
-            // 非 completed 状态：清除隐藏定时器，确保信息栏保持显示
+            // 非完成态：清除隐藏定时器，清理完成态
             if (this._magnetHideTimer) {
                 clearTimeout(this._magnetHideTimer);
                 this._magnetHideTimer = null;
             }
+            infoBar.classList.remove('is-completed');
+            // stale 检测：10s 内没新数据 → 灰色提示等待中
+            this._scheduleStaleCheck();
         }
     }
 
     /**
+     * 启动 stale 检测定时器
+     * 10 秒内无新数据 → 灰色提示
+     */
+    _scheduleStaleCheck() {
+        if (this._magnetStaleTimer) clearTimeout(this._magnetStaleTimer);
+        this._magnetStaleTimer = setTimeout(() => {
+            const infoBar = document.getElementById('magnet-info-bar');
+            if (infoBar && !this._magnetCompletedShown) {
+                infoBar.classList.add('is-stale');
+            }
+        }, 10000);
+    }
+
+    /**
      * 隐藏磁力链下载信息栏
+     * 用类名切换显示，避免与 .is-hidden 的 CSS 规则冲突
      */
     hideMagnetInfo() {
         const infoBar = document.getElementById('magnet-info-bar');
         if (infoBar) {
-            infoBar.classList.add('hidden');
+            infoBar.classList.add('is-hidden');
+            infoBar.classList.remove('is-stale', 'is-completed', 'speed-zero', 'speed-low', 'speed-high');
         }
+        if (this._magnetHideTimer) {
+            clearTimeout(this._magnetHideTimer);
+            this._magnetHideTimer = null;
+        }
+        if (this._magnetStaleTimer) {
+            clearTimeout(this._magnetStaleTimer);
+            this._magnetStaleTimer = null;
+        }
+        this._magnetLastUpdate = 0;
+        this._magnetCompletedShown = false;
     }
 
     // 设置视频事件
@@ -2171,14 +2574,13 @@ class VideoPlayer {
                 const currentRoute = this.allRoutes[this.currentRouteIndex];
                 const currentEpisode = this.allEpisodes.find(ep => ep.index === episodeIndex);
 
-                // 从视频数据中获取站点信息（由主窗口传递）
-                let siteName = '未知站点';
+                // 从视频数据中获取站点信息（由主窗口传递；外链源按 type_name 显示）
+                const siteName = this._resolveSourceLabel();
                 let siteUrl = '';
-                if (this.videoData.siteName) {
-                    siteName = this.videoData.siteName;
-                }
                 if (this.videoData.siteUrl) {
                     siteUrl = this.videoData.siteUrl;
+                } else if (this.videoData.site_url) {
+                    siteUrl = this.videoData.site_url;
                 }
 
                 // 更新播放历史
@@ -3917,7 +4319,7 @@ class VideoPlayer {
             // 准备元数据
             const metadata = {
                 title: this.videoData?.vod_name || '七星追剧',
-                artist: this.videoData?.siteName || '未知来源',
+                artist: this._resolveSourceLabel() || '未知来源',
                 album: '影视剧集'
             };
 
@@ -4277,9 +4679,7 @@ class VideoPlayer {
             console.log('[PLAYER] 开始分享当前视频，原始数据:', this.videoData);
 
             // 从视频数据中获取站点信息，兼容多种数据结构
-            const siteName = this.videoData.siteName || this.videoData.site_name ||
-                (this.videoData.routes && this.videoData.routes[this.currentRouteIndex]?.siteName) ||
-                '当前站点';
+            const siteName = this._resolveSourceLabel();
             const siteUrl = this.videoData.siteUrl || this.videoData.site_url ||
                 (this.videoData.routes && this.videoData.routes[this.currentRouteIndex]?.siteUrl) ||
                 'unknown';
@@ -4500,3 +4900,6 @@ ${description ? `💡 简介：${description}` : ''}
         console.log('播放器已销毁');
     }
 }
+
+// 暴露 CustomTooltip 给外部使用（如 player.html 在 DOMContentLoaded 时调用 init）
+window.CustomTooltip = CustomTooltip;

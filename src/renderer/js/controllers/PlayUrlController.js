@@ -1,13 +1,14 @@
 /**
  * PlayUrlController
- * 外链页面主控制器：协调 5 个子模块，实现状态机驱动的智能识别播放流程
+ * 外链页面主控制器：协调 4 个子模块，实现状态机驱动的智能识别播放流程
  *
  * 依赖模块（通过 window 全局访问）：
  * - inputRecognizer.detectInputType 智能识别输入类型
- * - UrlHistoryManager 播放历史管理（包装 storage.js）
+ * - UrlHistoryManager 播放历史管理（包装 storage.js，写入统一 play_history）
  * - fileListRenderer 磁力链文件列表渲染
  * - MagnetParserAdapter 磁力链 IPC 适配器
- * - HistoryDrawer 历史抽屉 UI
+ *
+ * 历史查看请进入"历史"页（#history-page），本页面不再维护独立抽屉
  *
  * 状态机：IDLE → EDITING → RECOGNIZED → PARSE_PROGRESS → FILES_READY → PLAYING
  */
@@ -50,7 +51,6 @@
             // 子模块：延迟创建，确保全局已就绪
             this._historyManager = null;
             this._magnetParser = null;
-            this._historyDrawer = null;
             this._dom = null;
         }
 
@@ -82,15 +82,11 @@
                 submit: document.getElementById('play-url-submit'),
                 clearBtn: document.getElementById('play-url-clear-btn'),
                 pickFileBtn: document.getElementById('play-url-pick-file'),
-                toggleHistoryBtn: document.getElementById('play-url-toggle-history'),
                 progress: document.getElementById('play-url-progress'),
                 progressStatus: document.getElementById('play-url-progress-status'),
                 progressFill: document.getElementById('play-url-progress-fill'),
                 progressCancel: document.getElementById('play-url-progress-cancel'),
-                files: document.getElementById('play-url-files'),
-                historyDrawer: document.getElementById('play-url-history-drawer'),
-                historyList: document.getElementById('play-url-history-list'),
-                historyClear: document.getElementById('play-url-history-clear')
+                files: document.getElementById('play-url-files')
             };
         }
 
@@ -112,16 +108,6 @@
                 this._magnetParser = new window.MagnetParserAdapter();
                 // 订阅进度事件
                 this._magnetParser.onProgress(data => this._handleMagnetProgress(data));
-            }
-
-            // 历史抽屉
-            if (window.HistoryDrawer && this._dom.historyDrawer && this._historyManager) {
-                this._historyDrawer = new window.HistoryDrawer({
-                    container: this._dom.historyDrawer,
-                    historyManager: this._historyManager,
-                    inferType: item => this._historyManager.inferType(item),
-                    onItemClick: item => this._handleHistoryItemClick(item)
-                });
             }
         }
 
@@ -162,7 +148,7 @@
          * 设置操作按钮事件
          */
         _setupActionButtons() {
-            const { submit, clearBtn, pickFileBtn, toggleHistoryBtn, progressCancel, historyClear } = this._dom;
+            const { submit, clearBtn, pickFileBtn, progressCancel } = this._dom;
 
             if (submit) {
                 submit.addEventListener('click', () => this._handleSubmit());
@@ -176,16 +162,8 @@
                 pickFileBtn.addEventListener('click', () => this._handlePickFile());
             }
 
-            if (toggleHistoryBtn) {
-                toggleHistoryBtn.addEventListener('click', () => this._toggleHistory());
-            }
-
             if (progressCancel) {
                 progressCancel.addEventListener('click', () => this._handleParseCancel());
-            }
-
-            if (historyClear) {
-                historyClear.addEventListener('click', () => this._handleClearHistory());
             }
         }
 
@@ -373,51 +351,27 @@
         }
 
         /**
-         * 切换历史抽屉
-         */
-        _toggleHistory() {
-            if (!this._historyDrawer) {
-                this._notify('历史功能暂不可用', 'warning');
-                return;
-            }
-            this._historyDrawer.toggle();
-        }
-
-        /**
-         * 处理清空历史
-         */
-        _handleClearHistory() {
-            if (!this._historyManager) return;
-            if (!confirm('确定要清空所有播放历史吗？')) return;
-            const list = this._historyManager.getList() || [];
-            // 逐条删除（保留 addPlayHistory 的 try-catch 容错）
-            list.forEach(item => {
-                if (item && item.vod_id) {
-                    this._historyManager.removeItem(item.vod_id);
-                }
-            });
-            if (this._historyDrawer) {
-                this._historyDrawer.render();
-            }
-            this._notify('播放历史已清空', 'success');
-        }
-
-        /**
          * 处理网络 URL
          * @param {string} url
          */
         async _handleNetworkUrl(url) {
             if (!url) return;
             this._setState(STATE.PLAYING);
-            this._addHistory(url, '外链', 'url');
             const fileName = this._extractFileName(url) || '网络视频';
+            // 写入历史：episode_name 用文件名
+            this._addHistory(url, '外链', 'url', {
+                vod_name: fileName,
+                episode_name: fileName
+            });
             const videoData = {
                 url,
                 title: fileName,
                 vod_name: fileName,
-                episode_name: '正片',
+                episode_name: fileName,
                 isDirectPlay: true,
-                playSource: 'network'
+                playSource: 'network',
+                type_name: '外链',
+                siteName: '外链'
             };
             await this._openPlayer(videoData);
             this._notify('正在加载视频...', 'info');
@@ -430,16 +384,21 @@
         async _handleLocalFile(filePath) {
             if (!filePath) return;
             this._setState(STATE.PLAYING);
-            this._addHistory(filePath, '本地', 'local');
             const fileName = this._extractFileName(filePath) || '本地视频';
+            this._addHistory(filePath, '本地', 'local', {
+                vod_name: fileName,
+                episode_name: fileName
+            });
             const videoData = {
                 url: `file://${filePath}`,
                 title: fileName,
                 vod_name: fileName,
-                episode_name: '正片',
+                episode_name: fileName,
                 isDirectPlay: true,
                 playSource: 'local',
-                localPath: filePath
+                localPath: filePath,
+                type_name: '本地',
+                siteName: '本地'
             };
             await this._openPlayer(videoData);
             this._notify('正在加载本地视频...', 'info');
@@ -460,7 +419,8 @@
             this._parseCancelled = false;
             this._setState(STATE.PARSE_PROGRESS);
             this._showProgress('正在解析磁力链接...', 0, 'info');
-            this._addHistory(magnetUri, '磁力', 'magnet');
+            // 注意：磁力历史在 _playMagnetFile 用户真正挑了文件后才写入（这里不写）
+            // 避免"未观看"却产生历史条目（之前一直显示"正片"就是这个原因）
 
             try {
                 const result = await this._magnetParser.parse(magnetUri);
@@ -539,6 +499,11 @@
             this._setState(STATE.PLAYING);
             this._showProgress(`正在准备: ${file.name}`, 0, 'info');
             try {
+                // 写入历史：用户真正挑了文件后，episode_name = 文件名
+                this._addHistory(magnetUri, '磁力', 'magnet', {
+                    vod_name: file.name,
+                    episode_name: file.name
+                });
                 const result = await this._magnetParser.play(magnetUri, file.name, this._currentInfoHash);
                 if (this._parseCancelled) {
                     return;
@@ -548,11 +513,13 @@
                         url: result.streamUrl,
                         title: file.name,
                         vod_name: file.name,
-                        episode_name: '正片',
+                        episode_name: file.name,    // 用文件名作集名，避免显示"正片"
                         isDirectPlay: true,
                         playSource: 'magnet',
                         isStreaming: !result.isLocal,
-                        isLocal: !!result.isLocal
+                        isLocal: !!result.isLocal,
+                        type_name: '磁力',
+                        siteName: '磁力'
                     };
                     await this._openPlayer(videoData);
                     this._hideProgress();
@@ -588,57 +555,20 @@
         }
 
         /**
-         * 处理历史项点击
-         * @param {{ vod_id: string, vod_name: string, type_name?: string }} item
-         */
-        async _handleHistoryItemClick(item) {
-            if (!item || !item.vod_id) return;
-            const vodId = item.vod_id;
-            // 折叠抽屉
-            if (this._historyDrawer) {
-                this._historyDrawer.close();
-            }
-            // 填入输入框
-            if (this._dom.input) {
-                this._dom.input.value = vodId;
-                this._lastInput = vodId;
-            }
-            this._detect();
-            // 自动播放
-            if (!this._historyManager) {
-                this._notify('历史管理不可用', 'error');
-                return;
-            }
-            const type = this._historyManager.inferType(item);
-            if (type === 'magnet') {
-                await this._handleMagnet(vodId);
-            } else if (type === 'local') {
-                const localPath = vodId.startsWith('file://') ? vodId.replace(/^file:\/\/\//, '') : vodId;
-                await this._handleLocalFile(localPath);
-            } else if (type === 'url') {
-                await this._handleNetworkUrl(vodId);
-            } else {
-                // 未知类型，尝试作为 URL
-                await this._handleNetworkUrl(vodId);
-            }
-        }
-
-        /**
-         * 添加历史
+         * 添加历史（外链播放后写入统一 play_history，历史页可继续查看/再播）
          * @param {string} vodId
          * @param {string} typeName
          * @param {'magnet'|'local'|'url'} internalType
          */
-        _addHistory(vodId, typeName, internalType) {
+        _addHistory(vodId, typeName, internalType, overrides = {}) {
             if (!this._historyManager) return;
             this._historyManager.addItem({
                 vod_id: vodId,
                 vod_name: this._extractDisplayName(vodId, internalType),
-                type_name: typeName
+                type_name: typeName,
+                // 允许覆盖 episode_name / vod_name（如磁力用户挑的具体文件名）
+                ...(overrides || {})
             });
-            if (this._historyDrawer && this._historyDrawer.isOpen()) {
-                this._historyDrawer.render();
-            }
         }
 
         /**
@@ -712,6 +642,101 @@
             } else {
                 console.log('[PlayUrlController]', type || 'info', message);
             }
+        }
+
+        /**
+         * 从历史页"复播"入口：填入 vod_id 后自动提交
+         * @param {string} vodId
+         */
+        async playExternalFromHistory(vodId) {
+            if (!vodId) return;
+            if (!this._dom) {
+                this.initialize();
+            }
+            if (!this._dom || !this._dom.input) {
+                this._notify('外链页未就绪', 'warning');
+                return;
+            }
+            // 清掉旧文件列表/进度，避免视觉残留
+            if (this._dom.files) {
+                this._dom.files.innerHTML = '';
+            }
+            this._hideProgress();
+            this._dom.input.value = vodId;
+            this._lastInput = vodId;
+            this._detect();
+            await this._handleSubmit();
+        }
+
+        /**
+         * 从磁力历史"续播"：跳过 parse，直接调 play() 走主进程本地缓存
+         * - 需要 vod_id (magnet URI / hash) + fileName (历史里存的 vod_name)
+         * - 主进程 play() 命中缓存则毫秒级返 streamUrl；缓存失效会触发 re-resolve
+         *   （re-resolve 是服务端一次网络解析，渲染端无需拉文件列表）
+         * - 失败时（文件已被移除、hash 错等）返回 false，调用方应回退到 playExternalFromHistory
+         * @param {string} magnetUri
+         * @param {string} fileName
+         * @returns {Promise<boolean>} 是否成功打开播放器
+         */
+        async resumeMagnetFromHistory(magnetUri, fileName) {
+            if (!magnetUri || !fileName) return false;
+            if (!this._magnetParser || !this._magnetParser.isAvailable()) {
+                this._notify('磁力链功能不可用（Electron IPC 缺失）', 'error');
+                return false;
+            }
+            if (!this._dom) {
+                this.initialize();
+            }
+            // 清掉旧文件列表/进度，避免视觉残留
+            if (this._dom && this._dom.files) {
+                this._dom.files.innerHTML = '';
+            }
+            this._parseCancelled = false;
+            this._currentMagnetUri = magnetUri;
+            this._currentInfoHash = this._extractInfoHash(magnetUri);
+            this._setState(STATE.PLAYING);
+            this._showProgress(`正在恢复: ${fileName}`, 0, 'info');
+            try {
+                const result = await this._magnetParser.play(magnetUri, fileName, this._currentInfoHash);
+                if (this._parseCancelled) {
+                    return false;
+                }
+                if (result && result.success) {
+                    const videoData = {
+                        url: result.streamUrl,
+                        title: fileName,
+                        vod_name: fileName,
+                        episode_name: fileName,
+                        isDirectPlay: true,
+                        playSource: 'magnet',
+                        isStreaming: !result.isLocal,
+                        isLocal: !!result.isLocal,
+                        type_name: '磁力',
+                        siteName: '磁力'
+                    };
+                    await this._openPlayer(videoData);
+                    this._hideProgress();
+                    return true;
+                }
+                throw new Error((result && result.error) || '恢复失败');
+            } catch (error) {
+                console.error('[PlayUrlController] 恢复磁力文件失败:', error);
+                this._showProgress(`恢复失败: ${error.message}`, 0, 'error');
+                this._notify(`恢复失败: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        /**
+         * 从磁力 URI 提取 infoHash（v1 40 字符 hex / v2 32 字符 base32）
+         * 用于传给主进程 play() 命中本地缓存
+         * @param {string} magnetUri
+         * @returns {string}
+         */
+        _extractInfoHash(magnetUri) {
+            if (!magnetUri || typeof magnetUri !== 'string') return '';
+            const m = magnetUri.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7]{32})/i);
+            return m ? m[1] : '';
         }
     }
 

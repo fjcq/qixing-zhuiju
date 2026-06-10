@@ -2451,6 +2451,7 @@ body.fullscreen-mode .btn-playback,
 }
 
 /* =================== 磁力链下载信息栏 =================== */
+/* 顶部居中胶囊式悬浮信息栏，展示下载速度/连接数/剩余时间/进度 */
 .magnet-info-bar {
     position: fixed;
     top: 40px;
@@ -2459,8 +2460,8 @@ body.fullscreen-mode .btn-playback,
     z-index: 99999;
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 6px 16px;
+    gap: 8px;
+    padding: 6px 14px;
     background: rgba(0, 0, 0, 0.7);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
@@ -2468,43 +2469,134 @@ body.fullscreen-mode .btn-playback,
     border: 1px solid rgba(255, 255, 255, 0.15);
     font-size: 12px;
     color: rgba(255, 255, 255, 0.9);
-    pointer-events: none;
-    transition: opacity 0.3s ease;
+    /* 允许 hover 触发 title tooltip（仅子项响应，背景仍透出） */
+    pointer-events: auto;
+    cursor: default;
+    transition: opacity 0.3s ease, background 0.3s ease, border-color 0.3s ease;
     white-space: nowrap;
+    /* 数字等宽，避免数值跳变时栏宽抖动 */
+    font-variant-numeric: tabular-nums;
 }
 
-.magnet-info-bar.hidden {
+/* 隐藏态：用类名切换，避免与内联 style.display 冲突 */
+.magnet-info-bar.is-hidden {
     display: none;
+}
+
+/* 数据陈旧态：10s 内无新数据 → 灰色提示等待中 */
+.magnet-info-bar.is-stale {
+    background: rgba(80, 80, 80, 0.7);
+    border-color: rgba(255, 255, 255, 0.08);
+    opacity: 0.7;
+}
+
+/* 下载完成态：绿色背景强调 */
+.magnet-info-bar.is-completed {
+    background: rgba(22, 101, 52, 0.55);
+    border-color: rgba(74, 222, 128, 0.4);
 }
 
 .magnet-info-item {
     display: flex;
     align-items: center;
     gap: 4px;
+    line-height: 1;
 }
 
 .magnet-info-icon {
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     flex-shrink: 0;
-    opacity: 0.7;
+    opacity: 0.85;
 }
 
 .magnet-info-divider {
     width: 1px;
     height: 12px;
     background: rgba(255, 255, 255, 0.2);
+    margin: 0 2px;
 }
 
-/* 下载速度高亮 */
-.magnet-info-bar.speed-high #magnet-speed {
-    color: #4ade80;
+/* 速度档位色（颜色 + 文字/图标组合，避免色盲不友好） */
+.magnet-info-bar.speed-zero #magnet-speed-text {
+    color: #f87171;
 }
 
-.magnet-info-bar.speed-low #magnet-speed {
+.magnet-info-bar.speed-low #magnet-speed-text {
     color: #fbbf24;
 }
 
-.magnet-info-bar.speed-zero #magnet-speed {
-    color: #f87171;
+.magnet-info-bar.speed-high #magnet-speed-text {
+    color: #4ade80;
+}
+
+/* 进度条子元素 */
+.magnet-info-progress {
+    position: relative;
+    width: 64px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.magnet-info-progress-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0%;
+    background: linear-gradient(90deg, #60a5fa, #4ade80);
+    border-radius: 2px;
+    transition: width 0.6s ease;
+}
+
+/* 进度条走完时变绿 */
+.magnet-info-bar.is-completed .magnet-info-progress-fill {
+    background: #4ade80;
+}
+
+/* 进度数字略宽，避免 9% → 10% 跳动 */
+#magnet-progress-text {
+    min-width: 28px;
+    text-align: right;
+    display: inline-block;
+}
+
+/* =================== 自定义 Tooltip =================== */
+/* 接管所有 [title] 元素的浏览器原生 tooltip，由 CustomTooltip（player.js）控制显隐 */
+.custom-tooltip {
+    position: fixed;
+    z-index: 999999;
+    background: rgba(20, 20, 20, 0.95);
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.4;
+    /* 长文本换行避免超出屏幕 */
+    max-width: 280px;
+    white-space: normal;
+    word-break: break-word;
+    pointer-events: auto;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.custom-tooltip.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* 在目标上方显示时，反向偏移 */
+.custom-tooltip.is-above {
+    transform: translateY(4px);
+}
+
+.custom-tooltip.is-visible.is-above {
+    transform: translateY(0);
 }

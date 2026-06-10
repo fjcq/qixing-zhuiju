@@ -57,20 +57,23 @@ class UrlHistoryManager {
 
     /**
      * 添加历史项
-     * @param {{ vod_id: string, vod_name: string, type_name?: string, [k: string]: any }} item
+     * @param {{ vod_id: string, vod_name?: string, type_name?: string, episode_name?: string, [k: string]: any }} item
      */
     addItem(item) {
         try {
             if (!item || !item.vod_id) {
                 return;
             }
+            // 透传所有可选项（episode_name 等），未传则按 type 兜底
+            const episodeName = item.episode_name
+                || (item.type_name === '磁力' ? '选择文件中' : '正片');
             this._storage.addPlayHistory({
                 vod_id: item.vod_id,
                 vod_name: item.vod_name || item.vod_id,
                 vod_pic: item.vod_pic || '',
                 type_name: item.type_name || this._typeNameFromId(item.vod_id),
                 current_episode: 1,
-                episode_name: '正片',
+                episode_name: episodeName,
                 watch_time: Date.now(),
                 site_name: '',
                 site_url: '',

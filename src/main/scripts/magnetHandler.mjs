@@ -569,7 +569,8 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
                         }
                     }, 60000);
 
-                    // 监听下载进度
+                    // 监听下载进度（resolve 阶段，用于解析进度条，对应 magnet-progress 事件）
+                    // 高频回调但只影响主窗口的外链页面，播放器窗口不监听此事件
                     torrent.on('download', bytes => {
                         const file = torrent.files.find(f => f.name === fileName);
                         if (file) {
@@ -582,6 +583,7 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
                                 wires: torrent.wires.length,
                                 downloadSpeed: Number(torrent.downloadSpeed),
                                 numPeers: torrent.numPeers,
+                                eta: calcEta(torrent),
                                 status: 'downloading'
                             });
                         }
@@ -706,9 +708,12 @@ function startFileStream(torrent, fileName, resolve, reject) {
             wires: torrent.wires ? torrent.wires.length : 0,
             downloadSpeed: Number(torrent.downloadSpeed || 0),
             numPeers: torrent.numPeers || 0,
+            eta: calcEta(torrent),
             status: 'downloading'
         });
-        // 启动定期进度上报（每5秒）
+        // 启动定期进度上报（每 1 秒）
+        // 频率比之前 5 秒更平滑，同时控制 IPC 流量在合理范围（每条 ~150B，约 150B/s）
+        // 不再用 torrent.on('download') 高频回调，避免刷爆 IPC 通道
         const streamPeerCheckInterval = setInterval(() => {
             const numPeers = torrent.numPeers || 0;
             const wires = torrent.wires ? torrent.wires.length : 0;
@@ -723,13 +728,14 @@ function startFileStream(torrent, fileName, resolve, reject) {
                 wires,
                 downloadSpeed: speed,
                 numPeers,
+                eta: calcEta(torrent),
                 status: progressPercent >= 100 ? 'completed' : (wires > 0 ? 'downloading' : 'connecting')
             });
             // 下载完成后停止上报
             if (progressPercent >= 100) {
                 clearInterval(streamPeerCheckInterval);
             }
-        }, 5000);
+        }, 1000);
     }
 
     fileServer = http.createServer((req, res) => {
@@ -802,6 +808,25 @@ function startFileStream(torrent, fileName, resolve, reject) {
     fileServer.on('error', err => {
         reject(new Error(`文件流服务器启动失败: ${err.message}`));
     });
+}
+
+/**
+ * 计算剩余下载时间（秒）
+ * 优先用 webtorrent 的 timeRemaining，否则用剩余字节 / 当前速度
+ * @param {object} torrent webtorrent 实例
+ * @returns {number|null} 剩余秒数；无法计算时返回 null
+ */
+function calcEta(torrent) {
+    if (!torrent) return null;
+    if (typeof torrent.timeRemaining === 'number' && isFinite(torrent.timeRemaining) && torrent.timeRemaining > 0) {
+        return Math.round(torrent.timeRemaining / 1000);
+    }
+    const speed = Number(torrent.downloadSpeed || 0);
+    const remaining = Number(torrent.length || 0) - Number(torrent.downloaded || 0);
+    if (speed > 0 && remaining > 0) {
+        return Math.round(remaining / speed);
+    }
+    return null;
 }
 
 /**

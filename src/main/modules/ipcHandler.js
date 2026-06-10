@@ -701,6 +701,8 @@ function setupIPC(qixingApp) {
                 wires: msg.wires,
                 downloadSpeed: msg.downloadSpeed,
                 numPeers: msg.numPeers,
+                // 透传 ETA 字段（子进程 calcEta 计算），允许 null
+                eta: typeof msg.eta === 'number' ? msg.eta : null,
                 status: msg.status || (msg.progress >= 100 ? 'completed' : 'downloading')
             };
             // 转发下载进度到主窗口

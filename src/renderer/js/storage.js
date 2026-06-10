@@ -36,24 +36,36 @@ class StorageService {
             // 移除重复项
             history = history.filter(item => item.vod_id !== videoData.vod_id);
 
-            // 获取站点名称 - 从站点URL或传入的站点名称
-            let siteName = '未知站点';
+            // 获取站点名称 - 默认空；按需填充
+            // - 直接传入的 siteName 优先
+            // - 站内视频：按 site_url 反查，反查不到才用"未知站点"兜底
+            // - 外链 URL：取 vod_id 的 hostname（差异化信息，避免与 type_name 重复）
+            // - 本地/磁力外链：保持空（无附加信息；渲染时只显示 type_name）
+            let siteName = '';
             const siteUrl = videoData.site_url || '';
+            const externalTypes = ['外链', '本地', '磁力'];
+            const isExternal = !siteUrl && externalTypes.includes(videoData.type_name);
 
-            // 如果有站点URL，尝试从已保存的站点中获取名称
-            if (siteUrl) {
+            if (videoData.siteName) {
+                siteName = videoData.siteName;
+            } else if (siteUrl) {
                 // 从localStorage获取站点列表 - 使用正确的键名
                 const sites = JSON.parse(localStorage.getItem('video_sites') || '[]');
                 const site = sites.find(s => s.url === siteUrl);
                 if (site && site.name) {
                     siteName = site.name;
+                } else {
+                    siteName = '未知站点';
+                }
+            } else if (isExternal && videoData.type_name === '外链' && videoData.vod_id) {
+                try {
+                    const host = new URL(videoData.vod_id).hostname;
+                    if (host) siteName = host;
+                } catch (e) {
+                    // 非标准 URL，忽略
                 }
             }
-
-            // 如果直接传入了站点名称，优先使用
-            if (videoData.siteName) {
-                siteName = videoData.siteName;
-            }
+            // 本地/磁力外链：siteName 保持为空字符串，避免与 type_name 重复显示
 
             // 添加到历史记录开头
             const historyItem = {

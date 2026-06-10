@@ -400,8 +400,8 @@
                     </ul>
                 </div>
                 <div class="error-actions">
-                    <button id="copy-error-btn" class="btn-copy-error">📋 复制错误信息</button>
-                    <button id="retry-btn" class="btn-retry">重试</button>
+                    <button id="copy-error-btn" class="btn-copy-error" title="复制错误">复制</button>
+                    <button id="retry-btn" class="btn-retry" title="重试">重试</button>
                 </div>
             </div>
 
@@ -411,8 +411,8 @@
                 <div class="cast-modal-content">
                     <div class="cast-modal-header">
                         <h3>选择投屏设备</h3>
-                        <button class="cast-modal-close" id="cast-modal-close">
-                            <span class="icon">❌</span>
+                        <button class="cast-modal-close" id="cast-modal-close" title="关闭" aria-label="关闭">
+                            <span class="icon">×</span>
                         </button>
                     </div>
 
@@ -437,14 +437,14 @@
                                     <li>防火墙允许相关端口通信</li>
                                 </ul>
                             </div>
-                            <button class="btn-refresh-devices" id="btn-refresh-devices">
-                                <span class="icon">🔄</span> 重新搜索
+                            <button class="btn-refresh-devices" id="btn-refresh-devices" title="重新搜索">
+                                <span class="icon">↻</span> 重新搜索
                             </button>
                         </div>
                     </div>
 
                     <div class="cast-modal-footer">
-                        <button class="btn-cancel" id="cast-cancel-btn">取消</button>
+                        <button class="btn-cancel" id="cast-cancel-btn" title="取消">取消</button>
                     </div>
                 </div>
             </div>
@@ -476,9 +476,9 @@
             <div style="margin-bottom: 10px; font-weight: bold; color: #4caf50;">📊 调试信息</div>
             <div id="debug-content" style="line-height: 1.4;"></div>
             <div style="margin-top: 10px; display: flex; gap: 5px;">
-                <button onclick="updateDebugInfo()"
+                <button onclick="updateDebugInfo()" title="刷新调试信息"
                     style="padding: 4px 8px; font-size: 11px; background: #007acc; color: white; border: none; border-radius: 3px; cursor: pointer;">刷新</button>
-                <button onclick="document.getElementById('debug-panel').style.display='none'"
+                <button onclick="document.getElementById('debug-panel').style.display='none'" title="关闭"
                     style="padding: 4px 8px; font-size: 11px; background: #666; color: white; border: none; border-radius: 3px; cursor: pointer;">关闭</button>
             </div>
         </div>
@@ -566,6 +566,11 @@
     <script>
         // 确保DOM完全加载后初始化播放器
         document.addEventListener('DOMContentLoaded', () => {
+            // 先初始化自定义 tooltip 系统（接管所有 [title] 元素）
+            if (window.CustomTooltip && typeof window.CustomTooltip.init === 'function') {
+                window.CustomTooltip.init();
+            }
+
             console.log('🌟🌟🌟 [PLAYER] DOM加载完成，开始初始化播放器 🌟🌟🌟');
 
             // 为重试按钮添加事件监听

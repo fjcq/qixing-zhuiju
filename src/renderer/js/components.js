@@ -15,6 +15,36 @@ class ComponentService {
         this.setupEventListeners();
     }
 
+    // 转义 HTML 文本/属性特殊字符（用于 innerHTML 拼接前的 XSS 防护）
+    // 实际能安全用于：属性值（`"..."` 包围）和元素文本内容
+    // 文本内容只需转义 & < > 三字符；多转义 " ' 是 over-escape 但安全
+    _escapeHtml(str) {
+        if (str == null) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+    // 向后兼容别名（其他文件可能仍在调用 _escapeAttr）
+    _escapeAttr(str) { return this._escapeHtml(str); }
+
+    // URL 清洗：只允许 http(s) / data:image 协议，挡住 javascript:/vbscript:/file:
+    // 用于 history.vod_pic 等外部输入的 URL（localStorage 用户可改）
+    _sanitizeImageUrl(url) {
+        if (!url || typeof url !== 'string') return '';
+        const trimmed = url.trim();
+        if (trimmed.length === 0 || trimmed.length > 2048) return '';
+        // 协议白名单
+        if (/^https?:\/\//i.test(trimmed)) return trimmed;
+        if (/^data:image\//i.test(trimmed)) return trimmed;
+        // 协议相对 URL（`//cdn.example.com/x.jpg`）补 https:
+        if (trimmed.startsWith('//')) return 'https:' + trimmed;
+        // 其他（javascript: / vbscript: / file: / 自定义协议）一律拒掉
+        return '';
+    }
+
     // 设置事件监听器
     setupEventListeners() {
         // 模态框关闭事件
@@ -86,7 +116,7 @@ class ComponentService {
         editBtn?.addEventListener('click', () => this.showEditSiteModal(site));
         activateBtn?.addEventListener('click', () => this.activateSite(site.id));
         deleteBtn?.addEventListener('click', () => this.confirmDeleteSite(site));
-        
+
         // 复选框事件
         checkbox?.addEventListener('change', () => this.updateBatchActionsBar());
 
@@ -444,7 +474,7 @@ class ComponentService {
         const selectedCount = document.getElementById('selected-count');
         const selectAllCheckbox = document.getElementById('select-all-sites');
         const batchDeleteBtn = document.getElementById('batch-delete-sites-btn');
-        
+
         if (!siteList) return;
 
         const checkboxes = siteList.querySelectorAll('.site-checkbox');
@@ -507,7 +537,7 @@ class ComponentService {
         // 检查是否包含当前活跃站点
         const hasActiveSite = selectedSites.some(s => s.active);
 
-        const warningMessage = hasActiveSite 
+        const warningMessage = hasActiveSite
             ? `<div class="warning-message">
                    <p>⚠️ 选中的站点中包含当前默认站点，删除后需要重新设置默认站点。</p>
                </div>`
@@ -646,11 +676,11 @@ class ComponentService {
         card.innerHTML = `
             <div class="video-poster">
                 ${posterUrl ?
-        `<img src="${posterUrl}" alt="${videoTitle}" 
+                `<img src="${posterUrl}" alt="${videoTitle}" 
                          onerror="console.log('图片加载失败:', this.src); this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjI4MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjNDA0MDQwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPuaaguaXoOa1t+aKpTwvdGV4dD48L3N2Zz4=';"
                          onload="console.log('图片加载成功:', this.src);">` :
-        '<div class="poster-placeholder">暂无海报</div>'
-}
+                '<div class="poster-placeholder">暂无海报</div>'
+            }
                 <!-- 图片覆盖信息层 -->
                 <div class="poster-overlay">
                     <!-- 左上角：类型 -->
@@ -705,7 +735,11 @@ class ComponentService {
         }
 
         // 获取播放进度信息
-        const progressPercentage = history.progress || 0;
+        // progressPercentage 来自 localStorage（用户可改），必须做类型/范围保护
+        const rawProgress = Number(history.progress);
+        const progressPercentage = Number.isFinite(rawProgress)
+            ? Math.max(0, Math.min(100, Math.round(rawProgress)))
+            : 0;
         const progressText = progressPercentage > 0 ? `观看进度: ${progressPercentage}%` : '';
 
         // 格式化观看时间
@@ -727,38 +761,43 @@ class ComponentService {
             `已播放: ${playDurationText}` :
             (progressPercentage > 0 ? progressText : '');
 
-        // 根据site_url动态获取站点名称
-        let siteName = '未知站点';
-        if (history.site_url) {
-            const sites = this.apiService.getSites();
-            const currentSite = sites.find(site => site.url === history.site_url);
+        // 解析源标签（外链 URL 取 hostname，本地/磁力无附加信息则隐藏）
+        const siteName = this._resolveHistorySiteLabel(history);
+        // 鼠标悬停：外链 URL 时显示完整地址
+        const siteTooltip = (history.type_name === '外链' && history.vod_id)
+            ? ` title="${this._escapeHtml(history.vod_id)}"`
+            : '';
+        // 仅在有真实"来源"信息时才渲染第二个标签
+        const siteMetaHtml = siteName
+            ? `<span class="history-separator">•</span><span class="history-site"${siteTooltip}>${this._escapeHtml(siteName)}</span>`
+            : '';
 
-            if (currentSite) {
-                siteName = currentSite.name;
-            } else {
-                siteName = `站点(${history.site_url})`;
-            }
-        } else if (history.site_name) {
-            // 兼容旧版本历史记录
-            siteName = history.site_name;
-        }
+        // XSS 防护：localStorage['play_history'] 用户可直接编辑注入
+        // 所有 history.* 字段插入 innerHTML 前必须 _escapeHtml
+        // posterUrl 走 URL 校验：只允许 http(s)/data 协议
+        const safePoster = this._sanitizeImageUrl(posterUrl);
+        const safeVodName = this._escapeHtml(history.vod_name);
+        const safeTypeName = this._escapeHtml(history.type_name || '未知类型');
+        const safeEpisodeName = this._escapeHtml(history.episode_name);
+        const safeCurrentEp = Math.max(0, Math.floor(Number(history.current_episode) || 1));
+        const safeWatchTime = this._escapeHtml(watchTimeText);
+        const safePlayTime = this._escapeHtml(playTimeDisplay);
 
         item.innerHTML = `
             <div class="history-poster">
-                <img src="${posterUrl}" alt="${history.vod_name}" 
+                <img src="${safePoster}" alt="${safeVodName}"
                      onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPuaaguaXoOa1t+aKpTwvdGV4dD48L3N2Zz4='; this.alt='暂无海报';">
                 ${progressPercentage > 0 ? `<div class="history-progress-overlay">${progressPercentage}%</div>` : ''}
             </div>
             <div class="history-info">
-                <h4 class="history-title">${history.vod_name}</h4>
+                <h4 class="history-title">${safeVodName}</h4>
                 <p class="history-meta">
-                    <span class="history-type">${history.type_name || '未知类型'}</span>
-                    <span class="history-separator">•</span>
-                    <span class="history-site">${siteName}</span>
+                    <span class="history-type">${safeTypeName}</span>
+                    ${siteMetaHtml}
                 </p>
-                <p class="history-episode">观看到: ${history.episode_name || `第${history.current_episode || 1}集`}</p>
-                <p class="history-time">观看时间: ${watchTimeText}</p>
-                ${playTimeDisplay ? `<p class="history-duration">${playTimeDisplay}</p>` : ''}
+                <p class="history-episode">观看到: ${safeEpisodeName || `第${safeCurrentEp}集`}</p>
+                <p class="history-time">观看时间: ${safeWatchTime}</p>
+                ${safePlayTime ? `<p class="history-duration">${safePlayTime}</p>` : ''}
                 ${progressPercentage > 0 ? `
                 <div class="history-progress">
                     <div class="progress-bar" style="width: ${progressPercentage}%"></div>
@@ -787,6 +826,11 @@ class ComponentService {
 
         // 添加点击事件
         item.addEventListener('click', async () => {
+            // 外链条目（无 site_url，type_name 为外链/本地/磁力）走统一外链播放路径
+            if (!history.site_url && history.vod_id) {
+                await this._playExternalHistory(history);
+                return;
+            }
             // 如果历史记录有站点URL，先切换到对应站点
             if (history.site_url) {
                 const sites = this.apiService.getSites();
@@ -964,8 +1008,8 @@ class ComponentService {
                         ${video.vod_tag ? `
                         <div class="detail-tags">
                             ${video.vod_tag.split(',').map(tag =>
-        `<span class="tag">${tag.trim()}</span>`
-    ).join('')}
+            `<span class="tag">${tag.trim()}</span>`
+        ).join('')}
                         </div>
                         ` : ''}
                     </div>
@@ -1482,16 +1526,10 @@ class ComponentService {
         // 首先显示历史记录的详细信息，用于调试
         console.log('历史记录播放:', history.vod_name, '站点:', history.site_url || '未知');
 
-        // 根据site_url获取站点名称
-        let historySiteName = '未知站点';
-        if (history.site_url) {
-            const sites = this.apiService.getSites();
-            const historySite = sites.find(site => site.url === history.site_url);
-            if (historySite) {
-                historySiteName = historySite.name;
-            } else {
-                historySiteName = `站点(${history.site_url})`;
-            }
+        // 外链条目（无 site_url）走外链播放路径
+        if (!history.site_url && history.vod_id) {
+            this._playExternalHistory(history);
+            return;
         }
 
         // 处理历史记录播放 - 应该直接使用历史记录中的站点信息
@@ -1553,6 +1591,149 @@ class ComponentService {
             // 如果获取视频详情失败，尝试智能搜索
             this.smartSearchInAllSites(history);
         });
+    }
+
+    // 判断历史项是否为外链条目（无 site_url）
+    _isExternalHistory(history) {
+        return history && !history.site_url && history.vod_id;
+    }
+
+    // 统一解析历史项的"来源"标签（用于第二个标签位）
+    // - 站内视频：按 site_url 反查站点名
+    // - 外链 URL：取 vod_id 的 hostname（如 example.com），鼠标悬停可看完整 URL
+    // - 本地/磁力外链：返回空（无附加信息可显示，模板会按条件隐藏第二个标签）
+    // - 老数据兼容：site_name 等于"未知站点"等占位词时视为空
+    _resolveHistorySiteLabel(history) {
+        if (!history) return '';
+        // 占位词列表（历史兜底值，不应作为来源标签展示）
+        const placeholderNames = ['未知站点', '未知', 'unknown', ''];
+        const isExternalType = ['外链', '本地', '磁力'].includes(history.type_name);
+
+        // 站内视频
+        if (history.site_url && this.apiService) {
+            const sites = this.apiService.getSites();
+            const target = sites.find(site => site.url === history.site_url);
+            if (target && target.name) return target.name;
+        }
+        // 外链 URL：取 hostname 作为差异化来源（即使 site_name 是"未知站点"也能正确显示）
+        if (history.type_name === '外链' && history.vod_id) {
+            try {
+                const host = new URL(history.vod_id).hostname;
+                if (host) return host;
+            } catch (e) {
+                // 非标准 URL，忽略
+            }
+        }
+        // 外链条目（本地/磁力，或 URL 无法解析时）：占位词返回空
+        if (isExternalType) {
+            if (placeholderNames.includes(history.site_name)) return '';
+            return history.site_name || '';
+        }
+        // 兜底（站内视频反查失败）
+        return history.site_name || '';
+    }
+
+    // 推断外链条目类型
+    _inferExternalType(history) {
+        const id = (history && history.vod_id) || '';
+        const tn = history && history.type_name;
+        if (id.startsWith('magnet:') || /^[a-fA-F0-9]{40}$/.test(id) || /^[A-Z2-7]{32}$/.test(id)) {
+            return 'magnet';
+        }
+        if (tn === '磁力') return 'magnet';
+        if (id.startsWith('file://') || /^[A-Za-z]:[\\/]/.test(id) || id.startsWith('\\\\') || id.startsWith('/')) {
+            return 'local';
+        }
+        if (tn === '本地') return 'local';
+        if (id.startsWith('http://') || id.startsWith('https://')) return 'url';
+        if (tn === '外链') return 'url';
+        return 'unknown';
+    }
+
+    // 播放外链历史项
+    // - URL/本地：直接 open-player IPC（一次点击即播）
+    // - 磁力：优先续播（跳过解析，走主进程本地缓存），失败时回退到解析+选文件流程
+    async _playExternalHistory(history) {
+        if (!window.electron || !window.electron.ipcRenderer) {
+            this.showNotification('Electron 环境不可用', 'error');
+            return;
+        }
+        const type = this._inferExternalType(history);
+        const vodId = history.vod_id;
+
+        if (type === 'magnet') {
+            const fileName = history.vod_name || '';
+            // 导航到外链页（复用进度条 UI）
+            if (window.app && typeof window.app.initializePlayUrlPage === 'function') {
+                window.app.initializePlayUrlPage();
+                if (typeof window.app.switchToPage === 'function') {
+                    window.app.switchToPage('play-url');
+                }
+            }
+            // 优先走续播：跳过 parse，直接调 play() 命中主进程缓存
+            if (fileName && window.app && window.app.playUrlController) {
+                const ok = await window.app.playUrlController.resumeMagnetFromHistory(vodId, fileName);
+                if (ok) {
+                    return;
+                }
+                // 续播失败：回退到"重新解析+选文件"流程
+                this.showNotification('续播失败，改为重新解析...', 'warning');
+            }
+            // 回退：让用户重走解析流程
+            setTimeout(() => {
+                if (window.app && window.app.playUrlController) {
+                    window.app.playUrlController.playExternalFromHistory(vodId);
+                } else {
+                    this.showNotification('外链页面不可用', 'error');
+                }
+            }, 300);
+            return;
+        }
+
+        // URL / 本地：直接调用 open-player
+        const fileName = this._extractExternalFileName(vodId, history.vod_name);
+        const isLocal = type === 'local';
+        const localPath = isLocal
+            ? (vodId.startsWith('file://') ? vodId.replace(/^file:\/\/\//, '') : vodId)
+            : '';
+        const sourceLabel = isLocal ? '本地' : '外链';
+        const playerData = {
+            url: isLocal ? `file://${localPath.replace(/\\/g, '/')}` : vodId,
+            title: fileName,
+            videoData: {
+                vod_name: fileName,
+                episode_name: '正片',
+                playSource: isLocal ? 'local' : 'network',
+                isDirectPlay: true,
+                localPath: isLocal ? localPath : undefined,
+                type_name: sourceLabel,
+                siteName: sourceLabel
+            }
+        };
+        try {
+            const result = await window.electron.ipcRenderer.invoke('open-player', playerData);
+            if (result && result.success) {
+                this.showNotification(`正在播放: ${fileName}`, 'success');
+            } else {
+                throw new Error((result && result.message) || '打开播放器失败');
+            }
+        } catch (error) {
+            console.error('[COMPONENTS] 播放外链历史项失败:', error);
+            this.showNotification(`打开播放器失败: ${error.message}`, 'error');
+        }
+    }
+
+    // 从 vod_id 提取显示名（兜底用）
+    _extractExternalFileName(vodId, fallback) {
+        if (fallback) return fallback;
+        if (!vodId) return '外链视频';
+        try {
+            const cleaned = String(vodId).split('?')[0].split('#')[0];
+            const parts = cleaned.split(/[\\/]/);
+            return parts[parts.length - 1] || '外链视频';
+        } catch (e) {
+            return '外链视频';
+        }
     }
 
     // 智能搜索：在所有站点中查找视频
@@ -1756,7 +1937,7 @@ class ComponentService {
             <div class="route-alias-manager">
                 <div class="route-alias-list-modal">
                     ${aliasEntries.length > 0 ?
-        aliasEntries.map(([routeName, alias]) => `
+                aliasEntries.map(([routeName, alias]) => `
                             <div class="route-alias-edit-item" data-route="${routeName}">
                                 <div class="alias-checkbox-wrapper">
                                     <input type="checkbox" class="alias-checkbox" data-route="${routeName}">
@@ -1777,8 +1958,8 @@ class ComponentService {
                                 </div>
                             </div>
                         `).join('') :
-        '<div class="empty-alias-state"><p>暂无线路别名设置</p><p>在视频播放页面会自动为遇到的线路创建别名设置</p></div>'
-}
+                '<div class="empty-alias-state"><p>暂无线路别名设置</p><p>在视频播放页面会自动为遇到的线路创建别名设置</p></div>'
+            }
                 </div>
                 <div class="alias-actions-bar">
                     <div class="alias-actions-left">
@@ -1855,7 +2036,7 @@ class ComponentService {
         const selectedCount = document.getElementById('alias-selected-count');
         const selectAllCheckbox = document.getElementById('select-all-aliases');
         const batchDeleteBtn = document.getElementById('batch-delete-aliases-btn');
-        
+
         if (!aliasList) return;
 
         const checkboxes = aliasList.querySelectorAll('.alias-checkbox');
@@ -1990,7 +2171,7 @@ class ComponentService {
         // 复选框
         const checkboxWrapper = document.createElement('div');
         checkboxWrapper.className = 'alias-checkbox-wrapper';
-        
+
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.className = 'alias-checkbox';
@@ -2033,7 +2214,7 @@ class ComponentService {
 
         // 添加事件监听
         checkbox.addEventListener('change', () => this.updateRouteAliasBatchActionsBar());
-        
+
         editBtn.addEventListener('click', () => {
             this.editRouteAlias(routeName, alias);
         });
@@ -2051,7 +2232,7 @@ class ComponentService {
         const selectedCount = document.getElementById('alias-selected-count');
         const selectAllCheckbox = document.getElementById('select-all-aliases');
         const batchDeleteBtn = document.getElementById('batch-delete-aliases-btn');
-        
+
         if (!aliasList) return;
 
         const checkboxes = aliasList.querySelectorAll('.alias-checkbox');
@@ -2673,7 +2854,7 @@ class ComponentService {
             }
 
             // 如果导入了站点配置，需要重新初始化API服务
-            const importedSites = results.details && results.details.sites && 
+            const importedSites = results.details && results.details.sites &&
                 (results.details.sites.imported > 0 || results.details.sites.overwritten > 0);
             if (importedSites && window.app && window.app.apiService) {
                 console.log('[COMPONENTS] 检测到站点配置变更，重新初始化API服务...');
