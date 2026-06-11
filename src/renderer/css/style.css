@@ -1271,6 +1271,177 @@ select::-webkit-scrollbar-thumb:hover {
     line-height: 1.4;
 }
 
+/* 运行环境状态卡片（关于页） */
+/* 关键：使用 design tokens 保持项目视觉一致；状态用绿/红两色直接体现可用性 */
+.runtime-env-card {
+    background: var(--glass-card-default);
+    border: 1px solid var(--glass-border-subtle);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    margin-bottom: var(--space-4);
+    min-height: 80px;
+}
+
+.runtime-env-loading {
+    color: var(--text-tertiary);
+    text-align: center;
+    padding: var(--space-4) 0;
+    font-style: italic;
+}
+
+.runtime-env-error {
+    color: var(--color-error, #f56c6c);
+    text-align: center;
+    padding: var(--space-4) 0;
+}
+
+.runtime-env-status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+}
+
+.runtime-env-status-icon {
+    font-size: 32px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.runtime-env-status-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.runtime-env-source {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--space-1);
+}
+
+.runtime-env-state {
+    font-size: var(--text-sm);
+    color: var(--text-tertiary);
+}
+
+.runtime-env-ok .runtime-env-state {
+    color: var(--color-success, #67c23a);
+}
+
+.runtime-env-warn .runtime-env-state {
+    color: var(--color-warning, #e6a23c);
+}
+
+.runtime-env-details {
+    border-top: 1px solid var(--glass-border-subtle);
+    padding-top: var(--space-3);
+    margin-top: var(--space-3);
+}
+
+.runtime-env-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-2) 0;
+    font-size: var(--text-sm);
+    gap: var(--space-3);
+}
+
+.runtime-env-label {
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+}
+
+.runtime-env-value {
+    color: var(--text-primary);
+    text-align: right;
+    word-break: break-all;
+    font-family: var(--font-mono, monospace);
+    font-size: var(--text-xs);
+}
+
+.runtime-env-mini-ok {
+    color: var(--color-success, #67c23a);
+    font-weight: 500;
+}
+
+.runtime-env-mini-warn {
+    color: var(--color-warning, #e6a23c);
+    font-weight: 500;
+}
+
+.runtime-env-issues {
+    margin-top: var(--space-3);
+    padding: var(--space-3);
+    background: rgba(230, 162, 60, 0.08);
+    border-left: 3px solid var(--color-warning, #e6a23c);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+}
+
+.runtime-env-issues ul {
+    margin: var(--space-2) 0 0 var(--space-4);
+    padding: 0;
+}
+
+.runtime-env-issues li {
+    margin: var(--space-1) 0;
+}
+
+.runtime-env-actions {
+    display: flex;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+/* 便携版下载进度条 */
+/* 关键：用户点击"下载便携版"后实时显示下载进度 + 提示文本 */
+.runtime-env-download-progress {
+    margin-top: var(--space-4);
+    padding: var(--space-4);
+    background: var(--glass-card-default);
+    border: 1px solid var(--glass-border-subtle);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+}
+
+.runtime-env-download-error {
+    background: rgba(245, 108, 108, 0.08);
+    border-color: var(--color-error, #f56c6c);
+    color: var(--color-error, #f56c6c);
+}
+
+.runtime-env-download-message {
+    margin-bottom: var(--space-2);
+    word-break: break-all;
+}
+
+.runtime-env-progress-track {
+    width: 100%;
+    height: 6px;
+    background: var(--glass-border-subtle);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+    margin-bottom: var(--space-2);
+}
+
+.runtime-env-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+    border-radius: var(--radius-full);
+    transition: width var(--duration-fast) var(--ease-default);
+}
+
+.runtime-env-download-percent {
+    text-align: right;
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    font-family: var(--font-mono, monospace);
+}
+
 .changelog {
     margin-top: var(--space-5);
 }
@@ -1975,4 +2146,42 @@ select::-webkit-scrollbar-thumb:hover {
     text-align: center;
     padding: var(--space-5);
     font-style: italic;
+}
+
+/* 阶段化进度反馈样式 - Task 7 */
+.play-url-progress .progress-stage {
+    font-size: var(--text-sm, 12px);
+    color: var(--text-secondary, #888);
+    margin-bottom: var(--space-1, 4px);
+    font-weight: 500;
+    line-height: 1.4;
+    min-height: 1.4em;
+}
+
+.play-url-progress.is-warning .progress-fill {
+    background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%);
+}
+
+.play-url-progress.is-warning .progress-stage {
+    color: #f59e0b;
+}
+
+.play-url-progress.is-success .progress-fill {
+    background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+}
+
+.play-url-progress.is-success .progress-stage {
+    color: #10b981;
+}
+
+.play-url-progress.is-error .progress-fill {
+    background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+}
+
+.play-url-progress.is-error .progress-stage {
+    color: #ef4444;
+}
+
+.play-url-progress .progress-fill {
+    transition: width 200ms ease, background 200ms ease;
 }
