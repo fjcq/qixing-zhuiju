@@ -8,6 +8,8 @@ const {
     validateSearchKeyword,
     sanitizeInput
 } = require('./securityValidator');
+const nodeEnvironment = require('./nodeEnvironment');
+const portableNodeDownloader = require('./portableNodeDownloader');
 
 /**
  * 设置IPC通信处理
@@ -49,7 +51,15 @@ function setupIPC(qixingApp) {
             qixingApp.currentVideoUrl = safeData.url;
             console.log('[MAIN] 保存视频URL用于投屏:', qixingApp.currentVideoUrl);
 
-            qixingApp.createPlayerWindow(safeData);
+            const playerWindow = qixingApp.createPlayerWindow(safeData);
+            // 关键:窗口 webContents 完成加载后,通知主窗口进入"视频缓冲中"阶段
+            if (playerWindow && playerWindow.webContents) {
+                playerWindow.webContents.once('did-finish-load', () => {
+                    if (qixingApp.mainWindow && !qixingApp.mainWindow.isDestroyed()) {
+                        qixingApp.mainWindow.webContents.send('player-loaded', {});
+                    }
+                });
+            }
             return { success: true, message: '播放器已打开' };
         } catch (error) {
             console.error('[MAIN] 打开播放器失败:', error);
@@ -73,8 +83,117 @@ function setupIPC(qixingApp) {
         }
     });
 
+    // 播放器窗口 video.canplay 时通过 ipcRenderer.send 发来,转发给主窗口
+    ipcMain.on('player-canplay', (event) => {
+        // 安全验证:只接受来自播放器窗口的消息
+        const sender = event && event.sender;
+        if (sender === qixingApp.mainWindow && qixingApp.mainWindow.webContents) {
+            // 是主窗口自己发的(罕见,可能为调试),不转发回去
+            return;
+        }
+        if (qixingApp.mainWindow && !qixingApp.mainWindow.isDestroyed()) {
+            qixingApp.mainWindow.webContents.send('player-canplay', {});
+        }
+    });
+
     // 获取应用版本
     ipcMain.handle('get-app-version', () => require('electron').app.getVersion());
+
+    /**
+     * 获取 Node.js 运行环境状态
+     * 供设置页/关于页展示用：
+     * - 是否有可用 Node.js
+     * - 来源（应用内置/便携版/系统）
+     * - 版本号
+     * - 磁力链依赖是否完整
+     * - 任何已知问题（用于 UI 提示）
+     */
+    ipcMain.handle('get-runtime-environment', async () => {
+        try {
+            const status = await nodeEnvironment.getStatus();
+            return { success: true, status };
+        } catch (err) {
+            return {
+                success: false,
+                error: err && err.message || String(err),
+                status: {
+                    ok: false,
+                    source: nodeEnvironment.SOURCE.NONE,
+                    sourceLabel: '检测失败',
+                    version: '',
+                    description: '',
+                    issues: [`环境检测异常: ${(err && err.message) || err}`]
+                }
+            };
+        }
+    });
+
+    /**
+     * 重新解析 Node.js 运行环境
+     * 用途：用户下载完便携版 Node.js 后点击"刷新"按钮
+     * 关键：必须 invalidate 缓存，否则下次 resolve 仍返回旧值
+     */
+    ipcMain.handle('refresh-runtime-environment', async () => {
+        try {
+            nodeEnvironment.invalidate();
+            const status = await nodeEnvironment.getStatus();
+            return { success: true, status };
+        } catch (err) {
+            return {
+                success: false,
+                error: err && err.message || String(err)
+            };
+        }
+    });
+
+    /**
+     * 打开便携版 Node.js 安装目录
+     * 用途：用户想自己放一个便携版 Node.js 时告诉他放哪里
+     * 关键：使用 shell.openPath（自动处理 Windows 资源管理器）
+     */
+    ipcMain.handle('open-portable-node-dir', async () => {
+        try {
+            const dir = nodeEnvironment.getPortableDir();
+            const fs = require('fs');
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            const { shell } = require('electron');
+            const errMsg = await shell.openPath(dir);
+            if (errMsg) {
+                return { success: false, error: errMsg };
+            }
+            return { success: true, path: dir };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
+
+    /**
+     * 下载便携版 Node.js
+     * 关键：不在主流程自动触发（绝大多数用户走 Electron 内置就够）
+     *       仅在用户主动点击"下载便携版"按钮时调用
+     * 进度通过 webContents.send('runtime-env-progress', ...) 推送到渲染端
+     */
+    ipcMain.handle('download-portable-node', async (event, options = {}) => {
+        const webContents = event.sender;
+        const sendProgress = (payload) => {
+            try {
+                if (webContents && !webContents.isDestroyed()) {
+                    webContents.send('runtime-env-progress', payload);
+                }
+            } catch (e) { /* 忽略：渲染端可能已关闭 */ }
+        };
+        try {
+            const result = await portableNodeDownloader.downloadAndInstall({
+                version: options.version,
+                onProgress: sendProgress
+            });
+            return result;
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    });
 
     // 打开外部链接
     ipcMain.handle('open-external-url', async (event, url) => {
@@ -702,11 +821,23 @@ function setupIPC(qixingApp) {
 
     /**
      * 启动磁力链子进程
-     * 使用系统Node.js运行ESM脚本，NODE_PATH指向magnet-runtime目录
+     * 关键：不再硬编码 `spawn('node', ...)`，而是使用 nodeEnvironment 自动解析
+     * 解析顺序：Electron 内置 Node.js → 便携版 Node.js → 系统 Node.js
+     * 这样即使用户没装 Node.js 也能用（绝大多数情况走 Electron 内置）
+     *
+     * 注意：返回 Promise<ChildProcess>，调用方必须 await
+     * 启动失败时 reject 友好的错误对象（带 code: 'NODE_NOT_FOUND'），UI 可识别
      */
+    let magnetProcessStartPromise = null; // 防止并发起多次启动
+
     function startMagnetProcess() {
+        // 进程已存在且活着：直接返回
         if (magnetProcess && !magnetProcess.killed) {
-            return magnetProcess;
+            return Promise.resolve(magnetProcess);
+        }
+        // 已有正在进行的启动：复用同一个 Promise，避免竞态
+        if (magnetProcessStartPromise) {
+            return magnetProcessStartPromise;
         }
 
         const { spawn } = require('child_process');
@@ -730,65 +861,118 @@ function setupIPC(qixingApp) {
             magnetRuntimeDir = path.join(__dirname, '..', '..', '..', 'magnet-runtime');
         }
         const nodeModulesPath = path.join(magnetRuntimeDir, 'node_modules');
-        console.log('[MAIN] 启动磁力链子进程, 脚本:', scriptPath);
-        console.log('[MAIN] NODE_PATH:', nodeModulesPath);
 
-        magnetProcess = spawn('node', [scriptPath], {
-            stdio: ['pipe', 'pipe', 'pipe'],
-            env: {
-                ...process.env,
-                NODE_PATH: nodeModulesPath,
-                ELECTRON_RUN_AS_NODE: ''
-            }
-        });
-
-        // 启动后立即发送 init 消息，告知子进程把磁力文件存到我们应用的下载目录
-        // 这样磁力下载的文件才能纳入「下载」页统一管理，并支持断点续传
-        try {
-            const initMsg = JSON.stringify({
-                action: 'init',
-                magnetDir: qixingApp.downloadManager.getMagnetDir()
-            }) + '\n';
-            magnetProcess.stdin.write(initMsg);
-            console.log('[MAIN] 已向磁力子进程发送 init 消息, magnetDir:', qixingApp.downloadManager.getMagnetDir());
-        } catch (err) {
-            console.error('[MAIN] 发送 init 消息失败:', err.message);
-        }
-
-        // 处理stdout消息
-        let buffer = '';
-        magnetProcess.stdout.on('data', data => {
-            buffer += data.toString();
-            const lines = buffer.split('\n');
-            buffer = lines.pop(); // 保留不完整的行
-
-            for (const line of lines) {
-                if (!line.trim()) continue;
-                try {
-                    const msg = JSON.parse(line);
-                    handleMagnetMessage(msg);
-                } catch (err) {
-                    console.log('[MAIN] 磁力链子进程输出(非JSON):', line.substring(0, 200));
+        magnetProcessStartPromise = (async () => {
+            try {
+                // 解析 Node.js 可执行文件
+                // 关键：所有磁力链功能都依赖这一步；如果解析失败，立刻给用户清晰错误
+                const resolved = await nodeEnvironment.resolve();
+                if (!resolved) {
+                    const err = new Error('未找到可用的 Node.js 运行环境，磁力链功能不可用');
+                    err.code = 'NODE_NOT_FOUND';
+                    err.userMessage = '运行环境未就绪，请前往设置页检查环境状态';
+                    throw err;
                 }
+                console.log('[MAIN] 启动磁力链子进程');
+                console.log('[MAIN]   Node.js 来源:', resolved.source, '版本:', resolved.version);
+                console.log('[MAIN]   可执行文件:', resolved.nodePath);
+                console.log('[MAIN]   脚本路径:', scriptPath);
+                console.log('[MAIN]   NODE_PATH:', nodeModulesPath);
+
+                // spawn 时必须传 env 覆盖（nodeEnvironment 也会附加 ELECTRON_RUN_AS_NODE，
+                // 这里再补上 NODE_PATH 用于 webtorrent 解析；不会冲突）
+                // 关键：WEBTORRENT_PATH 是 webtorrent 的绝对路径，由子进程 magnetHandler.mjs
+                //       通过动态 import() 加载（webtorrent@2.x 是纯 ESM，不能用 require；
+                //       ESM import 也不支持 NODE_PATH，所以必须传绝对路径）
+                const webtorrentPath = path.join(magnetRuntimeDir, 'node_modules', 'webtorrent');
+                const child = spawn(resolved.nodePath, [scriptPath], {
+                    stdio: ['pipe', 'pipe', 'pipe'],
+                    env: {
+                        ...process.env,
+                        NODE_PATH: nodeModulesPath,
+                        WEBTORRENT_PATH: webtorrentPath,
+                        // Electron 内置模式：让 Electron 二进制以纯 Node.js 模式运行，不启动 Chromium
+                        ELECTRON_RUN_AS_NODE: resolved.isElectron ? '1' : ''
+                    }
+                });
+
+                magnetProcess = child;
+
+                // 启动后立即发送 init 消息，告知子进程把磁力文件存到我们应用的下载目录
+                // 这样磁力下载的文件才能纳入「下载」页统一管理，并支持断点续传
+                try {
+                    const initMsg = JSON.stringify({
+                        action: 'init',
+                        magnetDir: qixingApp.downloadManager.getMagnetDir()
+                    }) + '\n';
+                    child.stdin.write(initMsg);
+                    console.log('[MAIN] 已向磁力子进程发送 init 消息, magnetDir:', qixingApp.downloadManager.getMagnetDir());
+                } catch (err) {
+                    console.error('[MAIN] 发送 init 消息失败:', err.message);
+                }
+
+                // 处理stdout消息
+                let buffer = '';
+                child.stdout.on('data', data => {
+                    buffer += data.toString();
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // 保留不完整的行
+
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        try {
+                            const msg = JSON.parse(line);
+                            handleMagnetMessage(msg);
+                        } catch (err) {
+                            console.log('[MAIN] 磁力链子进程输出(非JSON):', line.substring(0, 200));
+                        }
+                    }
+                });
+
+                // 处理stderr日志
+                child.stderr.on('data', data => {
+                    console.log('[MAIN] 磁力链子进程日志:', data.toString().trim());
+                });
+
+                child.on('error', err => {
+                    console.error('[MAIN] 磁力链子进程启动失败:', err.message);
+                    // 启动失败时给所有 pending 请求 reject
+                    const errObj = new Error('磁力链子进程启动失败: ' + err.message);
+                    errObj.code = 'MAGNET_PROCESS_ERROR';
+                    for (const [id, pending] of magnetPendingRequests) {
+                        clearTimeout(pending.timeout);
+                        pending.reject(errObj);
+                    }
+                    magnetPendingRequests.clear();
+                    magnetProcess = null;
+                });
+
+                child.on('exit', (code, signal) => {
+                    console.log('[MAIN] 磁力链子进程退出, code:', code, 'signal:', signal);
+                    // 退出时让所有 pending 请求 reject（避免 IPC 永久挂起）
+                    if (magnetPendingRequests.size > 0) {
+                        const errObj = new Error(`磁力链子进程已退出 (code=${code})`);
+                        errObj.code = 'MAGNET_PROCESS_EXITED';
+                        for (const [id, pending] of magnetPendingRequests) {
+                            clearTimeout(pending.timeout);
+                            pending.reject(errObj);
+                        }
+                        magnetPendingRequests.clear();
+                    }
+                    magnetProcess = null;
+                });
+
+                return child;
+            } catch (err) {
+                // 关键：启动失败时显式清空 promise 缓存
+                // 下次调用 startMagnetProcess 会重新走 resolve 流程（用户可能已下载便携版 Node.js）
+                // 比 .finally() 更显式,不依赖 Promise 微任务时序的隐式行为
+                magnetProcessStartPromise = null;
+                throw err;
             }
-        });
+        })();
 
-        // 处理stderr日志
-        magnetProcess.stderr.on('data', data => {
-            console.log('[MAIN] 磁力链子进程日志:', data.toString().trim());
-        });
-
-        magnetProcess.on('error', err => {
-            console.error('[MAIN] 磁力链子进程启动失败:', err.message);
-            magnetProcess = null;
-        });
-
-        magnetProcess.on('exit', (code, signal) => {
-            console.log('[MAIN] 磁力链子进程退出, code:', code, 'signal:', signal);
-            magnetProcess = null;
-        });
-
-        return magnetProcess;
+        return magnetProcessStartPromise;
     }
 
     /**
@@ -838,15 +1022,22 @@ function setupIPC(qixingApp) {
 
     /**
      * 发送消息到磁力链子进程并等待响应
+     * 关键：startMagnetProcess 现在返回 Promise（要解析 Node.js 二进制），
+     *       这里必须先 await 拿到子进程对象，再注册 pending 请求 + 写 stdin
      */
-    function sendMagnetMessage(msg) {
+    async function sendMagnetMessage(msg) {
+        let proc;
+        try {
+            proc = await startMagnetProcess();
+        } catch (err) {
+            // Node.js 解析失败 / 子进程启动失败：透传到上层渲染端
+            // 错误对象带 code（NODE_NOT_FOUND / MAGNET_PROCESS_ERROR），UI 可识别
+            throw err;
+        }
+        if (!proc) {
+            throw new Error('无法启动磁力链子进程');
+        }
         return new Promise((resolve, reject) => {
-            const proc = startMagnetProcess();
-            if (!proc) {
-                reject(new Error('无法启动磁力链子进程'));
-                return;
-            }
-
             const id = ++magnetMessageId;
             msg.id = id;
 
@@ -856,7 +1047,14 @@ function setupIPC(qixingApp) {
             }, 120000); // 2分钟超时
 
             magnetPendingRequests.set(id, { resolve, reject, timeout });
-            proc.stdin.write(JSON.stringify(msg) + '\n');
+            try {
+                proc.stdin.write(JSON.stringify(msg) + '\n');
+            } catch (err) {
+                // stdin 写入失败：清理 pending 后抛错
+                clearTimeout(timeout);
+                magnetPendingRequests.delete(id);
+                reject(new Error('写入磁力链子进程失败: ' + err.message));
+            }
         });
     }
 

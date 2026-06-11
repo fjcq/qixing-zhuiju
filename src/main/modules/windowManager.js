@@ -186,7 +186,7 @@ function createPlayerWindow(qixingApp, videoData) {
             qixingApp.playerWindow.webContents.send('video-data', videoData);
         }
         qixingApp.playerWindow.focus();
-        return;
+        return qixingApp.playerWindow;
     }
 
     qixingApp.playerWindow = new BrowserWindow({
@@ -254,6 +254,9 @@ function createPlayerWindow(qixingApp, videoData) {
     qixingApp.playerWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
         console.error('[MAIN] 播放器页面加载失败:', errorCode, errorDescription, validatedURL);
     });
+
+    // 关键：返回播放器窗口实例，调用方（如 ipcHandler）需要在 did-finish-load 上挂监听
+    return qixingApp.playerWindow;
 }
 
 // 创建应用菜单
