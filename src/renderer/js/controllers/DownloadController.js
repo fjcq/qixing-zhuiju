@@ -1036,12 +1036,29 @@
                     }
                 }
             }
+            // 兜底:60 秒后强制关闭浮动条,无论 player-canplay 事件链是否正常
+            // 解决问题链路:player.js video canplay → preload send → 主进程转发 → 主窗口订阅
+            //   任何一环断了,player-canplay 都收不到 → 浮动条永远不消失(用户报告)
+            // 60 秒足够视频可播放 + 浮动条自然消失;60 秒还没消失,说明确实有故障,
+            // 此时强制隐藏避免遮挡 UI
+            if (this._magnetProgressForceHideTimer) {
+                clearTimeout(this._magnetProgressForceHideTimer);
+            }
+            this._magnetProgressForceHideTimer = setTimeout(() => {
+                console.warn('[DownloadController] 60 秒未收到 player-canplay,强制关闭浮动条');
+                this._hideMagnetProgress();
+            }, 60000);
         }
 
         /**
          * 隐藏全局浮动进度条
          */
         _hideMagnetProgress() {
+            // 兜底:如果 _showMagnetProgress 设置了强制关闭定时器,清理它
+            if (this._magnetProgressForceHideTimer) {
+                clearTimeout(this._magnetProgressForceHideTimer);
+                this._magnetProgressForceHideTimer = null;
+            }
             const el = document.getElementById('global-magnet-progress');
             if (!el) return;
             el.style.display = 'none';
