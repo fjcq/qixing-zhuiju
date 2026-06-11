@@ -528,6 +528,20 @@
                                 </div>
                             </div>
 
+                            <!-- 运行环境状态 -->
+                            <!-- 关键：磁力链功能依赖 Node.js 子进程，让用户看到状态 + 引导自助修复 -->
+                            <div class="about-section">
+                                <h3>运行环境</h3>
+                                <p class="settings-description">磁力链功能依赖 Node.js 运行环境，应用已内置支持，<strong>无需手动安装</strong>。如出现异常，可点击「刷新」重新检测。</p>
+                                <div id="runtime-env-card" class="runtime-env-card">
+                                    <div class="runtime-env-loading">检测中…</div>
+                                </div>
+                                <div class="runtime-env-actions">
+                                    <button id="runtime-env-refresh-btn" class="btn-secondary">刷新状态</button>
+                                    <button id="runtime-env-open-dir-btn" class="btn-secondary">打开便携版目录</button>
+                                </div>
+                            </div>
+
                             <div class="about-footer">
                                 <p>感谢您使用七星追剧！如果您喜欢这个应用，请给我们一个
                                     <svg class="star-icon" width="16" height="16" viewBox="0 0 24 24"
@@ -556,6 +570,9 @@
     <script src="js/api.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/components.js"></script>
+    <!-- 运行环境服务（磁力链 Node.js 检测）—— 必须在 controllers 之前加载 -->
+    <script src="js/runtimeEnvironment.js"></script>
+    <script src="js/runtimeEnvironmentView.js"></script>
     <!-- 新增模块化组件 -->
     <script src="js/utils/utils.js"></script>
     <script src="js/utils/lazyLoader.js"></script>
@@ -567,6 +584,8 @@
     <script src="js/controllers/urlHistoryManager.js"></script>
     <script src="js/controllers/fileListRenderer.js"></script>
     <script src="js/controllers/magnetParserAdapter.js"></script>
+    <!-- 磁力下载进度映射器（必须在 PlayUrlController 之前加载，否则 window.MagnetDownloadProgressMapper 未定义） -->
+    <script src="js/utils/magnetDownloadProgressMapper.js"></script>
     <script src="js/controllers/PlayUrlController.js"></script>
     <script src="js/controllers/DownloadController.js"></script>
     <script src="js/app.js"></script>
