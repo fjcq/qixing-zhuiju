@@ -658,12 +658,11 @@
 
         /**
          * 播放下载文件
-         * 磁力文件：委托给 PlayUrlController.resumeMagnetFromHistory：
-         *   - 自动补进度反馈（全局浮动条 + 订阅 magnet-download-progress）
-         *   - 自动开播放器（避免下载页路径走两段 IPC 漏掉进度回调）
-         *   - 复用 PlayUrlController 内部的清理协议（player-canplay 时统一清理）
-         *   - 不在下载页写第二套进度逻辑，避免双订阅/双通知
-         *   - 若 PlayUrlController 尚未初始化（用户从未进过外链页），先懒加载
+         * 磁力文件：两段 IPC（play-magnet-file → open-player）+ 实时进度反馈（全局浮动条）
+         *   - play-magnet-file 内部要等 c.add ready（首次 5-30 秒，复用子进程 torrent 毫秒级）
+         *   - 在调 play-magnet-file 之前立刻订阅 magnet-download-progress 事件，
+         *     浮动条第一时间出现，用户能看到'正在连接/下载中'等实时状态
+         *   - player-canplay 时统一清理订阅 + 隐藏浮动条
          * 本地/URL 文件：走 open-player 用 file:// 协议直接读盘（文件不存在则提示而非静默失败）
          */
         async _playFile(id) {
@@ -673,7 +672,7 @@
                 return;
             }
             try {
-                // 磁力文件：委托给 PlayUrlController，享受统一的进度反馈
+                // 磁力文件：两段 IPC + 实时进度反馈
                 if (file.sourceType === 'magnet') {
                     if (!file.infoHash) {
                         this.app.componentService.showNotification('缺少磁力信息，无法播放', 'error');
@@ -681,23 +680,78 @@
                     }
                     // 兜底：旧记录 sourceUrl 为空时用 infoHash 构造最小磁力链（无 tracker 走 DHT/PEX）
                     const magnetUri = file.sourceUrl || `magnet:?xt=urn:btih:${file.infoHash}`;
-                    // 懒加载 PlayUrlController（用户可能从下载页直接点播放，从未进过外链页）
-                    if (!this.app.playUrlController && typeof this.app.initializePlayUrlPage === 'function') {
-                        this.app.initializePlayUrlPage();
-                    }
-                    if (!this.app.playUrlController) {
-                        this.app.componentService.showNotification('播放控制器未就绪，请稍后重试', 'error');
+                    // 防御性清理旧订阅（防止从下载页/历史页重复点播放导致回调多次触发）
+                    this._unbindMagnetProgress();
+                    this._unbindPlayerListeners();
+                    // 立即显示全局浮动条（用户点下去就能看到反馈，不等 30 秒）
+                    this._showMagnetProgress(`正在准备: ${file.name}`, 5, 'info');
+                    // 订阅磁力下载进度（play-magnet-file 内部会持续转发子进程 progress 消息）
+                    this._bindMagnetProgress((data) => {
+                        if (!data) return;
+                        // 优先用 mapper 翻译；无 mapper 时直接显示原文（不阻塞 UI）
+                        const mapped = (window.MagnetDownloadProgressMapper
+                            && window.MagnetDownloadProgressMapper.mapMagnetDownloadProgress)
+                            ? window.MagnetDownloadProgressMapper.mapMagnetDownloadProgress(data)
+                            : null;
+                        if (mapped && mapped.stageText) {
+                            this._showMagnetProgress(
+                                mapped.stageText,
+                                typeof mapped.progress === 'number' ? mapped.progress : 0,
+                                mapped.variant || 'info'
+                            );
+                        } else if (data.message) {
+                            // 兜底：mapper 不可用时直接显示 message + 0%
+                            this._showMagnetProgress(data.message, 0, 'info');
+                        }
+                    });
+                    // 1) 调起/恢复磁力下载并获取 streamUrl
+                    const result = await window.electron.ipcRenderer.invoke('play-magnet-file', {
+                        magnetUri,
+                        fileName: file.name,
+                        infoHash: file.infoHash
+                    });
+                    if (!(result && result.success)) {
+                        const reason = (result && (result.message || result.error)) || '未知错误';
+                        this._unbindMagnetProgress();
+                        this._showMagnetProgress(`播放失败: ${reason}`, 0, 'error');
+                        // 1.5s 后再隐藏，让用户看清错误文本
+                        setTimeout(() => this._hideMagnetProgress(), 1500);
+                        this.app.componentService.showNotification(`播放失败: ${reason}`, 'error');
                         return;
                     }
-                    // 委托：PlayUrlController 内部负责 _showProgress + onDownloadProgress 订阅
-                    // + 调 play-magnet-file + 调 open-player + player-canplay 时清理订阅
-                    // 用户在下载页也能立刻看到全局浮动进度条
-                    const success = await this.app.playUrlController.resumeMagnetFromHistory(magnetUri, file.name);
-                    if (!success) {
-                        // PlayUrlController 内部已 _notify 错误原因，这里补一行"播放失败"提示
-                        // 失败常见原因：_pauseMagnet 后子进程已销毁 / 缓存失效等
-                        // 这种情况用户可尝试先「继续下载」恢复 torrent，再点播放
-                        this.app.componentService.showNotification('播放失败，请尝试「继续下载」后再点播放', 'error');
+                    // 订阅 player-canplay 统一清理（视频可播放时自动隐藏浮动条）
+                    this._bindPlayerCanplay(() => {
+                        this._unbindMagnetProgress();
+                        this._unbindPlayerListeners();
+                        this._hideMagnetProgress();
+                    });
+                    // 2) 真正打开播放器窗口（用 streamUrl）
+                    // 关键：play-magnet-file 只返回 streamUrl 不开窗，必须再调 open-player
+                    const videoData = {
+                        url: result.streamUrl,
+                        title: file.name,
+                        vod_name: file.name,
+                        episode_name: file.name,
+                        isDirectPlay: true,
+                        playSource: 'magnet',
+                        isStreaming: !result.isLocal,
+                        isLocal: !!result.isLocal,
+                        type_name: '下载',
+                        siteName: '磁力',
+                        // 用统一 dl_ 前缀，历史页面可识别并路由回 DownloadController
+                        vod_id: 'dl_' + file.id,
+                        vod_pic: ''
+                    };
+                    const openResult = await window.electron.ipcRenderer.invoke('open-player', videoData);
+                    if (openResult && openResult.success) {
+                        this.app.componentService.showNotification('已打开播放器（边下边播）', 'success');
+                    } else {
+                        const reason = (openResult && openResult.message) || '未知错误';
+                        this._unbindMagnetProgress();
+                        this._unbindPlayerListeners();
+                        this._showMagnetProgress(`打开播放器失败: ${reason}`, 0, 'error');
+                        setTimeout(() => this._hideMagnetProgress(), 1500);
+                        this.app.componentService.showNotification(`打开播放器失败: ${reason}`, 'error');
                     }
                     return;
                 }
@@ -898,6 +952,146 @@
             } catch (error) {
                 this.app.componentService.showNotification('打开目录失败: ' + error.message, 'error');
             }
+        }
+
+        // ============================================================
+        // 磁力播放进度反馈辅助方法
+        // 设计：复用 PlayUrlController 的全局浮动进度条 #global-magnet-progress
+        // 不直接走 PlayUrlController.resumeMagnetFromHistory 是因为下载页上下文
+        // （_dom = 外链页 hidden）的状态机与外链页路径不同，容易触发"播放失败"误判
+        // 这里直接操作全局 DOM + 订阅 IPC 事件，简洁可靠
+        // ============================================================
+
+        /**
+         * 显示全局浮动进度条
+         * @param {string} text 阶段文本
+         * @param {number} percent 进度 0-100
+         * @param {'info'|'warning'|'success'|'error'} variant 变体
+         */
+        _showMagnetProgress(text, percent, variant) {
+            const el = document.getElementById('global-magnet-progress');
+            const stageEl = document.getElementById('global-magnet-progress-stage');
+            const fillEl = document.getElementById('global-magnet-progress-fill');
+            if (!el) return;
+            el.classList.remove('is-warning', 'is-success', 'is-error');
+            if (variant && variant !== 'info') {
+                el.classList.add('is-' + variant);
+            }
+            el.style.display = 'block';
+            if (stageEl) {
+                stageEl.textContent = text || '';
+            }
+            if (fillEl) {
+                // 数字安全：null/undefined/NaN/Infinity/负数/超过 100 都兜底到 0-100 区间
+                let pct = percent;
+                if (pct == null || !isFinite(pct) || pct < 0) {
+                    pct = 0;
+                } else if (pct > 100) {
+                    pct = 100;
+                }
+                fillEl.style.width = pct + '%';
+            }
+        }
+
+        /**
+         * 隐藏全局浮动进度条
+         */
+        _hideMagnetProgress() {
+            const el = document.getElementById('global-magnet-progress');
+            if (!el) return;
+            el.style.display = 'none';
+            const stageEl = document.getElementById('global-magnet-progress-stage');
+            if (stageEl) stageEl.textContent = '';
+        }
+
+        /**
+         * 订阅 magnet-download-progress 事件
+         * 关键：保存 handler 引用，后续 _unbindMagnetProgress 才能正确 removeListener
+         * 不使用 ipcRenderer.on(... anonymous arrow)，否则 removeListener 无法定位
+         */
+        _bindMagnetProgress(callback) {
+            if (!window.electron || !window.electron.ipcRenderer) return;
+            if (this._magnetProgressHandler) {
+                this._unbindMagnetProgress();
+            }
+            this._magnetProgressHandler = (_event, data) => {
+                try {
+                    callback(data);
+                } catch (err) {
+                    console.error('[DownloadController] magnet-download-progress 回调异常:', err);
+                }
+            };
+            // safeOn 是 preload 暴露的安全订阅接口，会做 channel 白名单校验
+            if (typeof window.electron.safeOn === 'function') {
+                window.electron.safeOn('magnet-download-progress', this._magnetProgressHandler);
+            } else if (typeof window.electron.ipcRenderer.on === 'function') {
+                window.electron.ipcRenderer.on('magnet-download-progress', this._magnetProgressHandler);
+            }
+        }
+
+        /**
+         * 取消 magnet-download-progress 订阅
+         */
+        _unbindMagnetProgress() {
+            if (!this._magnetProgressHandler) return;
+            try {
+                if (window.electron && typeof window.electron.removeListener === 'function') {
+                    window.electron.removeListener('magnet-download-progress', this._magnetProgressHandler);
+                } else if (window.electron && window.electron.ipcRenderer
+                    && typeof window.electron.ipcRenderer.removeListener === 'function') {
+                    window.electron.ipcRenderer.removeListener(
+                        'magnet-download-progress', this._magnetProgressHandler
+                    );
+                }
+            } catch (err) {
+                console.warn('[DownloadController] 取消 magnet-download-progress 订阅失败:', err);
+            }
+            this._magnetProgressHandler = null;
+        }
+
+        /**
+         * 订阅 player-canplay 事件
+         * 用于视频可播放时自动清理订阅 + 隐藏浮动条
+         */
+        _bindPlayerCanplay(callback) {
+            if (!window.electron || !window.electron.ipcRenderer) return;
+            if (this._playerCanplayHandler) {
+                this._unbindPlayerListeners();
+            }
+            this._playerCanplayHandler = () => {
+                try {
+                    callback();
+                } catch (err) {
+                    console.error('[DownloadController] player-canplay 回调异常:', err);
+                }
+            };
+            if (typeof window.electron.safeOn === 'function') {
+                window.electron.safeOn('player-canplay', this._playerCanplayHandler);
+            } else if (typeof window.electron.ipcRenderer.on === 'function') {
+                window.electron.ipcRenderer.on('player-canplay', this._playerCanplayHandler);
+            }
+        }
+
+        /**
+         * 取消 player-loaded/player-canplay 订阅
+         */
+        _unbindPlayerListeners() {
+            ['_playerCanplayHandler', '_playerLoadedHandler'].forEach((key) => {
+                const handler = this[key];
+                if (!handler) return;
+                const channel = key === '_playerCanplayHandler' ? 'player-canplay' : 'player-loaded';
+                try {
+                    if (window.electron && typeof window.electron.removeListener === 'function') {
+                        window.electron.removeListener(channel, handler);
+                    } else if (window.electron && window.electron.ipcRenderer
+                        && typeof window.electron.ipcRenderer.removeListener === 'function') {
+                        window.electron.ipcRenderer.removeListener(channel, handler);
+                    }
+                } catch (err) {
+                    console.warn(`[DownloadController] 取消 ${channel} 订阅失败:`, err);
+                }
+                this[key] = null;
+            });
         }
     }
 
