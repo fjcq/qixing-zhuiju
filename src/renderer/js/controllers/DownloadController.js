@@ -745,10 +745,7 @@
                     this._lastProgressRender = { status: '', percent: -1, peers: -1 };
                     this._bindMagnetProgress((data) => {
                         if (!data) return;
-                        // 诊断:每次回调触发都打印(精简格式,不刷屏)
-                        console.log('[DC] progress cb:', data.status, Math.floor(Number(data.progress || 0)) + '%');
                         const status = data.status || 'connecting';
-                        // 数字安全
                         let pct = Number(data.progress);
                         if (!isFinite(pct) || pct < 0) pct = 0;
                         if (pct > 100) pct = 100;
@@ -761,8 +758,6 @@
                             && last.peers === peers) {
                             return;
                         }
-                        // 精简诊断:只在状态/百分比/节点数有变化时打印一次
-                        console.log(`[DownloadController] progress: status=${status} pct=${pctFloor}% peers=${peers}`);
                         this._lastProgressRender = { status, percent: pctFloor, peers };
                         let text;
                         switch (status) {
@@ -802,11 +797,12 @@
                         this._unbindMagnetProgress();
                         this._unbindPlayerListeners();
                         this._showMagnetProgress(`播放失败: ${reason}`, null, 'error');
-                        // 1.5s 后再隐藏，让用户看清错误文本
                         setTimeout(() => this._hideMagnetProgress(), 1500);
                         this.app.componentService.showNotification(`播放失败: ${reason}`, 'error');
                         return;
                     }
+                    // play-magnet-file 返回成功 = streamUrl 已就绪,更新浮动条
+                    this._showMagnetProgress(`准备播放: ${file.name} - 准备就绪`, 100, 'info');
                     // 2) 真正打开播放器窗口（用 streamUrl）
                     // 关键：play-magnet-file 只返回 streamUrl 不开窗，必须再调 open-player
                     const videoData = {
@@ -1164,7 +1160,6 @@
                 this._unbindPlayerListeners();
             }
             this._playerCanplayHandler = () => {
-                console.log('[DownloadController] 收到 player-canplay，关闭浮动条');
                 try {
                     callback();
                 } catch (err) {
