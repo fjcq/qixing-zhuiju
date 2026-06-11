@@ -82,6 +82,43 @@ class MagnetParserAdapter {
     }
 
     /**
+     * 订阅 magnet-download-progress 事件（子进程 progress 消息，主进程已转发）
+     * 区别于 onProgress()：后者订阅 magnet-progress（子进程 log 消息）
+     * 该事件 preload 未提供包装，因此直接通过 window.electron.ipcRenderer 订阅
+     * @param {Function} callback - 下载进度回调，参数为 { status, progress, downloaded, total, speed, peers, ... }
+     */
+    onDownloadProgress(callback) {
+        if (!window.electron || !window.electron.ipcRenderer) {
+            console.warn('[MagnetParserAdapter] electron API 不可用,无法订阅 download-progress');
+            return;
+        }
+        if (typeof callback !== 'function') return;
+        if (this._downloadProgressHandler) {
+            // 防止重复订阅
+            this.removeDownloadProgressListener();
+        }
+        this._downloadProgressHandler = (_event, data) => {
+            try {
+                callback(data);
+            } catch (err) {
+                console.error('[MagnetParserAdapter] download-progress 回调异常:', err);
+            }
+        };
+        window.electron.ipcRenderer.on('magnet-download-progress', this._downloadProgressHandler);
+    }
+
+    /**
+     * 移除 magnet-download-progress 监听
+     */
+    removeDownloadProgressListener() {
+        if (!window.electron || !window.electron.ipcRenderer) return;
+        if (this._downloadProgressHandler) {
+            window.electron.ipcRenderer.removeListener('magnet-download-progress', this._downloadProgressHandler);
+            this._downloadProgressHandler = null;
+        }
+    }
+
+    /**
      * 解析磁力链（对应主进程 handle-magnet-link IPC 的 resolve action）
      * @param {string} magnetUri - 磁力链接或纯 info hash
      * @returns {Promise<{ success: boolean, files?: Array, infoHash?: string, error?: string }>}
