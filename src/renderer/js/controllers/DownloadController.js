@@ -759,6 +759,8 @@
                             && last.peers === peers) {
                             return;
                         }
+                        // 精简诊断:只在状态/百分比/节点数有变化时打印一次
+                        console.log(`[DownloadController] progress: status=${status} pct=${pctFloor}% peers=${peers}`);
                         this._lastProgressRender = { status, percent: pctFloor, peers };
                         let text;
                         switch (status) {
