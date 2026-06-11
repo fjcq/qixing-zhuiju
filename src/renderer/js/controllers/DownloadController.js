@@ -683,7 +683,7 @@
                 return;
             }
             try {
-                // 磁力文件：两段 IPC + 实时进度反馈
+                // 磁力文件：本地优先快速路径 + 实时进度反馈
                 if (file.sourceType === 'magnet') {
                     if (!file.infoHash) {
                         this.app.componentService.showNotification('缺少磁力信息，无法播放', 'error');
@@ -691,15 +691,50 @@
                     }
                     // 兜底：旧记录 sourceUrl 为空时用 infoHash 构造最小磁力链（无 tracker 走 DHT/PEX）
                     const magnetUri = file.sourceUrl || `magnet:?xt=urn:btih:${file.infoHash}`;
+
+                    // === 快速路径 1：文件已下完，毫秒级 file:// 打开，**不显示浮动条** ===
+                    // 用户在下载页点播放，绝大多数场景是"之前下载过的"——文件应已在本地
+                    // 命中即跳过 webtorrent/子进程/流服务器,直接走本地播放器
+                    let localCheck = null;
+                    try {
+                        localCheck = await window.electron.ipcRenderer.invoke('magnet-check-local', {
+                            infoHash: file.infoHash,
+                            fileName: file.name
+                        });
+                    } catch (e) {
+                        // 快速路径查不到不报错,继续走 webtorrent 兜底
+                    }
+                    if (localCheck && localCheck.exists && localCheck.size > 0 && localCheck.path) {
+                        // 直接 file:// 打开播放器,完全跳过磁力子进程
+                        const videoData = {
+                            url: 'file:///' + localCheck.path.replace(/\\/g, '/'),
+                            title: file.name,
+                            vod_name: file.name,
+                            episode_name: file.name,
+                            isDirectPlay: true,
+                            playSource: 'local',
+                            isLocal: true,
+                            isStreaming: false,
+                            type_name: '下载',
+                            siteName: '本地',
+                            // 用统一 dl_ 前缀,历史页面可识别并路由回 DownloadController
+                            vod_id: 'dl_' + file.id,
+                            vod_pic: ''
+                        };
+                        await window.electron.ipcRenderer.invoke('open-player', videoData);
+                        return;
+                    }
+
+                    // === 快速路径 2：文件未下完,走 webtorrent 流服务器(边下边播) ===
+                    // 此时才需要显示"准备中"提示,告知用户后台在做什么
                     // 防御性清理旧订阅（防止从下载页/历史页重复点播放导致回调多次触发）
                     this._unbindMagnetProgress();
                     this._unbindPlayerListeners();
-                    // 立即显示全局浮动条（用户点下去就能看到反馈，不等 30 秒）
-                    this._showMagnetProgress(`正在准备: ${file.name}`, 5, 'info');
+                    // 极简提示:loading 转圈 + 固定文字,不显示进度条
+                    // 进度条会因为"已下载 X% / 100%"等数字跳动让用户误以为卡了/没动
+                    this._showMagnetProgress(`准备播放: ${file.name}`, null, 'info');
                     // 关键：player-canplay 订阅必须放在 await 之前！
                     // 否则 open-player 之后视频快速 canplay，IPC 事件触发时还没订阅就丢失了
-                    // （之前订阅晚于 await 是浮动条不消失的根本原因）
-                    // 这里把 player-canplay 订阅放在最前，保证任何时序下都能捕获
                     this._bindPlayerCanplay(() => {
                         this._unbindMagnetProgress();
                         this._unbindPlayerListeners();
@@ -708,21 +743,8 @@
                     // 订阅磁力下载进度（play-magnet-file 内部会持续转发子进程 progress 消息）
                     this._bindMagnetProgress((data) => {
                         if (!data) return;
-                        // 优先用 mapper 翻译；无 mapper 时直接显示原文（不阻塞 UI）
-                        const mapped = (window.MagnetDownloadProgressMapper
-                            && window.MagnetDownloadProgressMapper.mapMagnetDownloadProgress)
-                            ? window.MagnetDownloadProgressMapper.mapMagnetDownloadProgress(data)
-                            : null;
-                        if (mapped && mapped.stageText) {
-                            this._showMagnetProgress(
-                                mapped.stageText,
-                                typeof mapped.progress === 'number' ? mapped.progress : 0,
-                                mapped.variant || 'info'
-                            );
-                        } else if (data.message) {
-                            // 兜底：mapper 不可用时直接显示 message + 0%
-                            this._showMagnetProgress(data.message, 0, 'info');
-                        }
+                        // 不再展示刷屏文字 + 进度条 —— 进度条对"边下边播"是噪音（数字停滞/小跳）
+                        // 保留订阅是为了让 player-canplay 事件能关闭浮动条
                     });
                     // 1) 调起/恢复磁力下载并获取 streamUrl
                     const result = await window.electron.ipcRenderer.invoke('play-magnet-file', {
@@ -734,7 +756,7 @@
                         const reason = (result && (result.message || result.error)) || '未知错误';
                         this._unbindMagnetProgress();
                         this._unbindPlayerListeners();
-                        this._showMagnetProgress(`播放失败: ${reason}`, 0, 'error');
+                        this._showMagnetProgress(`播放失败: ${reason}`, null, 'error');
                         // 1.5s 后再隐藏，让用户看清错误文本
                         setTimeout(() => this._hideMagnetProgress(), 1500);
                         this.app.componentService.showNotification(`播放失败: ${reason}`, 'error');
@@ -758,13 +780,11 @@
                         vod_pic: ''
                     };
                     const openResult = await window.electron.ipcRenderer.invoke('open-player', videoData);
-                    if (openResult && openResult.success) {
-                        this.app.componentService.showNotification('已打开播放器（边下边播）', 'success');
-                    } else {
+                    if (!(openResult && openResult.success)) {
                         const reason = (openResult && openResult.message) || '未知错误';
                         this._unbindMagnetProgress();
                         this._unbindPlayerListeners();
-                        this._showMagnetProgress(`打开播放器失败: ${reason}`, 0, 'error');
+                        this._showMagnetProgress(`打开播放器失败: ${reason}`, null, 'error');
                         setTimeout(() => this._hideMagnetProgress(), 1500);
                         this.app.componentService.showNotification(`打开播放器失败: ${reason}`, 'error');
                     }
@@ -978,15 +998,17 @@
         // ============================================================
 
         /**
-         * 显示全局浮动进度条
-         * @param {string} text 阶段文本
-         * @param {number} percent 进度 0-100
+         * 显示全局浮动提示条
+         * 极简设计：固定文字 + loading 转圈，不显示进度条（对"边下边播"是噪音）
+         * @param {string} text 提示文本
+         * @param {number|null} percent 进度 0-100，**传 null 时隐藏进度条**
          * @param {'info'|'warning'|'success'|'error'} variant 变体
          */
         _showMagnetProgress(text, percent, variant) {
             const el = document.getElementById('global-magnet-progress');
             const stageEl = document.getElementById('global-magnet-progress-stage');
             const fillEl = document.getElementById('global-magnet-progress-fill');
+            const barEl = document.getElementById('global-magnet-progress-bar');
             if (!el) return;
             el.classList.remove('is-warning', 'is-success', 'is-error');
             if (variant && variant !== 'info') {
@@ -996,15 +1018,23 @@
             if (stageEl) {
                 stageEl.textContent = text || '';
             }
-            if (fillEl) {
-                // 数字安全：null/undefined/NaN/Infinity/负数/超过 100 都兜底到 0-100 区间
-                let pct = percent;
-                if (pct == null || !isFinite(pct) || pct < 0) {
-                    pct = 0;
-                } else if (pct > 100) {
-                    pct = 100;
+            // 进度条:percent=null 时隐藏,否则显示(用真实下载百分比)
+            if (barEl) {
+                if (percent == null) {
+                    barEl.style.display = 'none';
+                } else {
+                    barEl.style.display = 'block';
+                    if (fillEl) {
+                        // 数字安全:null/undefined/NaN/Infinity/负数/超过 100 都兜底到 0-100 区间
+                        let pct = percent;
+                        if (pct == null || !isFinite(pct) || pct < 0) {
+                            pct = 0;
+                        } else if (pct > 100) {
+                            pct = 100;
+                        }
+                        fillEl.style.width = pct + '%';
+                    }
                 }
-                fillEl.style.width = pct + '%';
             }
         }
 

@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('electron', {
                 'download-list-folders',
                 'download-import-local',
                 'check-file-exists',
+                'magnet-check-local',
                 // Node.js 运行环境相关
                 'get-runtime-environment',
                 'refresh-runtime-environment',

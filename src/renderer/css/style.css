@@ -2246,6 +2246,38 @@ select::-webkit-scrollbar-thumb:hover {
     max-width: 100%;
 }
 
+/* 极简 loading 转圈：代替进度条（进度条对"边下边播"是噪音） */
+.global-magnet-progress-spinner {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(167, 139, 250, 0.25);
+    border-top-color: #a78bfa;
+    border-radius: 50%;
+    animation: magnetProgressSpin 0.8s linear infinite;
+    box-sizing: border-box;
+}
+
+.global-magnet-progress.is-warning .global-magnet-progress-spinner {
+    border-color: rgba(245, 158, 11, 0.25);
+    border-top-color: #f59e0b;
+}
+
+.global-magnet-progress.is-error .global-magnet-progress-spinner {
+    border-color: rgba(239, 68, 68, 0.25);
+    border-top-color: #ef4444;
+}
+
+.global-magnet-progress.is-success .global-magnet-progress-spinner {
+    border: 2px solid #10b981;
+    animation: none;
+}
+
+@keyframes magnetProgressSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 .global-magnet-progress-text {
     flex: 1 1 auto;
     font-size: 13px;

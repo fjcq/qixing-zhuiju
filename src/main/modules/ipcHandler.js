@@ -242,6 +242,46 @@ function setupIPC(qixingApp) {
         }
     });
 
+    /**
+     * 检查磁力文件是否已下载到本地（用于渲染端"快速路径"优化）
+     * 入参: { infoHash, fileName }
+     * 出参: { exists: boolean, path?: string, size?: number }
+     *
+     * 设计目的:
+     * - 用户点击"下载了一部分/已下完"的文件时,渲染端先调此 IPC 查本地
+     * - 命中(exists=true 且 size>0) → 直接用 file:// 打开播放器,毫秒级,不走 webtorrent
+     * - 未命中 → 走原 play-magnet-file 路径(webtorrent 流服务器边下边播)
+     *
+     * 严格检查 size > 0:
+     * - 部分下载的文件可能存在但 size < 期望长度,直接用 file:// 打开会播放失败
+     * - 这种情况仍走 webtorrent(支持 Range + 边下边播)
+     */
+    ipcMain.handle('magnet-check-local', async (event, { infoHash, fileName } = {}) => {
+        try {
+            if (!infoHash || !fileName || typeof infoHash !== 'string' || typeof fileName !== 'string') {
+                return { exists: false };
+            }
+            // 与 magnetHandler.mjs 的 getMagnetPath 完全一致:
+            // MAGNET_DIR = os.tmpdir()/qixing-torrents,子目录 <infoHash>
+            const safeHash = String(infoHash).toLowerCase().replace(/[^a-f0-9]/g, '');
+            if (!safeHash || safeHash.length < 32) {
+                return { exists: false };
+            }
+            const filePath = path.join(os.tmpdir(), 'qixing-torrents', safeHash, fileName);
+            if (!fs.existsSync(filePath)) {
+                return { exists: false };
+            }
+            const stat = fs.statSync(filePath);
+            if (!stat.isFile() || stat.size <= 0) {
+                return { exists: false };
+            }
+            return { exists: true, path: filePath, size: stat.size };
+        } catch (error) {
+            console.warn('[MAIN] magnet-check-local 失败:', error.message);
+            return { exists: false };
+        }
+    });
+
     ipcMain.handle('window-minimize', event => {
         const window = BrowserWindow.fromWebContents(event.sender);
         window.minimize();
