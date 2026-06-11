@@ -730,62 +730,7 @@
                     // 防御性清理旧订阅（防止从下载页/历史页重复点播放导致回调多次触发）
                     this._unbindMagnetProgress();
                     this._unbindPlayerListeners();
-                    // 极简提示:loading 转圈 + 固定文字,不显示进度条
-                    // 进度条会因为"已下载 X% / 100%"等数字跳动让用户误以为卡了/没动
                     this._showMagnetProgress(`准备播放: ${file.name}`, null, 'info');
-                    // 关键：player-canplay 订阅必须放在 await 之前！
-                    // 否则 open-player 之后视频快速 canplay，IPC 事件触发时还没订阅就丢失了
-                    this._bindPlayerCanplay(() => {
-                        this._unbindMagnetProgress();
-                        this._unbindPlayerListeners();
-                        this._hideMagnetProgress();
-                    });
-                    // 订阅磁力下载进度,让浮动条文本随真实状态变化
-                    // 节流:相同 status+相近 progress 不重复更新,避免刷屏
-                    this._lastProgressRender = { status: '', percent: -1, peers: -1 };
-                    this._bindMagnetProgress((data) => {
-                        if (!data) return;
-                        const status = data.status || 'connecting';
-                        let pct = Number(data.progress);
-                        if (!isFinite(pct) || pct < 0) pct = 0;
-                        if (pct > 100) pct = 100;
-                        const peers = Number(data.numPeers || 0);
-                        // 节流:status 变了或 percent 跨过 1% 整数边界才更新
-                        const last = this._lastProgressRender;
-                        const pctFloor = Math.floor(pct);
-                        if (last.status === status
-                            && last.percent === pctFloor
-                            && last.peers === peers) {
-                            return;
-                        }
-                        this._lastProgressRender = { status, percent: pctFloor, peers };
-                        let text;
-                        switch (status) {
-                            case 'connecting':
-                                text = `准备播放: ${file.name} - 正在连接网络...`;
-                                this._showMagnetProgress(text, null, 'info');
-                                break;
-                            case 'metadata':
-                                text = `准备播放: ${file.name} - 正在解析元数据...`;
-                                this._showMagnetProgress(text, null, 'info');
-                                break;
-                            case 'downloading':
-                                text = `准备播放: ${file.name} - 下载中 ${pctFloor}% (${peers} 节点)`;
-                                this._showMagnetProgress(text, pct, 'info');
-                                break;
-                            case 'ready':
-                                text = `准备播放: ${file.name} - 准备就绪`;
-                                this._showMagnetProgress(text, 100, 'info');
-                                break;
-                            case 'error':
-                                text = `播放失败: ${data.message || '未知错误'}`;
-                                this._showMagnetProgress(text, null, 'error');
-                                break;
-                            default:
-                                text = `准备播放: ${file.name}`;
-                                this._showMagnetProgress(text, null, 'info');
-                        }
-                    });
                     // 1) 调起/恢复磁力下载并获取 streamUrl
                     const result = await window.electron.ipcRenderer.invoke('play-magnet-file', {
                         magnetUri,
@@ -794,17 +739,13 @@
                     });
                     if (!(result && result.success)) {
                         const reason = (result && (result.message || result.error)) || '未知错误';
-                        this._unbindMagnetProgress();
-                        this._unbindPlayerListeners();
-                        this._showMagnetProgress(`播放失败: ${reason}`, null, 'error');
-                        setTimeout(() => this._hideMagnetProgress(), 1500);
+                        this._hideMagnetProgress();
                         this.app.componentService.showNotification(`播放失败: ${reason}`, 'error');
                         return;
                     }
-                    // play-magnet-file 返回成功 = streamUrl 已就绪,更新浮动条
+                    // play-magnet-file 返回成功 = streamUrl 已就绪
                     this._showMagnetProgress(`准备播放: ${file.name} - 准备就绪`, 100, 'info');
                     // 2) 真正打开播放器窗口（用 streamUrl）
-                    // 关键：play-magnet-file 只返回 streamUrl 不开窗，必须再调 open-player
                     const videoData = {
                         url: result.streamUrl,
                         title: file.name,
@@ -816,24 +757,17 @@
                         isLocal: !!result.isLocal,
                         type_name: '下载',
                         siteName: '磁力',
-                        // 用统一 dl_ 前缀，历史页面可识别并路由回 DownloadController
                         vod_id: 'dl_' + file.id,
                         vod_pic: ''
                     };
                     const openResult = await window.electron.ipcRenderer.invoke('open-player', videoData);
-                    if (openResult && openResult.success) {
-                        // 播放器窗口已打开,准备完成,立即隐藏浮动条
-                        // 不依赖 player-canplay IPC 链(该链路 preload 白名单/主进程转发/渲染端订阅
-                        // 任一环断了浮动条就不消失,用户已多次报告此问题)
-                        this._unbindMagnetProgress();
-                        this._unbindPlayerListeners();
-                        this._hideMagnetProgress();
-                    } else {
+                    // 无论 open-player 成功还是失败,都隐藏浮动条
+                    // 浮动条的设计目的:准备过程提示,播放器窗口打开=准备完成
+                    this._unbindMagnetProgress();
+                    this._unbindPlayerListeners();
+                    this._hideMagnetProgress();
+                    if (!(openResult && openResult.success)) {
                         const reason = (openResult && openResult.message) || '未知错误';
-                        this._unbindMagnetProgress();
-                        this._unbindPlayerListeners();
-                        this._showMagnetProgress(`打开播放器失败: ${reason}`, null, 'error');
-                        setTimeout(() => this._hideMagnetProgress(), 1500);
                         this.app.componentService.showNotification(`打开播放器失败: ${reason}`, 'error');
                     }
                     return;
