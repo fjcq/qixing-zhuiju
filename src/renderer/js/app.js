@@ -113,6 +113,13 @@ class QixingZhuijuApp {
             await this.apiService.initialize();
             this.componentService.initialize(this.apiService, this.storageService);
 
+            // 初始化运行环境视图（用于「关于」页的 Node.js 状态展示）
+            // 关键：磁力链功能依赖 Node.js 子进程，让用户在「关于」页能看到状态 + 引导修复
+            if (window.RuntimeEnvironmentView) {
+                this.runtimeEnvView = new window.RuntimeEnvironmentView();
+                this.runtimeEnvView.bind();
+            }
+
             // 设置事件监听
             this.setupEventListeners();
 
@@ -365,6 +372,14 @@ class QixingZhuijuApp {
                     case 'downloads':
                         console.log('[APP] 加载下载页面');
                         this.initializeDownloadsPage();
+                        break;
+                    case 'about':
+                        console.log('[APP] 加载关于页面');
+                        // 关键：每次进入「关于」页都重新检测 Node.js 运行环境状态
+                        // 状态有 5 秒缓存，多次切回不会重复请求
+                        if (this.runtimeEnvView) {
+                            this.runtimeEnvView.load();
+                        }
                         break;
                 }
                 console.log('[APP] 页面数据加载完成:', pageName);
