@@ -689,18 +689,38 @@
 
         /**
          * 显示进度条
-         * @param {string} status
-         * @param {number} pct
-         * @param {'info'|'warning'|'error'} variant
+         * @param {string} text 状态文本
+         * @param {number} percent 进度百分比(0-100)
+         * @param {'info'|'warning'|'success'|'error'} variant 变体类型,影响颜色
          */
-        _showProgress(status, pct, variant) {
+        _showProgress(text, percent, variant) {
             const { progress, progressStatus, progressFill } = this._dom;
-            if (!progress || !progressStatus || !progressFill) return;
-            progressStatus.textContent = status || '处理中...';
-            const clamped = Math.max(0, Math.min(100, Number(pct) || 0));
-            progressFill.style.width = clamped + '%';
+            if (!progress) return;
+            // 清理旧变体,再根据入参添加新变体(info 不加)
+            progress.classList.remove('is-warning', 'is-success', 'is-error');
+            if (variant && variant !== 'info') {
+                progress.classList.add('is-' + variant);
+            }
             progress.style.display = 'block';
-            progress.className = 'play-url-progress' + (variant && variant !== 'info' ? ' is-' + variant : '');
+            if (progressFill) {
+                const safePct = isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+                progressFill.style.width = safePct + '%';
+            }
+            if (progressStatus) {
+                progressStatus.textContent = text || '';
+            }
+            // 二级阶段文本:写入独立 .progress-stage 元素,如不存在则动态创建
+            let stageEl = progress.querySelector('.progress-stage');
+            if (!stageEl) {
+                stageEl = document.createElement('div');
+                stageEl.className = 'progress-stage';
+                if (progressFill) {
+                    progress.insertBefore(stageEl, progressFill);
+                } else {
+                    progress.appendChild(stageEl);
+                }
+            }
+            stageEl.textContent = text || '';
         }
 
         /**
@@ -709,6 +729,8 @@
         _hideProgress() {
             const { progress } = this._dom;
             if (progress) {
+                const stageEl = progress.querySelector('.progress-stage');
+                if (stageEl) stageEl.textContent = '';
                 progress.style.display = 'none';
             }
         }
