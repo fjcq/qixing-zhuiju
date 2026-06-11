@@ -1,5 +1,54 @@
 # 七星追剧 更新日志
 
+## v1.7.0 (2026-06-12)
+
+### 🧲 磁力播放体验全面升级
+
+- **新增下载管理页面**：磁力/URL/本地视频统一管理，支持查看下载进度和文件列表
+- **新增磁力播放浮动进度条**：右下角 toast 设计，两行布局（文件名灰色小字+状态白色大字），清晰阶段文字反馈
+- **新增磁力播放本地优先快速路径**：复用已有 torrent，跳过重复解析，不重复连接或下载
+- **新增6阶段进度反馈**：连接→解析→选择→下载→就绪→播放，每个阶段有清晰状态文字
+- **新增进度条二级阶段文本**：支持 warning/success/error 颜色变体，状态一目了然
+
+### 🔗 外链页重构
+
+- **重构外链页架构**：PlayUrlController 状态机（IDLE→EDITING→RECOGNIZED→PARSE_PROGRESS→FILES_READY→PLAYING）
+- **新增智能输入识别**：inputRecognizer 纯函数，支持 magnet/URL/本地路径/Hash 自动识别
+- **新增文件列表渲染器**：fileListRenderer DOM 渲染器，展示磁力解析后的视频文件
+- **新增磁力解析适配器**：magnetParserAdapter 包装 IPC 通信
+- **新增 URL 历史管理器**：urlHistoryManager 统一存储管理
+- **新增外链页专用样式**：play-url.css 独立样式文件
+
+### 🖥️ Node.js 运行环境
+
+- **新增环境自动检测**：启动时检测系统 Node.js 版本，兼容性提示
+- **新增便携版按需下载**：无 Node.js 环境时自动下载便携版 Node.js 运行时
+- **修复 webtorrent ESM 加载失败**：解决 Node.js<22 下 ESM 模块加载兼容性问题
+
+### 🎨 界面优化
+
+- **历史功能整合**：移除独立历史抽屉，统一到历史页面管理
+- **浮动条自动消失**：播放器打开后自动隐藏，不依赖 IPC 事件链
+- **浮动条不遮挡窗口**：右下角 toast 位置，不再遮挡窗口控制栏
+- **X 按钮全局可用**：通过 document.body 事件委托绑定，任何页面都能关闭
+
+### 🐛 Bug修复
+
+- **修复关闭播放器后再次播放 hang**：c.get(infoHash) 改用 c.torrents.find() 同步查找，避免 Promise 永不 resolve
+- **修复 IPC 订阅白名单拦截**：修正 safeOn→on API 名，player-canplay 加入白名单
+- **修复浮动条状态不更新**：移除 IPC 事件依赖，改为 await 主流程直接驱动
+- **修复浮动条播放后不消失**：open-player 返回后直接隐藏，不依赖 player-canplay 事件
+- **修复进度订阅覆盖状态**：play-magnet-file 返回后立即取消进度订阅，防止 downloading 事件覆盖"准备就绪"
+- **修复磁力续播路径**：续播时订阅 download-progress，显示全局浮动进度条
+
+### 🔧 代码优化
+
+- **极简化浮动条逻辑**：移除所有 IPC 事件订阅依赖，改为 await 主流程驱动
+- **移除冗余诊断日志**：清理调试代码，减少控制台输出
+- **移除无用依赖**：清理 package.json 中 webtorrent 相关依赖
+
+---
+
 ## v1.6.0 (2026-06-04)
 
 ### 🧲 磁力链接播放

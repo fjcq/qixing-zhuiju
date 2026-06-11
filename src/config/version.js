@@ -1,15 +1,15 @@
 // 版本配置文件 - 统一管理应用版本号
 // 修改这里的版本号会自动同步到所有使用的地方
 
-const APP_VERSION = 'v1.6.0';
-const APP_VERSION_NUMBER = '1.6.0'; // 不带v前缀的版本号
+const APP_VERSION = 'v1.7.0';
+const APP_VERSION_NUMBER = '1.7.0'; // 不带v前缀的版本号
 
 // 版本信息对象
 const VERSION_INFO = {
     version: APP_VERSION,
     versionNumber: APP_VERSION_NUMBER,
-    releaseDate: '2026-06-04',
-    codeName: '磁力链接'
+    releaseDate: '2026-06-11',
+    codeName: '最新版本'
 };
 
 // 导出版本信息
