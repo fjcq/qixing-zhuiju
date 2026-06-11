@@ -583,47 +583,100 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
             }, STALL_CHECK_INTERVAL_MS);
         }
 
-        // 异步解析"是否已有可复用的 torrent" —— webtorrent v2.x 的 client.get() 是 async 的
-        // 必须 await 出真正的 torrent 对象（否则拿到的是 Promise，复用判断会失效）
+        // 异步解析"是否已有可复用的 torrent"
+        // 关键修复:不再用 c.get(infoHash) —— webtorrent v2.x 的 c.get 是 async,
+        // 在某些边界情况下(重复添加未完成 / torrent 残留在 c.torrents 但内部状态异常)
+        // Promise 永远不 resolve,导致整个 playMagnetFile hang,渲染端 await 永远 pending,
+        // 播放器永远不打开,player-canplay 永远不触发,提示框永远不消失
+        // 改用 c.torrents 数组同步查找 + ready 事件等待,行为完全可预测
+        // 返回值: null(无复用) | { torrent, needWait } (torrent 存在但可能未 ready)
         function findReusableTorrent(targetHash) {
-            if (currentTorrent && currentTorrent.infoHash === targetHash.toLowerCase()) {
-                return Promise.resolve(currentTorrent);
+            const lowerHash = String(targetHash || '').toLowerCase();
+
+            // 1) currentTorrent 优先(最常见复用场景,毫秒级)
+            if (currentTorrent && currentTorrent.infoHash === lowerHash) {
+                return { torrent: currentTorrent, needWait: !currentTorrent.ready };
             }
-            return Promise.resolve(c.get(targetHash));
+
+            // 2) c.torrents 数组同步查找(避开 c.get 异步陷阱)
+            if (c && Array.isArray(c.torrents)) {
+                const found = c.torrents.find(t => t && t.infoHash === lowerHash);
+                if (found) {
+                    return { torrent: found, needWait: !found.ready };
+                }
+            }
+
+            return null;
         }
 
-        findReusableTorrent(infoHash).then(reuseTorrent => {
-            if (reuseTorrent && reuseTorrent.files && reuseTorrent.files.length > 0) {
-                sendMessage({ type: 'log', message: '复用已存在的torrent实例' });
-                clearAllTimers();
-                currentTorrent = reuseTorrent;
-                startFileStream(reuseTorrent, fileName, resolve, reject);
-                return;
-            }
+        const reusable = findReusableTorrent(infoHash);
 
-            sendMessage({ type: 'log', message: `播放使用${activeTrackers.length}个tracker` });
+        // 路径 A:已 ready 且有文件 → 立即复用,毫秒级
+        if (reusable && reusable.torrent && reusable.torrent.files
+            && reusable.torrent.files.length > 0) {
+            sendMessage({ type: 'log', message: '复用已存在的torrent实例' });
+            clearAllTimers();
+            currentTorrent = reusable.torrent;
+            startFileStream(reusable.torrent, fileName, resolve, reject);
+            return;
+        }
 
-            // 发送连接中状态
-            sendMessage({
-                type: 'progress',
-                infoHash,
-                fileName,
-                progress: 0,
-                downloaded: 0,
-                total: 0,
-                wires: 0,
-                downloadSpeed: 0,
-                numPeers: 0,
-                status: 'connecting'
-            });
+        // 路径 B:torrent 存在但 metadata 未解析完(needWait=true)→ 等 ready 事件
+        if (reusable && reusable.torrent && reusable.needWait) {
+            const waitingTorrent = reusable.torrent;
+            let settled = false;
 
-            // 捕获重复添加错误，降级为等待已有torrent
-            let addFailed = false;
-            try {
-                c.add(torrentId, {
-                    path: getMagnetPath(infoHash),
-                    announce: activeTrackers
-                }, torrent => {
+            sendMessage({ type: 'log', message: 'torrent 存在但未 ready,等待 ready 事件' });
+
+            const onReady = () => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(readyTimeout);
+                if (waitingTorrent.files && waitingTorrent.files.length > 0) {
+                    clearAllTimers();
+                    currentTorrent = waitingTorrent;
+                    startFileStream(waitingTorrent, fileName, resolve, reject);
+                } else {
+                    reject(new Error('torrent ready 后没有文件'));
+                }
+            };
+
+            // 超时兜底:30 秒没 ready 就 reject,避免永久 hang
+            const readyTimeout = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                waitingTorrent.removeListener('ready', onReady);
+                reject(new Error('等待 torrent ready 超时(30s)'));
+            }, 30000);
+
+            waitingTorrent.once('ready', onReady);
+            return;
+        }
+
+        // 路径 C:无复用 → 走 c.add
+        sendMessage({ type: 'log', message: `播放使用${activeTrackers.length}个tracker` });
+
+        // 发送连接中状态
+        sendMessage({
+            type: 'progress',
+            infoHash,
+            fileName,
+            progress: 0,
+            downloaded: 0,
+            total: 0,
+            wires: 0,
+            downloadSpeed: 0,
+            numPeers: 0,
+            status: 'connecting'
+        });
+
+        // 捕获重复添加错误，降级为等待已有torrent
+        let addFailed = false;
+        try {
+            c.add(torrentId, {
+                path: getMagnetPath(infoHash),
+                announce: activeTrackers
+            }, torrent => {
                     currentTorrent = torrent;
 
                     // 初始化停滞检测的基准值
@@ -789,40 +842,37 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
             }
 
             // 降级方案：等待已存在的torrent完成元数据解析
-            // webtorrent v2.x 的 client.get() 是 async 的，需要 await
+            // 关键修复:不再用 c.get(infoHash) —— webtorrent v2.x 的 c.get 在某些情况下
+            // Promise 永远不 resolve,导致整个 playMagnetFile hang(用户报告 10 分钟仍无响应)
+            // 改用 c.torrents 数组同步查找 + ready 事件等待
             if (addFailed) {
-                Promise.resolve(c.get(infoHash)).then(pendingTorrent => {
-                    if (pendingTorrent && typeof pendingTorrent.on === 'function') {
-                        // 重复添加场景：c.add 回调不会触发，停滞检测也不会自动启动
-                        // 这里手动补上，行为与首次添加路径保持一致
-                        lastDownloadedBytes = Number(pendingTorrent.downloaded || 0);
-                        if (lastDownloadedBytes > 0) {
-                            hasReceivedData = true;
-                            lastProgressAt = Date.now();
-                        }
-                        scheduleStallCheck(pendingTorrent);
-                        pendingTorrent.on('ready', () => {
-                            clearAllTimers();
-                            currentTorrent = pendingTorrent;
-                            startFileStream(pendingTorrent, fileName, resolve, reject);
-                        });
-                        pendingTorrent.on('error', err => {
-                            clearAllTimers();
-                            reject(err);
-                        });
-                    } else {
-                        clearAllTimers();
-                        reject(new Error('无法获取已有的torrent实例'));
+                let pendingTorrent = null;
+                if (c && Array.isArray(c.torrents)) {
+                    pendingTorrent = c.torrents.find(t => t && t.infoHash === infoHash.toLowerCase());
+                }
+                if (pendingTorrent && typeof pendingTorrent.on === 'function') {
+                    // 重复添加场景：c.add 回调不会触发，停滞检测也不会自动启动
+                    // 这里手动补上，行为与首次添加路径保持一致
+                    lastDownloadedBytes = Number(pendingTorrent.downloaded || 0);
+                    if (lastDownloadedBytes > 0) {
+                        hasReceivedData = true;
+                        lastProgressAt = Date.now();
                     }
-                }).catch(getErr => {
+                    scheduleStallCheck(pendingTorrent);
+                    pendingTorrent.on('ready', () => {
+                        clearAllTimers();
+                        currentTorrent = pendingTorrent;
+                        startFileStream(pendingTorrent, fileName, resolve, reject);
+                    });
+                    pendingTorrent.on('error', err => {
+                        clearAllTimers();
+                        reject(err);
+                    });
+                } else {
                     clearAllTimers();
-                    reject(getErr);
-                });
+                    reject(new Error('无法获取已有的torrent实例'));
+                }
             }
-        }).catch(err => {
-            clearAllTimers();
-            reject(err);
-        });
 
         c.on('error', err => {
             clearAllTimers();
