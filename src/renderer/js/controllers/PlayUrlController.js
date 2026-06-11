@@ -73,6 +73,9 @@
 
         /**
          * 缓存 DOM 引用
+         * 关键：内嵌进度条（外链页 .page.active 时才可见） + 全局浮动进度条（跨页面可见）
+         * 后者用于：用户从历史页/下载页点继续播放时，外链页可能未切到 .active，
+         * 此时嵌在外链页的进度条不可见；全局浮动条 fixed 定位永远在最上层
          */
         _cacheDom() {
             this._dom = {
@@ -86,7 +89,12 @@
                 progressStatus: document.getElementById('play-url-progress-status'),
                 progressFill: document.getElementById('play-url-progress-fill'),
                 progressCancel: document.getElementById('play-url-progress-cancel'),
-                files: document.getElementById('play-url-files')
+                files: document.getElementById('play-url-files'),
+                // 全局浮动进度条（body 末尾，跨页面可见）
+                globalProgress: document.getElementById('global-magnet-progress'),
+                globalProgressStage: document.getElementById('global-magnet-progress-stage'),
+                globalProgressFill: document.getElementById('global-magnet-progress-fill'),
+                globalProgressCancel: document.getElementById('global-magnet-progress-cancel')
             };
         }
 
@@ -148,7 +156,7 @@
          * 设置操作按钮事件
          */
         _setupActionButtons() {
-            const { submit, clearBtn, pickFileBtn, progressCancel } = this._dom;
+            const { submit, clearBtn, pickFileBtn, progressCancel, globalProgressCancel } = this._dom;
 
             if (submit) {
                 submit.addEventListener('click', () => this._handleSubmit());
@@ -164,6 +172,11 @@
 
             if (progressCancel) {
                 progressCancel.addEventListener('click', () => this._handleParseCancel());
+            }
+
+            // 全局浮动进度条的取消按钮：跨页面也响应
+            if (globalProgressCancel) {
+                globalProgressCancel.addEventListener('click', () => this._handleParseCancel());
             }
         }
 
@@ -688,50 +701,80 @@
         }
 
         /**
-         * 显示进度条
+         * 显示进度条（同时更新内嵌进度条 + 全局浮动进度条）
+         * 内嵌进度条在外链页 .page.active 时可见；全局浮动条 fixed 定位跨页面可见
+         * 关键：用户从历史页/下载页点继续播放时，外链页可能未切到 .active，
+         * 全局浮动条是此时唯一的视觉反馈
          * @param {string} text 状态文本
          * @param {number} percent 进度百分比(0-100)
          * @param {'info'|'warning'|'success'|'error'} variant 变体类型,影响颜色
          */
         _showProgress(text, percent, variant) {
-            const { progress, progressStatus, progressFill } = this._dom;
-            if (!progress) return;
-            // 清理旧变体,再根据入参添加新变体(info 不加)
-            progress.classList.remove('is-warning', 'is-success', 'is-error');
-            if (variant && variant !== 'info') {
-                progress.classList.add('is-' + variant);
-            }
-            progress.style.display = 'block';
-            if (progressFill) {
-                const safePct = isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
-                progressFill.style.width = safePct + '%';
-            }
-            if (progressStatus) {
-                progressStatus.textContent = text || '';
-            }
-            // 二级阶段文本:写入独立 .progress-stage 元素,如不存在则动态创建
-            let stageEl = progress.querySelector('.progress-stage');
-            if (!stageEl) {
-                stageEl = document.createElement('div');
-                stageEl.className = 'progress-stage';
+            const {
+                progress, progressStatus, progressFill,
+                globalProgress, globalProgressStage, globalProgressFill
+            } = this._dom;
+
+            // 1) 内嵌进度条（外链页内）
+            if (progress) {
+                progress.classList.remove('is-warning', 'is-success', 'is-error');
+                if (variant && variant !== 'info') {
+                    progress.classList.add('is-' + variant);
+                }
+                progress.style.display = 'block';
                 if (progressFill) {
-                    progress.insertBefore(stageEl, progressFill);
-                } else {
-                    progress.appendChild(stageEl);
+                    const safePct = isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+                    progressFill.style.width = safePct + '%';
+                }
+                if (progressStatus) {
+                    progressStatus.textContent = text || '';
+                }
+                // 二级阶段文本:写入独立 .progress-stage 元素,如不存在则动态创建
+                let stageEl = progress.querySelector('.progress-stage');
+                if (!stageEl) {
+                    stageEl = document.createElement('div');
+                    stageEl.className = 'progress-stage';
+                    if (progressFill) {
+                        progress.insertBefore(stageEl, progressFill);
+                    } else {
+                        progress.appendChild(stageEl);
+                    }
+                }
+                stageEl.textContent = text || '';
+            }
+
+            // 2) 全局浮动进度条（跨页面可见）
+            if (globalProgress) {
+                globalProgress.classList.remove('is-warning', 'is-success', 'is-error');
+                if (variant && variant !== 'info') {
+                    globalProgress.classList.add('is-' + variant);
+                }
+                globalProgress.style.display = 'block';
+                if (globalProgressFill) {
+                    const safePct = isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+                    globalProgressFill.style.width = safePct + '%';
+                }
+                if (globalProgressStage) {
+                    globalProgressStage.textContent = text || '';
                 }
             }
-            stageEl.textContent = text || '';
         }
 
         /**
-         * 隐藏进度条
+         * 隐藏进度条（同时隐藏内嵌 + 全局）
          */
         _hideProgress() {
-            const { progress } = this._dom;
+            const { progress, globalProgress } = this._dom;
             if (progress) {
                 const stageEl = progress.querySelector('.progress-stage');
                 if (stageEl) stageEl.textContent = '';
                 progress.style.display = 'none';
+            }
+            if (globalProgress) {
+                if (this._dom.globalProgressStage) {
+                    this._dom.globalProgressStage.textContent = '';
+                }
+                globalProgress.style.display = 'none';
             }
         }
 
@@ -797,6 +840,18 @@
             this._currentMagnetUri = magnetUri;
             this._currentInfoHash = this._extractInfoHash(magnetUri);
             this._setState(STATE.PLAYING);
+
+            // 关键：先清理旧订阅（防御性，防止重复订阅导致回调多次触发）
+            this._magnetParser.removeDownloadProgressListener();
+            if (window.electron && window.electron.removePlayerLoadedListener) {
+                window.electron.removePlayerLoadedListener();
+                window.electron.removePlayerCanplayListener();
+            }
+            // 关键：订阅 download-progress 事件（主进程会转发子进程的 progress 消息）
+            // 否则 _showProgress('正在恢复', 0) 会一直停留 30-60 秒
+            // 直到 play() resolve —— 这就是用户报告的"长时间UI没有任何变化"
+            this._magnetParser.onDownloadProgress((data) => this._handleMagnetDownloadProgress(data));
+
             this._showProgress(`正在恢复: ${fileName}`, 0, 'info');
             try {
                 const result = await this._magnetParser.play(magnetUri, fileName, this._currentInfoHash);
@@ -817,6 +872,7 @@
                         siteName: '磁力'
                     };
                     await this._openPlayer(videoData);
+                    // 订阅由 player-canplay 事件统一清理（_handlePlayerCanplay）
                     this._hideProgress();
                     return true;
                 }
@@ -824,6 +880,12 @@
             } catch (error) {
                 console.error('[PlayUrlController] 恢复磁力文件失败:', error);
                 this._showProgress(`恢复失败: ${error.message}`, 0, 'error');
+                // 清理订阅
+                this._magnetParser.removeDownloadProgressListener();
+                if (window.electron && window.electron.removePlayerLoadedListener) {
+                    window.electron.removePlayerLoadedListener();
+                    window.electron.removePlayerCanplayListener();
+                }
                 this._notify(`恢复失败: ${error.message}`, 'error');
                 return false;
             }

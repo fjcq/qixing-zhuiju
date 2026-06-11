@@ -577,6 +577,19 @@
     <script src="js/utils/utils.js"></script>
     <script src="js/utils/lazyLoader.js"></script>
     <script src="js/controllers/SearchController.js"></script>
+    <!-- 全局浮动磁力进度条（跨页面可见：用户在历史页/下载页点继续播放时也能看到反馈） -->
+    <div class="global-magnet-progress" id="global-magnet-progress" style="display: none;">
+        <div class="global-magnet-progress-inner">
+            <div class="global-magnet-progress-text">
+                <span class="global-magnet-progress-stage" id="global-magnet-progress-stage"></span>
+            </div>
+            <div class="global-magnet-progress-bar">
+                <div class="global-magnet-progress-fill" id="global-magnet-progress-fill" style="width: 0%;"></div>
+            </div>
+            <button class="global-magnet-progress-cancel" id="global-magnet-progress-cancel" title="取消">×</button>
+        </div>
+    </div>
+
     <script src="js/controllers/HistoryController.js"></script>
     <script src="js/controllers/SettingsController.js"></script>
     <!-- 外链页重构 - 子模块（必须在 PlayUrlController 之前加载） -->

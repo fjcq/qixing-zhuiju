@@ -2185,3 +2185,108 @@ select::-webkit-scrollbar-thumb:hover {
 .play-url-progress .progress-fill {
     transition: width 200ms ease, background 200ms ease;
 }
+
+/* 全局浮动磁力进度条 - 跨页面可见
+   使用场景：用户在历史页/下载页点继续播放时，外链页 .active 没切过来，
+   嵌在外链页的进度条不可见；浮动进度条 fixed 定位 + 高 z-index，
+   永远显示在最上层，不依赖任何 .page.active 状态。
+   关键：所有 transition 都用短的 200ms，避免视觉拖沓 */
+.global-magnet-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 9999;
+    background: rgba(26, 29, 36, 0.96);
+    border-bottom: 1px solid var(--border-color, #2d3340);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: border-color 200ms ease, background 200ms ease;
+}
+
+.global-magnet-progress.is-warning {
+    border-bottom-color: rgba(251, 191, 36, 0.5);
+    background: rgba(40, 30, 5, 0.96);
+}
+
+.global-magnet-progress.is-success {
+    border-bottom-color: rgba(16, 185, 129, 0.5);
+    background: rgba(5, 30, 20, 0.96);
+}
+
+.global-magnet-progress.is-error {
+    border-bottom-color: rgba(248, 113, 113, 0.5);
+    background: rgba(40, 10, 10, 0.96);
+}
+
+.global-magnet-progress-inner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    max-width: 100%;
+}
+
+.global-magnet-progress-text {
+    flex: 0 0 auto;
+    font-size: 13px;
+    color: var(--text-primary, #fff);
+    font-weight: 500;
+    min-width: 100px;
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.global-magnet-progress-bar {
+    flex: 1 1 auto;
+    height: 6px;
+    background: var(--border-color, #2d3340);
+    border-radius: 3px;
+    overflow: hidden;
+    min-width: 100px;
+}
+
+.global-magnet-progress-fill {
+    height: 100%;
+    width: 0;
+    background: linear-gradient(90deg, #a78bfa 0%, #7c3aed 100%);
+    transition: width 250ms ease, background 200ms ease;
+}
+
+.global-magnet-progress.is-warning .global-magnet-progress-fill {
+    background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%);
+}
+
+.global-magnet-progress.is-success .global-magnet-progress-fill {
+    background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+}
+
+.global-magnet-progress.is-error .global-magnet-progress-fill {
+    background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+}
+
+.global-magnet-progress-cancel {
+    flex: 0 0 auto;
+    background: transparent;
+    border: 1px solid var(--border-color, #2d3340);
+    color: var(--text-secondary, #aaa);
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 150ms ease, border-color 150ms ease;
+}
+
+.global-magnet-progress-cancel:hover {
+    background: rgba(248, 113, 113, 0.15);
+    border-color: rgba(248, 113, 113, 0.5);
+    color: #f87171;
+}
