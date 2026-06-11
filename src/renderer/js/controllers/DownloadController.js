@@ -1022,25 +1022,24 @@
         /**
          * 订阅 magnet-download-progress 事件
          * 关键：保存 handler 引用，后续 _unbindMagnetProgress 才能正确 removeListener
-         * 不使用 ipcRenderer.on(... anonymous arrow)，否则 removeListener 无法定位
+         * 不使用 window.electron.on(... anonymous arrow)，否则 removeListener 无法定位
          */
         _bindMagnetProgress(callback) {
-            if (!window.electron || !window.electron.ipcRenderer) return;
+            if (!window.electron) return;
             if (this._magnetProgressHandler) {
                 this._unbindMagnetProgress();
             }
-            this._magnetProgressHandler = (_event, data) => {
+            this._magnetProgressHandler = (data) => {
                 try {
                     callback(data);
                 } catch (err) {
                     console.error('[DownloadController] magnet-download-progress 回调异常:', err);
                 }
             };
-            // safeOn 是 preload 暴露的安全订阅接口，会做 channel 白名单校验
-            if (typeof window.electron.safeOn === 'function') {
-                window.electron.safeOn('magnet-download-progress', this._magnetProgressHandler);
-            } else if (typeof window.electron.ipcRenderer.on === 'function') {
-                window.electron.ipcRenderer.on('magnet-download-progress', this._magnetProgressHandler);
+            // preload 暴露的是 window.electron.on（带 channel 白名单 + 自动包装 event 参数）
+            // 旧的 window.electron.safeOn / window.electron.ipcRenderer.on 都不存在，静默失败导致进度条永不更新
+            if (typeof window.electron.on === 'function') {
+                window.electron.on('magnet-download-progress', this._magnetProgressHandler);
             }
         }
 
@@ -1050,13 +1049,9 @@
         _unbindMagnetProgress() {
             if (!this._magnetProgressHandler) return;
             try {
+                // 优先用 preload 暴露的 removeListener（带 channel 白名单 + 包装函数映射）
                 if (window.electron && typeof window.electron.removeListener === 'function') {
                     window.electron.removeListener('magnet-download-progress', this._magnetProgressHandler);
-                } else if (window.electron && window.electron.ipcRenderer
-                    && typeof window.electron.ipcRenderer.removeListener === 'function') {
-                    window.electron.ipcRenderer.removeListener(
-                        'magnet-download-progress', this._magnetProgressHandler
-                    );
                 }
             } catch (err) {
                 console.warn('[DownloadController] 取消 magnet-download-progress 订阅失败:', err);
@@ -1069,7 +1064,7 @@
          * 用于视频可播放时自动清理订阅 + 隐藏浮动条
          */
         _bindPlayerCanplay(callback) {
-            if (!window.electron || !window.electron.ipcRenderer) return;
+            if (!window.electron) return;
             if (this._playerCanplayHandler) {
                 this._unbindPlayerListeners();
             }
@@ -1080,10 +1075,9 @@
                     console.error('[DownloadController] player-canplay 回调异常:', err);
                 }
             };
-            if (typeof window.electron.safeOn === 'function') {
-                window.electron.safeOn('player-canplay', this._playerCanplayHandler);
-            } else if (typeof window.electron.ipcRenderer.on === 'function') {
-                window.electron.ipcRenderer.on('player-canplay', this._playerCanplayHandler);
+            // 同样：preload 实际暴露的是 window.electron.on，不是 safeOn
+            if (typeof window.electron.on === 'function') {
+                window.electron.on('player-canplay', this._playerCanplayHandler);
             }
         }
 
