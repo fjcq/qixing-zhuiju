@@ -52,7 +52,12 @@ contextBridge.exposeInMainWorld('electron', {
                 'download-cancel-task',
                 'download-list-folders',
                 'download-import-local',
-                'check-file-exists'
+                'check-file-exists',
+                // Node.js 运行环境相关
+                'get-runtime-environment',
+                'refresh-runtime-environment',
+                'open-portable-node-dir',
+                'download-portable-node'
             ];
             if (validChannels.includes(channel)) {
                 return ipcRenderer.invoke(channel, data);
@@ -63,6 +68,30 @@ contextBridge.exposeInMainWorld('electron', {
         },
         removeMagnetProgressListener: () => {
             ipcRenderer.removeAllListeners('magnet-progress');
+        },
+        onRuntimeEnvProgress: callback => {
+            ipcRenderer.on('runtime-env-progress', (event, data) => callback(data));
+        },
+        removeRuntimeEnvProgressListener: () => {
+            ipcRenderer.removeAllListeners('runtime-env-progress');
+        },
+        onPlayerLoaded: (callback) => {
+            if (typeof callback !== 'function') return;
+            ipcRenderer.on('player-loaded', (_event, data) => {
+                try { callback(data); } catch (err) { console.error('player-loaded 回调异常:', err); }
+            });
+        },
+        onPlayerCanplay: (callback) => {
+            if (typeof callback !== 'function') return;
+            ipcRenderer.on('player-canplay', (_event, data) => {
+                try { callback(data); } catch (err) { console.error('player-canplay 回调异常:', err); }
+            });
+        },
+        removePlayerLoadedListener: () => {
+            ipcRenderer.removeAllListeners('player-loaded');
+        },
+        removePlayerCanplayListener: () => {
+            ipcRenderer.removeAllListeners('player-canplay');
         },
         on: (channel, func) => {
             const validChannels = [
