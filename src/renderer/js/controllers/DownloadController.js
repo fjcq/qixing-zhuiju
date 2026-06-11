@@ -1030,6 +1030,8 @@
                 this._unbindMagnetProgress();
             }
             this._magnetProgressHandler = (data) => {
+                // 调试日志：让用户能从 DevTools 看到事件是否真进来
+                console.log('[DownloadController] 收到 magnet-download-progress:', JSON.stringify(data));
                 try {
                     callback(data);
                 } catch (err) {
@@ -1040,6 +1042,12 @@
             // 旧的 window.electron.safeOn / window.electron.ipcRenderer.on 都不存在，静默失败导致进度条永不更新
             if (typeof window.electron.on === 'function') {
                 window.electron.on('magnet-download-progress', this._magnetProgressHandler);
+            } else if (typeof window.electron.ipcRenderer !== 'undefined'
+                && typeof window.electron.ipcRenderer.on === 'function') {
+                // 兜底：旧版 preload 兼容
+                window.electron.ipcRenderer.on('magnet-download-progress', this._magnetProgressHandler);
+            } else {
+                console.error('[DownloadController] _bindMagnetProgress 失败: window.electron.on 和 ipcRenderer.on 都不存在');
             }
         }
 
@@ -1052,6 +1060,11 @@
                 // 优先用 preload 暴露的 removeListener（带 channel 白名单 + 包装函数映射）
                 if (window.electron && typeof window.electron.removeListener === 'function') {
                     window.electron.removeListener('magnet-download-progress', this._magnetProgressHandler);
+                } else if (window.electron && window.electron.ipcRenderer
+                    && typeof window.electron.ipcRenderer.removeListener === 'function') {
+                    window.electron.ipcRenderer.removeListener(
+                        'magnet-download-progress', this._magnetProgressHandler
+                    );
                 }
             } catch (err) {
                 console.warn('[DownloadController] 取消 magnet-download-progress 订阅失败:', err);
@@ -1069,15 +1082,24 @@
                 this._unbindPlayerListeners();
             }
             this._playerCanplayHandler = () => {
+                console.log('[DownloadController] 收到 player-canplay，关闭浮动条');
                 try {
                     callback();
                 } catch (err) {
                     console.error('[DownloadController] player-canplay 回调异常:', err);
                 }
             };
-            // 同样：preload 实际暴露的是 window.electron.on，不是 safeOn
+            // 同样：优先用 window.electron.on（preload 暴露的通用 API）
             if (typeof window.electron.on === 'function') {
                 window.electron.on('player-canplay', this._playerCanplayHandler);
+            } else if (window.electron.onPlayerCanplay) {
+                // 兜底：preload 暴露的专用 API
+                window.electron.onPlayerCanplay(this._playerCanplayHandler);
+            } else if (window.electron.ipcRenderer
+                && typeof window.electron.ipcRenderer.on === 'function') {
+                window.electron.ipcRenderer.on('player-canplay', this._playerCanplayHandler);
+            } else {
+                console.error('[DownloadController] _bindPlayerCanplay 失败: window.electron.on/onPlayerCanplay/ipcRenderer.on 都不存在');
             }
         }
 
