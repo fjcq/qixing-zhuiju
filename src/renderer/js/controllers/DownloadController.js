@@ -730,7 +730,7 @@
                     // 防御性清理旧订阅（防止从下载页/历史页重复点播放导致回调多次触发）
                     this._unbindMagnetProgress();
                     this._unbindPlayerListeners();
-                    this._showMagnetProgress(`准备播放: ${file.name}`, null, 'info');
+                    this._showMagnetProgress('正在连接资源...', file.name, 'info');
                     // 1) 调起/恢复磁力下载并获取 streamUrl
                     const result = await window.electron.ipcRenderer.invoke('play-magnet-file', {
                         magnetUri,
@@ -744,7 +744,7 @@
                         return;
                     }
                     // play-magnet-file 返回成功 = streamUrl 已就绪
-                    this._showMagnetProgress(`准备播放: ${file.name} - 准备就绪`, 100, 'info');
+                    this._showMagnetProgress('准备就绪，正在打开播放器...', file.name, 'info');
                     // 2) 真正打开播放器窗口（用 streamUrl）
                     const videoData = {
                         url: result.streamUrl,
@@ -981,16 +981,15 @@
 
         /**
          * 显示全局浮动提示条
-         * 极简设计：固定文字 + loading 转圈，不显示进度条（对"边下边播"是噪音）
-         * @param {string} text 提示文本
-         * @param {number|null} percent 进度 0-100，**传 null 时隐藏进度条**
+         * 两行布局:第一行文件名(小字灰色),第二行状态(大字白色)
+         * @param {string} status 状态文本(第二行,醒目)
+         * @param {string} filename 文件名(第一行,灰色小字)
          * @param {'info'|'warning'|'success'|'error'} variant 变体
          */
-        _showMagnetProgress(text, percent, variant) {
+        _showMagnetProgress(status, filename, variant) {
             const el = document.getElementById('global-magnet-progress');
             const stageEl = document.getElementById('global-magnet-progress-stage');
-            const fillEl = document.getElementById('global-magnet-progress-fill');
-            const barEl = document.getElementById('global-magnet-progress-bar');
+            const filenameEl = document.getElementById('global-magnet-progress-filename');
             if (!el) return;
             el.classList.remove('is-warning', 'is-success', 'is-error');
             if (variant && variant !== 'info') {
@@ -998,28 +997,11 @@
             }
             el.style.display = 'block';
             if (stageEl) {
-                stageEl.textContent = text || '';
+                stageEl.textContent = status || '';
             }
-            // 进度条:percent=null 时隐藏,否则显示(用真实下载百分比)
-            if (barEl) {
-                if (percent == null) {
-                    barEl.style.display = 'none';
-                } else {
-                    barEl.style.display = 'block';
-                    if (fillEl) {
-                        // 数字安全:null/undefined/NaN/Infinity/负数/超过 100 都兜底到 0-100 区间
-                        let pct = percent;
-                        if (pct == null || !isFinite(pct) || pct < 0) {
-                            pct = 0;
-                        } else if (pct > 100) {
-                            pct = 100;
-                        }
-                        fillEl.style.width = pct + '%';
-                    }
-                }
+            if (filenameEl) {
+                filenameEl.textContent = filename || '';
             }
-            // 不再设 60 秒硬切定时器 —— 浮动条必须由真实状态驱动
-            // 状态变化由 _bindMagnetProgress 监听 progress 事件更新
         }
 
         /**
@@ -1031,6 +1013,8 @@
             el.style.display = 'none';
             const stageEl = document.getElementById('global-magnet-progress-stage');
             if (stageEl) stageEl.textContent = '';
+            const filenameEl = document.getElementById('global-magnet-progress-filename');
+            if (filenameEl) filenameEl.textContent = '';
         }
 
         /**
