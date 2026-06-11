@@ -7,19 +7,35 @@
  * 输入：{ action: 'resolve'|'play', magnetUri, fileName?, infoHash? }
  * 输出：{ type: 'files'|'progress'|'ready'|'error', ... }
  *
- * 注意：ESM的import不使用NODE_PATH，所以webtorrent必须通过createRequire加载
+ * 注意：webtorrent v2.x 是纯 ESM（package.json "type": "module"），
+ *       不能用 createRequire/require 加载（会报 ERR_REQUIRE_ESM）。
+ *       必须用动态 import()，且 ESM 的 import 不支持 NODE_PATH，
+ *       所以 webtorrent 路径由主进程通过 WEBTORRENT_PATH 环境变量传绝对路径进来
  */
 
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { createRequire } from 'module';
+import { pathToFileURL } from 'url';
 
-// ESM的import不支持NODE_PATH，使用createRequire通过CommonJS加载webtorrent
-const require = createRequire(import.meta.url);
-const WebTorrentModule = require('webtorrent');
-// ESM模块通过require加载时，构造函数在.default属性上
+// 关键：webtorrent v2.x 是纯 ESM（"type": "module"），
+//       createRequire/require 是 CommonJS 机制，无法加载 ESM（ERR_REQUIRE_ESM）
+//       改用顶层 await import(URL)；绝对路径由主进程通过 env 传入，
+//       避免依赖 NODE_PATH（ESM import 不识别 NODE_PATH）
+//       Windows 下绝对路径必须包成 file:// URL（ERR_UNSUPPORTED_ESM_URL_SCHEME），
+//       POSIX 平台直接用 file:// 形式也通用，所以统一走 pathToFileURL
+//       ESM 还不支持目录导入（ERR_UNSUPPORTED_DIR_IMPORT），必须指向入口 index.js
+const WEBTORRENT_PATH = process.env.WEBTORRENT_PATH;
+if (!WEBTORRENT_PATH) {
+    process.stderr.write('FATAL: WEBTORRENT_PATH 环境变量未设置（主进程应在 spawn 时传入 webtorrent 绝对路径）\n');
+    process.exit(1);
+}
+const webtorrentEntry = WEBTORRENT_PATH.endsWith(path.sep)
+    ? path.join(WEBTORRENT_PATH, 'index.js')
+    : WEBTORRENT_PATH + path.sep + 'index.js';
+const WebTorrentModule = await import(pathToFileURL(webtorrentEntry).href);
+// ESM 模块的构造函数导出位置：default 上或模块本身（取决于包是否同时提供 default export）
 const WebTorrent = WebTorrentModule.default || WebTorrentModule;
 
 // 全局错误处理，防止子进程崩溃
