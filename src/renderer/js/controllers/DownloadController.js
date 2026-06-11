@@ -758,11 +758,14 @@
                     });
                     if (!(result && result.success)) {
                         const reason = (result && (result.message || result.error)) || '未知错误';
+                        this._unbindMagnetProgress();
                         this._hideMagnetProgress();
                         this.app.componentService.showNotification(`播放失败: ${reason}`, 'error');
                         return;
                     }
                     // play-magnet-file 返回成功 = streamUrl 已就绪
+                    // 立即取消进度订阅,防止后续 downloading 事件覆盖"准备就绪"状态
+                    this._unbindMagnetProgress();
                     this._showMagnetProgress('准备就绪，正在打开播放器...', file.name, 'info');
                     // 2) 真正打开播放器窗口（用 streamUrl）
                     const videoData = {
