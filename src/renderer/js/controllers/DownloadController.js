@@ -731,6 +731,25 @@
                     this._unbindMagnetProgress();
                     this._unbindPlayerListeners();
                     this._showMagnetProgress('正在连接资源...', file.name, 'info');
+                    // 订阅进度事件,让状态行实时更新(两行布局:状态行不会被文件名遮住)
+                    this._bindMagnetProgress((data) => {
+                        if (!data) return;
+                        const status = data.status || 'connecting';
+                        switch (status) {
+                            case 'connecting':
+                                this._showMagnetProgress('正在连接资源...', file.name, 'info');
+                                break;
+                            case 'downloading':
+                                this._showMagnetProgress('正在下载资源...', file.name, 'info');
+                                break;
+                            case 'completed':
+                                this._showMagnetProgress('下载完成，准备播放...', file.name, 'info');
+                                break;
+                            case 'error':
+                                this._showMagnetProgress('连接失败', file.name, 'error');
+                                break;
+                        }
+                    });
                     // 1) 调起/恢复磁力下载并获取 streamUrl
                     const result = await window.electron.ipcRenderer.invoke('play-magnet-file', {
                         magnetUri,
