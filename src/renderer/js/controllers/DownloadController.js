@@ -658,7 +658,12 @@
 
         /**
          * 播放下载文件
-         * 磁力文件：先确保子进程有 torrent（未完成则自动恢复下载），再调 open-player 用 streamUrl 打开
+         * 磁力文件：委托给 PlayUrlController.resumeMagnetFromHistory：
+         *   - 自动补进度反馈（全局浮动条 + 订阅 magnet-download-progress）
+         *   - 自动开播放器（避免下载页路径走两段 IPC 漏掉进度回调）
+         *   - 复用 PlayUrlController 内部的清理协议（player-canplay 时统一清理）
+         *   - 不在下载页写第二套进度逻辑，避免双订阅/双通知
+         *   - 若 PlayUrlController 尚未初始化（用户从未进过外链页），先懒加载
          * 本地/URL 文件：走 open-player 用 file:// 协议直接读盘（文件不存在则提示而非静默失败）
          */
         async _playFile(id) {
@@ -668,7 +673,7 @@
                 return;
             }
             try {
-                // 磁力文件：先确保子进程已添加 torrent（未完成会自动恢复下载），再开窗
+                // 磁力文件：委托给 PlayUrlController，享受统一的进度反馈
                 if (file.sourceType === 'magnet') {
                     if (!file.infoHash) {
                         this.app.componentService.showNotification('缺少磁力信息，无法播放', 'error');
@@ -676,40 +681,23 @@
                     }
                     // 兜底：旧记录 sourceUrl 为空时用 infoHash 构造最小磁力链（无 tracker 走 DHT/PEX）
                     const magnetUri = file.sourceUrl || `magnet:?xt=urn:btih:${file.infoHash}`;
-                    // 1) 调起/恢复磁力下载并获取 streamUrl
-                    const result = await window.electron.ipcRenderer.invoke('play-magnet-file', {
-                        magnetUri,
-                        fileName: file.name,
-                        infoHash: file.infoHash
-                    });
-                    if (!(result && result.success)) {
-                        const reason = (result && (result.message || result.error)) || '未知错误';
-                        this.app.componentService.showNotification(`播放失败: ${reason}`, 'error');
+                    // 懒加载 PlayUrlController（用户可能从下载页直接点播放，从未进过外链页）
+                    if (!this.app.playUrlController && typeof this.app.initializePlayUrlPage === 'function') {
+                        this.app.initializePlayUrlPage();
+                    }
+                    if (!this.app.playUrlController) {
+                        this.app.componentService.showNotification('播放控制器未就绪，请稍后重试', 'error');
                         return;
                     }
-                    // 2) 真正打开播放器窗口（用 streamUrl）
-                    // 关键：play-magnet-file 只返回 streamUrl 不开窗，必须再调 open-player
-                    const videoData = {
-                        url: result.streamUrl,
-                        title: file.name,
-                        vod_name: file.name,
-                        episode_name: file.name,
-                        isDirectPlay: true,
-                        playSource: 'magnet',
-                        isStreaming: !result.isLocal,
-                        isLocal: !!result.isLocal,
-                        type_name: '下载',
-                        siteName: '磁力',
-                        // 用统一 dl_ 前缀，历史页面可识别并路由回 DownloadController
-                        vod_id: 'dl_' + file.id,
-                        vod_pic: ''
-                    };
-                    const openResult = await window.electron.ipcRenderer.invoke('open-player', videoData);
-                    if (openResult && openResult.success) {
-                        this.app.componentService.showNotification('已打开播放器（边下边播）', 'success');
-                    } else {
-                        const reason = (openResult && openResult.message) || '未知错误';
-                        this.app.componentService.showNotification(`打开播放器失败: ${reason}`, 'error');
+                    // 委托：PlayUrlController 内部负责 _showProgress + onDownloadProgress 订阅
+                    // + 调 play-magnet-file + 调 open-player + player-canplay 时清理订阅
+                    // 用户在下载页也能立刻看到全局浮动进度条
+                    const success = await this.app.playUrlController.resumeMagnetFromHistory(magnetUri, file.name);
+                    if (!success) {
+                        // PlayUrlController 内部已 _notify 错误原因，这里补一行"播放失败"提示
+                        // 失败常见原因：_pauseMagnet 后子进程已销毁 / 缓存失效等
+                        // 这种情况用户可尝试先「继续下载」恢复 torrent，再点播放
+                        this.app.componentService.showNotification('播放失败，请尝试「继续下载」后再点播放', 'error');
                     }
                     return;
                 }
