@@ -13,7 +13,7 @@
 用户在外链页选择磁力链文件 → 点击播放 → 视频实际开始播放之间存在 **3 段串行等待**,总耗时通常 5-60 秒不等:
 
 | 阶段 | 内部操作 | 典型耗时 | 当前反馈 |
-|------|----------|----------|----------|
+| ------ | ------ | ------ | ------ |
 | A. 磁力准备 | webtorrent `c.add()` → 元数据就绪 → `startFileStream()` (HTTP server listen) | 5-30s | **进入时显示一次"正在准备: filename",之后完全无变化** |
 | B. 打开播放器 | `qixingApp.createPlayerWindow()` → BrowserWindow 加载 → IPC 握手 | 1-5s | **完全无反馈** |
 | C. 视频缓冲 | 播放器窗口 `<video>` 设置 src → 加载 streamUrl → `canplay` | 1-30s | **完全无反馈(发生在新窗口,主窗口无事件订阅)** |
@@ -23,6 +23,7 @@
 ### 1.2 目标
 
 让用户**从点击播放到视频真正开始播放的每一秒都看得到有意义的变化**,消除"卡住没反应"的误判:
+
 - 把当前 1 个静态文本 + 1 个静态 0% 进度条,扩展为 **5-6 个阶段化状态** + 真实下载百分比
 - **不引入新依赖**,纯渲染层 + IPC 协同改动
 - 改动不破坏现有 magnet 解析(parse)阶段的进度反馈(那个阶段已经有 `magnet-progress` 事件正常工作)
@@ -58,7 +59,7 @@
 ### 3.1 6 个阶段(从点击播放到视频开始播放)
 
 | ID | 阶段名 | 触发点 | 阶段文本(二级) | 主进度条 |
-|----|--------|--------|-----------------|----------|
+| ------ | ------ | ------ | ------ | ------ |
 | P1 | 准备播放资源 | `_playMagnetFile` 函数入口 | "① 准备播放资源" | 5% |
 | P2 | 解析磁力元数据 | `_magnetParser.play()` 调用前 | "② 解析磁力元数据" | 10% |
 | P2.1 | 连接 DHT/P2P | 子进程 `status: 'connecting'` | "② 连接 DHT/P2P 网络" | 10%(不变,等子进程有数据) |
@@ -69,6 +70,7 @@
 | P6 | 播放就绪 | 收到 `player-canplay` 事件 | "⑥ 播放就绪" | 100% → 隐藏 |
 
 **进度条规则**(消除原文档的 P2.1/P2.2 重叠):
+
 - **主进度条显示规则**:子进程 progress 字段**优先**(此时它反映真实下载量);无子进程数据时,使用阶段默认值(10% / 30% / 40% / 50% / 100%)
 - **二级文本显示当前阶段名 + 子进程给的实时数据**(peer 数 / 下载速度 / ETA)
 - 子进程 `progress` 在 P5 期间通常已接近 100%(webtorrent 必须有数据才能 stream),所以 P5 主进度条**不跟随子进程**,固定 50% → 100%(由 player-canplay 触发)
@@ -78,7 +80,7 @@
 
 进度条维持现有结构(`#play-url-progress > .progress-fill` + 文本),新增**二级文本**(阶段名)显示在进度条上方:
 
-```
+```text
 ┌───────────────────────────────────────┐
 │ 阶段: 下载中 (45%)                     │  ← 二级文本(小字,灰色)
 │ ███████████░░░░░░░░░░░░░░░░░░░░  30%  │  ← 主进度条(原结构)
@@ -87,6 +89,7 @@
 ```
 
 颜色变体:
+
 - info(默认,蓝色):P1-P5 全部阶段
 - success(绿色):P6 完成
 - error(红色):失败时
@@ -98,7 +101,7 @@
 
 ### 4.1 时序图
 
-```
+```text
 用户点击 [播放]
    │
    ▼
@@ -148,7 +151,7 @@ PlayUrlController._playMagnetFile  (P1: _showProgress("准备播放: xxx", 5))
 ### 4.2 关键事件表
 
 | 事件 | 主进程 → 主窗口 | 主进程 → 播放器窗口 | 触发时机 | 载荷 |
-|------|-----------------|----------------------|----------|------|
+| ------ | ------ | ------ | ------ | ------ |
 | `magnet-download-progress` | ✅(已存在) | ✅(已存在) | 子进程 `progress` 消息 | `{fileName, progress, downloaded, total, wires, downloadSpeed, numPeers, eta, status}` |
 | `magnet-progress` | ✅(已存在) | ❌ | 子进程 `log` 消息 / 解析阶段 | `{status, progress: 0, source: 'log'}` |
 | `player-loaded`(**新增**) | ✅(新增) | ❌ | playerWindow `did-finish-load` | `{}` |
@@ -157,11 +160,12 @@ PlayUrlController._playMagnetFile  (P1: _showProgress("准备播放: xxx", 5))
 ### 4.3 状态机扩展
 
 复用现有 PlayUrlController 状态机:
+
 - `PARSE_PROGRESS`(已存在):resolve 阶段(用户输入磁力链 → 文件列表)
 - `FILES_READY`(已存在):文件列表已展示
 - `PLAYING`(已存在):**点击播放后**,但当前此状态在 `_openPlayer` resolve 后立即 _hideProgress
 
-**改造**:PLAYING 状态期间持续 _showProgress 阶段信息,直到收到 `player-canplay` 才 _hideProgress(而非 `_openPlayer resolve`)。
+**改造**:PLAYING 状态期间持续 _showProgress 阶段信息,直到收到 `player-canplay` 才 _hideProgress (而非 `_openPlayer resolve`)。
 
 ---
 
@@ -170,6 +174,7 @@ PlayUrlController._playMagnetFile  (P1: _showProgress("准备播放: xxx", 5))
 ### 5.1 PlayUrlController.js
 
 新增/修改:
+
 - `_playMagnetFile(magnetUri, file)` 重构:
   - 第 500 行附近 `this._showProgress('准备播放: ${file.name}', 0)` → 改为 `('准备播放资源...', 5)`
   - 调 `_magnetParser.play()` 前:`_showProgress('解析磁力元数据...', 10)` + 启动 download-progress 监听
@@ -185,6 +190,7 @@ PlayUrlController._playMagnetFile  (P1: _showProgress("准备播放: xxx", 5))
 ### 5.2 magnetParserAdapter.js
 
 新增:
+
 - `onDownloadProgress(callback)`:订阅 `magnet-download-progress` 事件
 - `removeDownloadProgressListener()`:解绑
 
@@ -193,6 +199,7 @@ PlayUrlController._playMagnetFile  (P1: _showProgress("准备播放: xxx", 5))
 ### 5.3 preload.js
 
 新增:
+
 - `onPlayerLoaded(callback)` → `ipcRenderer.on('player-loaded', ...)`
 - `onPlayerCanplay(callback)` → `ipcRenderer.on('player-canplay', ...)`
 - `removePlayerLoadedListener()` / `removePlayerCanplayListener()` → `removeAllListeners`
@@ -200,6 +207,7 @@ PlayUrlController._playMagnetFile  (P1: _showProgress("准备播放: xxx", 5))
 ### 5.4 ipcHandler.js
 
 新增:
+
 - `qixingApp.createPlayerWindow` 包装处(`createPlayerWindow` 函数体):
   - 监听 `playerWindow.webContents.on('did-finish-load', () => { mainWindow.webContents.send('player-loaded') })`
 - 监听 `ipcMain.on('player-canplay', ...)`(来自播放器窗口的 send),转发 `mainWindow.webContents.send('player-canplay', {})`
@@ -207,12 +215,14 @@ PlayUrlController._playMagnetFile  (P1: _showProgress("准备播放: xxx", 5))
 ### 5.5 player.js
 
 新增:
+
 - 在 `<video>` 元素 `addEventListener('canplay', () => { window.electron.ipcRenderer.send('player-canplay') })` 一处
 - 写在 player 初始化或首次 setupVideoEvents 时,只注册一次
 
 ### 5.6 style.css
 
 新增/调整:
+
 - `.play-url-progress` 内增加 `.progress-stage` 二级文本样式(12px,色值用 `var(--text-secondary)`,与主文本对比)
 - `.play-url-progress.is-warning .progress-fill` 黄色变体(配合 `status: 'no-peers-warning' | 'slow-warning'`)
 - `.play-url-progress.is-success .progress-fill` 绿色变体(配合 P6 完成)
@@ -287,7 +297,7 @@ PlayUrlController._playMagnetFile  (P1: _showProgress("准备播放: xxx", 5))
 ## 8. 设计 §6 · 风险与回退
 
 | 风险 | 缓解 |
-|------|------|
+| ------ | ------ |
 | `did-finish-load` 触发过早(视频还没开始缓冲) | 进度条停留在 P4 短暂,player-loaded 之后立刻 P5;用户感知不到 |
 | 子进程 `progress` 消息延迟 / 丢失 | 进度条数字会卡住,但状态文字 "下载中" / "连接 DHT" 仍能反映;最坏情况卡 5-30s 但有文字变化 |
 | `canplay` 事件不触发(罕见,某些流格式) | 进度条停在 P5,但播放器窗口内 video 元素有 fallback 加载提示 |

@@ -304,6 +304,23 @@ class QixingZhuijuApp {
             });
         }
 
+        // 全局浮动磁力进度条 X 按钮：document.body 委托绑定（不依赖 PlayUrlController 是否初始化）
+        // 关键：用户从下载页直接点播放时，PlayUrlController 可能从未初始化，
+        // 之前 PlayUrlController._setupActionButtons 里的绑定会失效。
+        // 这里在 app 启动时一次性绑到 body 上，跨页面/跨 Controller 都生效。
+        // X 按钮语义：用户主动放弃等待，只关 UI 不取消下载（IPC 已在飞）。
+        // 派发 magnet-progress-cancel CustomEvent 让 Controller 各自清理内部状态。
+        document.body.addEventListener('click', (e) => {
+            if (e.target && e.target.id === 'global-magnet-progress-cancel') {
+                e.stopPropagation();
+                // 派发全局事件，Controller 各自订阅做内部清理
+                document.dispatchEvent(new CustomEvent('magnet-progress-cancel', {
+                    bubbles: false,
+                    detail: { source: 'cancel-button' }
+                }));
+            }
+        });
+
         // 临时：为测试添加一些假的播放历史
         if (this.storageService.getPlayHistory().length === 0) {
             console.log('添加测试播放历史');

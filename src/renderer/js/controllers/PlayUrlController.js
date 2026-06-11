@@ -156,7 +156,7 @@
          * 设置操作按钮事件
          */
         _setupActionButtons() {
-            const { submit, clearBtn, pickFileBtn, progressCancel, globalProgressCancel } = this._dom;
+            const { submit, clearBtn, pickFileBtn, progressCancel } = this._dom;
 
             if (submit) {
                 submit.addEventListener('click', () => this._handleSubmit());
@@ -174,10 +174,14 @@
                 progressCancel.addEventListener('click', () => this._handleParseCancel());
             }
 
-            // 全局浮动进度条的取消按钮：跨页面也响应
-            if (globalProgressCancel) {
-                globalProgressCancel.addEventListener('click', () => this._handleParseCancel());
-            }
+            // 全局浮动进度条 X 按钮的 click 绑定**不在这里**做 —— 改由 app.js
+            // 在 document.body 上做事件委托（不依赖 PlayUrlController 是否初始化）。
+            // 这里改为订阅 document 上的 magnet-progress-cancel CustomEvent，
+            // 当 X 被点击时统一走 _handleParseCancel 清理逻辑。
+            // 关键：removeEventListener 必须用相同函数引用，箭头函数这里安全
+            // （_setupActionButtons 整个方法在 PlayUrlController 生命周期只调一次）
+            this._onMagnetProgressCancel = () => this._handleParseCancel();
+            document.addEventListener('magnet-progress-cancel', this._onMagnetProgressCancel);
         }
 
         /**

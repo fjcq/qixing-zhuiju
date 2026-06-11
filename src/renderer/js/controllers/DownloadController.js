@@ -213,6 +213,17 @@
                 if (!data) return;
                 self._handleMagnetStatus(data);
             });
+            // 订阅全局磁力进度条取消事件（X 按钮由 app.js 在 document.body 上委托触发）
+            // 收到事件时：清理自己的订阅 + 隐藏进度条
+            // 这里存到 this._onMagnetProgressCancel 以便后续可 removeEventListener
+            if (!this._onMagnetProgressCancel) {
+                this._onMagnetProgressCancel = () => {
+                    self._unbindMagnetProgress();
+                    self._unbindPlayerListeners();
+                    self._hideMagnetProgress();
+                };
+                document.addEventListener('magnet-progress-cancel', this._onMagnetProgressCancel);
+            }
         }
 
         /**
@@ -685,6 +696,15 @@
                     this._unbindPlayerListeners();
                     // 立即显示全局浮动条（用户点下去就能看到反馈，不等 30 秒）
                     this._showMagnetProgress(`正在准备: ${file.name}`, 5, 'info');
+                    // 关键：player-canplay 订阅必须放在 await 之前！
+                    // 否则 open-player 之后视频快速 canplay，IPC 事件触发时还没订阅就丢失了
+                    // （之前订阅晚于 await 是浮动条不消失的根本原因）
+                    // 这里把 player-canplay 订阅放在最前，保证任何时序下都能捕获
+                    this._bindPlayerCanplay(() => {
+                        this._unbindMagnetProgress();
+                        this._unbindPlayerListeners();
+                        this._hideMagnetProgress();
+                    });
                     // 订阅磁力下载进度（play-magnet-file 内部会持续转发子进程 progress 消息）
                     this._bindMagnetProgress((data) => {
                         if (!data) return;
@@ -713,18 +733,13 @@
                     if (!(result && result.success)) {
                         const reason = (result && (result.message || result.error)) || '未知错误';
                         this._unbindMagnetProgress();
+                        this._unbindPlayerListeners();
                         this._showMagnetProgress(`播放失败: ${reason}`, 0, 'error');
                         // 1.5s 后再隐藏，让用户看清错误文本
                         setTimeout(() => this._hideMagnetProgress(), 1500);
                         this.app.componentService.showNotification(`播放失败: ${reason}`, 'error');
                         return;
                     }
-                    // 订阅 player-canplay 统一清理（视频可播放时自动隐藏浮动条）
-                    this._bindPlayerCanplay(() => {
-                        this._unbindMagnetProgress();
-                        this._unbindPlayerListeners();
-                        this._hideMagnetProgress();
-                    });
                     // 2) 真正打开播放器窗口（用 streamUrl）
                     // 关键：play-magnet-file 只返回 streamUrl 不开窗，必须再调 open-player
                     const videoData = {
