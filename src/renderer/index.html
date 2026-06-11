@@ -23,6 +23,7 @@
     <link rel="stylesheet" href="css/components.css">
     <link rel="stylesheet" href="css/routes.css">
     <link rel="stylesheet" href="css/play-url.css">
+    <link rel="stylesheet" href="css/downloads.css">
     <!-- 版本配置 -->
     <script src="../config/version.js"></script>
     <!-- 更新日志配置 -->
@@ -105,6 +106,17 @@
                                 <polyline points="12 6 12 12 16 14" />
                             </svg>
                             <span>历史</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#" data-page="downloads" title="管理已下载的影视文件">
+                            <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            <span>下载</span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -272,6 +284,58 @@
                             <button id="clear-history-btn" class="btn-secondary">清空</button>
                         </div>
                         <div id="history-list" class="history-list"></div>
+                    </div>
+                </div>
+
+                <!-- 下载管理页面 -->
+                <div id="downloads-page" class="page">
+                    <div class="page-content">
+                        <div class="page-header">
+                            <h2>下载</h2>
+                            <div class="page-header-actions">
+                                <button id="downloads-refresh-btn" class="btn-secondary" title="刷新列表">刷新</button>
+                                <button id="downloads-import-btn" class="btn-secondary" title="导入本地视频文件到下载管理">导入本地</button>
+                                <button id="downloads-open-folder-btn" class="btn-secondary" title="在系统资源管理器中打开下载目录">打开目录</button>
+                            </div>
+                        </div>
+
+                        <!-- 工具栏：搜索 + 分类筛选 + 排序 -->
+                        <div class="downloads-toolbar">
+                            <div class="downloads-search">
+                                <input type="text" id="downloads-search-input"
+                                    placeholder="按文件名搜索..." autocomplete="off" spellcheck="false">
+                            </div>
+                            <div class="downloads-filter">
+                                <label for="downloads-source-filter">来源：</label>
+                                <select id="downloads-source-filter">
+                                    <option value="">全部</option>
+                                    <option value="url">URL 下载</option>
+                                    <option value="magnet">磁力链</option>
+                                    <option value="import">本地导入</option>
+                                </select>
+                            </div>
+                            <div class="downloads-sort">
+                                <label for="downloads-sort-by">排序：</label>
+                                <select id="downloads-sort-by">
+                                    <option value="mtime">下载日期</option>
+                                    <option value="name">名称</option>
+                                    <option value="size">大小</option>
+                                </select>
+                                <select id="downloads-sort-dir" title="排序方向">
+                                    <option value="desc">降序</option>
+                                    <option value="asc">升序</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- 文件列表区（所有下载内容，包括进行中的磁力，都统一显示在主列表中） -->
+                        <div id="downloads-loading" class="loading hidden">加载中...</div>
+                        <div id="downloads-list" class="downloads-list"></div>
+                        <div id="downloads-empty" class="empty-state hidden">
+                            <i>📥</i>
+                            <h3>暂无下载内容</h3>
+                            <p>从「外链」页可触发磁力链下载，或在「外链」页粘贴 HTTP 视频链接进行下载</p>
+                        </div>
                     </div>
                 </div>
 
@@ -504,6 +568,7 @@
     <script src="js/controllers/fileListRenderer.js"></script>
     <script src="js/controllers/magnetParserAdapter.js"></script>
     <script src="js/controllers/PlayUrlController.js"></script>
+    <script src="js/controllers/DownloadController.js"></script>
     <script src="js/app.js"></script>
 </body>
 

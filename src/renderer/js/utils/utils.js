@@ -39,19 +39,21 @@ const Utils = {
     },
 
     /**
-     * 格式化时间
+     * 格式化时间（全 2 位对齐：< 60min -> mm:ss；>= 60min -> hh:mm:ss）
+     * 与 player.formatEta / player.formatTime 格式统一
      * @param {number} seconds - 秒数
      * @returns {string} 格式化后的时间字符串
      */
     formatDuration(seconds) {
+        if (seconds == null || !isFinite(seconds) || seconds < 0) return '00:00';
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
         const s = Math.floor(seconds % 60);
 
         if (h > 0) {
-            return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
         }
-        return `${m}:${s.toString().padStart(2, '0')}`;
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     },
 
     /**
@@ -183,7 +185,7 @@ const Utils = {
      * @returns {boolean} 是否为空
      */
     isEmpty(obj) {
-        if (obj === null || obj === undefined) return true;
+        if (obj == null) return true;
         if (typeof obj === 'string') return obj.trim() === '';
         if (Array.isArray(obj)) return obj.length === 0;
         if (typeof obj === 'object') return Object.keys(obj).length === 0;
@@ -201,7 +203,7 @@ const Utils = {
         const keys = path.split('.');
         let result = obj;
         for (const key of keys) {
-            if (result === null || result === undefined) {
+            if (result == null) {
                 return defaultValue;
             }
             result = result[key];

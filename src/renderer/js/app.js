@@ -362,6 +362,10 @@ class QixingZhuijuApp {
                         console.log('[APP] 加载设置页面');
                         this.loadSettings();
                         break;
+                    case 'downloads':
+                        console.log('[APP] 加载下载页面');
+                        this.initializeDownloadsPage();
+                        break;
                 }
                 console.log('[APP] 页面数据加载完成:', pageName);
             } catch (error) {
@@ -376,6 +380,16 @@ class QixingZhuijuApp {
             this.playUrlController = new PlayUrlController(this);
         }
         this.playUrlController.initialize();
+    }
+
+    // 初始化下载管理页面
+    initializeDownloadsPage() {
+        if (!this.downloadController) {
+            this.downloadController = new DownloadController(this);
+        }
+        // initialize 只首次执行；后续每次进入页面只刷新数据
+        this.downloadController.initialize();
+        this.downloadController.onShow();
     }
 
     // 加载初始数据

@@ -57,7 +57,8 @@ function formatDownloadSpeed(bytesPerSec) {
 
 /**
  * 格式化剩余时间 ETA（秒）
- * 返回 mm:ss 或 hh:mm:ss
+ * 全 2 位对齐：< 60s -> 00:ss；< 60min -> mm:ss；>= 60min -> hh:mm:ss
+ * 与 player.formatTime (mm:ss) + utils.formatDuration 格式统一
  * @param {number} seconds
  * @returns {string}
  */
@@ -68,16 +69,16 @@ function formatEta(seconds) {
     }
     const s = Math.round(seconds);
     if (s < 60) {
-        return `0:${s.toString().padStart(2, '0')}`;
+        return `00:${s.toString().padStart(2, '0')}`;
     }
     const m = Math.floor(s / 60);
     const sec = s % 60;
     if (m < 60) {
-        return `${m}:${sec.toString().padStart(2, '0')}`;
+        return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
     }
     const h = Math.floor(m / 60);
     const min = m % 60;
-    return `${h}:${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+    return `${h.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
 }
 
 /**
@@ -335,6 +336,16 @@ class VideoPlayer {
         this.lastPlayedUrl = null; // 最后播放的URL（备份）
         this.isWebPlayerMode = false; // 网页播放模式标记
 
+        // 磁力链下载信息栏智能显隐状态
+        // 视频缓冲/加载停滞时为 true；视频正常播放/暂停/全屏时为 false
+        this._magnetBuffering = false;
+        // 视频发生播放错误时为 true；用户主动暂停不应清除该标记（让用户能感知错误）
+        this._magnetHasError = false;
+        // 投屏场景下不显示本地下载信息栏（视频元素实际未承载播放）
+        this._magnetCasting = false;
+        // 视频处于暂停态（含 ended）时为 true；暂停时画面静止，显示信息栏不干扰观影
+        this._magnetPaused = false;
+
         // 初始化标题栏控制
         this.initializeTitlebarControls();
     }
@@ -532,6 +543,10 @@ class VideoPlayer {
         if (incomingPlaySource === 'magnet') {
             this.playSource = 'magnet';
             this.isDirectPlayMode = true;
+            // 切换到新磁力链源：重置智能显隐状态（避免残留旧源 buffering/error/paused）
+            this._magnetBuffering = false;
+            this._magnetHasError = false;
+            this._magnetPaused = false;
             // 仅在未显示 completed 状态时，显示初始 connecting
             // 避免覆盖子进程已发送的 100% completed 消息
             if (!this._magnetCompletedShown) {
@@ -1519,6 +1534,66 @@ class VideoPlayer {
     }
 
     /**
+     * 智能评估并切换磁力链下载信息栏的可见性
+     * 设计原则：
+     *   - 正常播放中：自动隐藏，避免遮挡观影画面
+     *   - 暂停（含 ended）时：自动显示，画面静止不干扰观影，方便用户查看下载进度
+     *   - 视频缓冲中（waiting/stalled）：自动显示，让用户感知下载状态
+     *   - 视频发生错误：自动显示，提示用户关注
+     *   - 下载完成（100%）：强制显示 5s 后自动隐藏（保持旧行为）
+     *   - 投屏中：始终隐藏（视频元素未承载播放）
+     * 触发源：video 事件、updateMagnetInfo 数据更新、播放源切换、投屏状态变化
+     * @param {boolean} forceShow - 强制显示（如下载完成首次进入完成态）
+     */
+    _evaluateMagnetInfoBarVisibility(forceShow = false) {
+        const infoBar = document.getElementById('magnet-info-bar');
+        if (!infoBar) return;
+
+        // 已完成态：把显示权交回给 hideMagnetInfo（5s 后自动隐藏），不抢显隐
+        if (infoBar.classList.contains('is-completed')) return;
+
+        // 投屏场景：视频元素未承载播放，本地下载信息栏不显示
+        if (this._magnetCasting) {
+            if (!infoBar.classList.contains('is-hidden')) {
+                infoBar.classList.add('is-hidden');
+                infoBar.classList.remove('is-stale', 'speed-zero', 'speed-low', 'speed-high');
+            }
+            return;
+        }
+
+        // 强制显示（用于下载完成态首次显示、初始 connecting 提示等）
+        if (forceShow) {
+            if (infoBar.classList.contains('is-hidden')) {
+                infoBar.classList.remove('is-hidden');
+            }
+            // 退出 stale 灰态（重新进入实时态）
+            infoBar.classList.remove('is-stale');
+            return;
+        }
+
+        // 智能判断：是否处于"需要告知用户"的状态
+        // 暂停态也显示：暂停时画面静止，信息栏不会遮挡观影，用户可查看下载进度
+        const isBuffering = this._magnetBuffering === true;
+        const hasError = this._magnetHasError === true;
+        const isPaused = this._magnetPaused === true;
+        const shouldShow = isBuffering || hasError || isPaused;
+
+        if (shouldShow) {
+            // 异常/暂停状态：显示信息栏
+            if (infoBar.classList.contains('is-hidden')) {
+                infoBar.classList.remove('is-hidden');
+                infoBar.classList.remove('is-stale');
+            }
+        } else {
+            // 正常播放中：自动隐藏
+            if (!infoBar.classList.contains('is-hidden')) {
+                infoBar.classList.add('is-hidden');
+                infoBar.classList.remove('is-stale', 'speed-zero', 'speed-low', 'speed-high');
+            }
+        }
+    }
+
+    /**
      * 更新磁力链下载信息显示
      * @param {Object} data - 进度数据
      */
@@ -1548,8 +1623,9 @@ class VideoPlayer {
         }
         this._magnetLastUpdate = now;
 
-        // 显示信息栏：用类名切换，避开与 .is-hidden 的 CSS 冲突
-        infoBar.classList.remove('is-hidden');
+        // 智能显隐：完成态强制显示（5s 后自动隐藏），其他状态交由视频播放状态决定
+        // 这样能保证：正常播放时信息栏自动隐藏；缓冲/错误时信息栏自动显示
+        this._evaluateMagnetInfoBarVisibility(isCompletedUpdate);
 
         // 格式化下载速度
         const speed = Number(data.downloadSpeed) || 0;
@@ -1648,6 +1724,10 @@ class VideoPlayer {
         }
         this._magnetLastUpdate = 0;
         this._magnetCompletedShown = false;
+        // 隐藏时重置智能显隐状态，避免下次加载残留的 buffering/error/paused 误判
+        this._magnetBuffering = false;
+        this._magnetHasError = false;
+        this._magnetPaused = false;
     }
 
     // 设置视频事件
@@ -1814,6 +1894,10 @@ class VideoPlayer {
                 readyState: this.video.readyState
             });
             this.updatePlayPauseButton(true);
+            // 用户主动播放：清除暂停/缓冲标记（错误标记保留，让用户感知错误）
+            this._magnetPaused = false;
+            this._magnetBuffering = false;
+            this._evaluateMagnetInfoBarVisibility();
         });
 
         this.video.addEventListener('pause', () => {
@@ -1825,6 +1909,11 @@ class VideoPlayer {
                 readyState: this.video.readyState
             });
             this.updatePlayPauseButton(false);
+            // 用户主动暂停：标记暂停态 → 评估显示（暂停时画面静止，不干扰观影）
+            // 清除缓冲标记（暂停通常意味着缓冲已结束），但保留错误标记
+            this._magnetPaused = true;
+            this._magnetBuffering = false;
+            this._evaluateMagnetInfoBarVisibility();
         });
 
         // 添加更多视频状态监听
@@ -1832,23 +1921,38 @@ class VideoPlayer {
             console.log('[PLAYER] 视频开始加载');
         });
 
+        // 视频可播放：恢复正常状态（缓冲已结束、错误已消失）
         this.video.addEventListener('canplay', () => {
             console.log('[PLAYER] 视频可以播放');
+            this._magnetBuffering = false;
+            this._magnetHasError = false;
+            this._evaluateMagnetInfoBarVisibility();
         });
 
+        // 视频实际正在播放：恢复正常状态（清除暂停标记）
         this.video.addEventListener('playing', () => {
             console.log('[PLAYER] 视频正在播放');
+            this._magnetBuffering = false;
+            this._magnetHasError = false;
+            this._magnetPaused = false;
+            this._evaluateMagnetInfoBarVisibility();
         });
 
+        // 视频缓冲中（自动）：标记为缓冲态并显示信息栏
         this.video.addEventListener('waiting', () => {
             console.log('[PLAYER] 视频缓冲中');
+            this._magnetBuffering = true;
+            this._evaluateMagnetInfoBarVisibility();
         });
 
+        // 视频加载停滞：标记为缓冲态并显示信息栏
         this.video.addEventListener('stalled', () => {
             console.log('[PLAYER] 视频加载停滞');
+            this._magnetBuffering = true;
+            this._evaluateMagnetInfoBarVisibility();
         });
 
-        // 监听视频错误
+        // 视频错误：标记为错误态并显示信息栏
         this.video.addEventListener('error', e => {
             console.error('[PLAYER] 视频播放错误:', e);
             const { error } = this.video;
@@ -1862,6 +1966,25 @@ class VideoPlayer {
                     MEDIA_ERR_SRC_NOT_SUPPORTED: error.MEDIA_ERR_SRC_NOT_SUPPORTED
                 });
             }
+            // 标记错误状态：信息栏自动显示
+            this._magnetHasError = true;
+            this._evaluateMagnetInfoBarVisibility();
+        });
+
+        // 用户拖动进度条：进入短暂缓冲，立即标记为缓冲（seek 中无数据）
+        this.video.addEventListener('seeking', () => {
+            this._magnetBuffering = true;
+            this._evaluateMagnetInfoBarVisibility();
+        });
+
+        // seek 完成：通常紧跟 playing/canplay，无需特别处理
+
+        // 视频自然结束：信息栏保持显示（属于 paused 范畴，下一集切换由进度消息控制）
+        this.video.addEventListener('ended', () => {
+            this._magnetBuffering = false;
+            this._magnetHasError = false;
+            this._magnetPaused = true;
+            this._evaluateMagnetInfoBarVisibility();
         });
 
         // 监听音量变化
@@ -4344,6 +4467,9 @@ class VideoPlayer {
                 // 更新投屏状态
                 this.isCasting = true;
                 this.selectedCastDevice = device;
+                // 投屏场景下视频元素不再承载播放，隐藏本地下载信息栏
+                this._magnetCasting = true;
+                this._evaluateMagnetInfoBarVisibility();
 
                 const castBtn = document.getElementById('cast-video');
                 if (castBtn) {
@@ -4580,6 +4706,9 @@ class VideoPlayer {
             // 无论如何都要重置状态
             this.isCasting = false;
             this.selectedCastDevice = null;
+            // 退出投屏：恢复本地下载信息栏的智能显隐逻辑
+            this._magnetCasting = false;
+            this._evaluateMagnetInfoBarVisibility();
 
             const castBtn = document.getElementById('cast-video');
             if (castBtn) {

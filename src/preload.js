@@ -35,7 +35,24 @@ contextBridge.exposeInMainWorld('electron', {
                 'fetch-remote-content',
                 'select-video-file',
                 'handle-magnet-link',
-                'play-magnet-file'
+                'play-magnet-file',
+                'magnet-pause',
+                'magnet-resume',
+                'magnet-remove',
+                'magnet-replay',
+                // 下载管理相关
+                'download-list',
+                'download-list-active',
+                'download-rename',
+                'download-delete',
+                'download-move',
+                'download-reveal',
+                'open-path',
+                'download-start-url',
+                'download-cancel-task',
+                'download-list-folders',
+                'download-import-local',
+                'check-file-exists'
             ];
             if (validChannels.includes(channel)) {
                 return ipcRenderer.invoke(channel, data);
@@ -53,7 +70,9 @@ contextBridge.exposeInMainWorld('electron', {
                 'video-progress',
                 'video-data',
                 'episode-changed',
-                'magnet-download-progress'
+                'magnet-download-progress',
+                'magnet-status',
+                'download-task-progress'
             ];
             if (validChannels.includes(channel)) {
                 const wrappedFunc = (event, ...args) => func(...args);
@@ -72,7 +91,9 @@ contextBridge.exposeInMainWorld('electron', {
                 'video-progress',
                 'video-data',
                 'episode-changed',
-                'magnet-download-progress'
+                'magnet-download-progress',
+                'magnet-status',
+                'download-task-progress'
             ];
             if (validChannels.includes(channel)) {
                 // 查找包装后的函数引用

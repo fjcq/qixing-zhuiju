@@ -111,7 +111,7 @@
      * HTML 转义（防 XSS，磁力链文件名可能含特殊字符）
      */
     function escapeHtml(str) {
-        if (str === null || str === undefined) return '';
+        if (str == null) return '';
         return String(str)
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')

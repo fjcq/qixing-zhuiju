@@ -1,0 +1,385 @@
+/* ==================== 下载管理页面样式 ==================== */
+/* 玻璃拟态设计风格，与全局设计令牌保持一致 */
+
+#downloads-page .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+#downloads-page .page-header h2 {
+    margin: 0;
+    color: var(--text-primary, #fff);
+    font-size: 20px;
+    font-weight: 600;
+}
+
+#downloads-page .page-header-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+#downloads-page .page-header-actions .btn-secondary {
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: var(--glass-bg-soft, rgba(255, 255, 255, 0.08));
+    color: var(--text-primary, #fff);
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.2s;
+}
+
+#downloads-page .page-header-actions .btn-secondary:hover {
+    background: var(--glass-bg-medium, rgba(255, 255, 255, 0.15));
+}
+
+/* 工具栏 */
+.downloads-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--glass-bg-soft, rgba(255, 255, 255, 0.05));
+    border-radius: 10px;
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+}
+
+.downloads-search {
+    flex: 1 1 240px;
+    min-width: 200px;
+}
+
+.downloads-search input {
+    width: 100%;
+    padding: 7px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+    background: var(--glass-bg-base, rgba(0, 0, 0, 0.2));
+    color: var(--text-primary, #fff);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.downloads-search input:focus {
+    border-color: var(--color-accent, #4dabf7);
+}
+
+.downloads-filter,
+.downloads-sort {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+    font-size: 13px;
+}
+
+.downloads-filter select,
+.downloads-sort select {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+    background: var(--glass-bg-base, rgba(0, 0, 0, 0.2));
+    color: var(--text-primary, #fff);
+    font-size: 13px;
+    cursor: pointer;
+    outline: none;
+}
+
+/* 文件列表 */
+.downloads-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.downloads-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--glass-bg-soft, rgba(255, 255, 255, 0.05));
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+    border-radius: 10px;
+    transition: background 0.2s, transform 0.15s;
+    cursor: default;
+}
+
+.downloads-item:hover {
+    background: var(--glass-bg-medium, rgba(255, 255, 255, 0.1));
+    transform: translateX(2px);
+}
+
+.dl-thumb {
+    flex: 0 0 auto;
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    background: linear-gradient(135deg, rgba(77, 171, 247, 0.15), rgba(116, 192, 252, 0.08));
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.dl-thumb-file {
+    background: linear-gradient(135deg, rgba(155, 155, 155, 0.15), rgba(200, 200, 200, 0.08));
+}
+
+.dl-info {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow: hidden;
+}
+
+.dl-name {
+    color: var(--text-primary, #fff);
+    font-size: 14px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dl-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+}
+
+.dl-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    cursor: default;
+}
+
+.dl-source-url { color: #74c0fc; border-color: rgba(116, 192, 252, 0.3); }
+.dl-source-magnet { color: #ffa94d; border-color: rgba(255, 169, 77, 0.3); }
+.dl-source-import { color: #69db7c; border-color: rgba(105, 219, 124, 0.3); }
+
+/* 状态徽标（下载中/已暂停/已完成/失败） */
+.dl-status-active { color: #4dabf7; border-color: rgba(77, 171, 247, 0.4); background: rgba(77, 171, 247, 0.08); animation: dl-pulse 1.6s ease-in-out infinite; }
+.dl-status-paused { color: #ffd43b; border-color: rgba(255, 212, 59, 0.4); background: rgba(255, 212, 59, 0.08); }
+.dl-status-done   { color: #69db7c; border-color: rgba(105, 219, 124, 0.3); }
+.dl-status-error  { color: #ff6b6b; border-color: rgba(255, 107, 107, 0.4); background: rgba(255, 107, 107, 0.08); }
+
+@keyframes dl-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+}
+
+.dl-tag-ext {
+    color: #adb5bd;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.dl-meta-size,
+.dl-meta-time {
+    color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+    font-size: 12px;
+}
+
+/* 实时下载指标（速度/ETA/peer 数），仅 downloading 状态显示 */
+.dl-live-info {
+    color: #4fc3f7;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 1px 8px;
+    background: rgba(79, 195, 247, 0.1);
+    border: 1px solid rgba(79, 195, 247, 0.3);
+    border-radius: 4px;
+    white-space: nowrap;
+    /* 让数字跳变更柔顺（每 1 秒一次 progress 事件） */
+    transition: color 0.2s ease;
+}
+
+/* 进度条（未完成记录行内显示） */
+.dl-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+.dl-progress {
+    flex: 1 1 auto;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+}
+.dl-progress-bar {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #4dabf7, #74c0fc);
+    transition: width 0.4s ease;
+}
+.dl-progress-paused {
+    background: linear-gradient(90deg, #ffd43b, #ffa94d);
+    opacity: 0.6;
+}
+.dl-progress-text {
+    flex: 0 0 auto;
+    color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    min-width: 48px;
+    text-align: right;
+}
+
+.dl-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.dl-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-primary, #fff);
+    font-size: 14px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, transform 0.1s;
+}
+
+.dl-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    transform: translateY(-1px);
+}
+
+.dl-btn-play {
+    background: rgba(77, 171, 247, 0.2);
+    border-color: rgba(77, 171, 247, 0.3);
+    color: #74c0fc;
+}
+
+.dl-btn-play:hover {
+    background: rgba(77, 171, 247, 0.35);
+}
+
+.dl-btn-delete:hover {
+    background: rgba(255, 99, 99, 0.2);
+    border-color: rgba(255, 99, 99, 0.4);
+    color: #ff8b8b;
+}
+
+.dl-btn-pause:hover {
+    background: rgba(255, 212, 59, 0.18);
+    border-color: rgba(255, 212, 59, 0.4);
+    color: #ffe066;
+}
+
+.dl-btn-resume:hover {
+    background: rgba(105, 219, 124, 0.18);
+    border-color: rgba(105, 219, 124, 0.4);
+    color: #b2f2bb;
+}
+
+.dl-btn-retry:hover {
+    background: rgba(116, 192, 252, 0.18);
+    border-color: rgba(116, 192, 252, 0.4);
+    color: #a5d8ff;
+}
+
+/* 加载/空状态 */
+#downloads-page .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+}
+
+#downloads-page .empty-state i {
+    font-size: 48px;
+    display: block;
+    margin-bottom: 12px;
+    font-style: normal;
+}
+
+#downloads-page .empty-state h3 {
+    margin: 0 0 8px;
+    color: var(--text-primary, #fff);
+    font-size: 16px;
+    font-weight: 500;
+}
+
+#downloads-page .empty-state p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+    .downloads-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .downloads-search {
+        flex-basis: 100%;
+    }
+    .downloads-item {
+        flex-wrap: wrap;
+    }
+    .dl-info {
+        flex-basis: calc(100% - 80px);
+    }
+    .dl-actions {
+        flex-basis: 100%;
+        justify-content: flex-end;
+        padding-top: 6px;
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .dl-thumb {
+        width: 48px;
+        height: 48px;
+        font-size: 24px;
+    }
+}
+
+@media (max-width: 480px) {
+    #downloads-page .page-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    #downloads-page .page-header-actions {
+        justify-content: stretch;
+    }
+    #downloads-page .page-header-actions button {
+        flex: 1;
+    }
+    .dl-meta-row {
+        font-size: 11px;
+        gap: 5px;
+    }
+    .dl-tag {
+        font-size: 10px;
+        padding: 1px 6px;
+    }
+}

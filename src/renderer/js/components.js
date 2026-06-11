@@ -1637,6 +1637,11 @@ class ComponentService {
     _inferExternalType(history) {
         const id = (history && history.vod_id) || '';
         const tn = history && history.type_name;
+        // 下载页产生的历史项：vod_id 是 'dl_<fileId>' 格式
+        // 关键：必须先于 http(s)/path 判断，否则 'dl_xxx' 会被误归为 'url' 或 'local'
+        if (id.startsWith('dl_')) {
+            return 'download';
+        }
         if (id.startsWith('magnet:') || /^[a-fA-F0-9]{40}$/.test(id) || /^[A-Z2-7]{32}$/.test(id)) {
             return 'magnet';
         }
@@ -1651,6 +1656,8 @@ class ComponentService {
     }
 
     // 播放外链历史项
+    // - 下载项（vod_id 以 'dl_' 开头）：路由回 DownloadController.playById
+    //   自动处理 magnet（恢复下载+流式播放）和本地/URL（直接 file:// 播放）
     // - URL/本地：直接 open-player IPC（一次点击即播）
     // - 磁力：优先续播（跳过解析，走主进程本地缓存），失败时回退到解析+选文件流程
     async _playExternalHistory(history) {
@@ -1660,6 +1667,28 @@ class ComponentService {
         }
         const type = this._inferExternalType(history);
         const vodId = history.vod_id;
+
+        // 下载项：路由回 DownloadController（自动 resume 未完成 + 开窗）
+        if (type === 'download') {
+            // 从 'dl_<fileId>' 提取 fileId
+            const fileId = vodId.startsWith('dl_') ? vodId.slice(3) : vodId;
+            if (!fileId) {
+                this.showNotification('下载项 id 缺失', 'error');
+                return;
+            }
+            // 懒初始化 DownloadController（如果用户从未来过下载页）
+            if (window.app && !window.app.downloadController) {
+                if (typeof window.app.initializeDownloadsPage === 'function') {
+                    window.app.initializeDownloadsPage();
+                }
+            }
+            if (!window.app || !window.app.downloadController) {
+                this.showNotification('下载管理器不可用', 'error');
+                return;
+            }
+            await window.app.downloadController.playById(fileId);
+            return;
+        }
 
         if (type === 'magnet') {
             const fileName = history.vod_name || '';

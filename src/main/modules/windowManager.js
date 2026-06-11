@@ -244,11 +244,10 @@ function createPlayerWindow(qixingApp, videoData) {
     qixingApp.playerWindow.on('closed', () => {
         if (isDev) console.log('[MAIN] 播放器窗口已关闭');
         qixingApp.playerWindow = null;
-        // 兜底清理磁力链子进程，覆盖 X 按钮/Alt+F4/程序关闭等所有关闭路径
-        // （close-player IPC 已会清理，这里是保险，防止某些路径漏掉）
-        if (typeof qixingApp.cleanupMagnetProcess === 'function') {
-            qixingApp.cleanupMagnetProcess();
-        }
+        // 关键：不再兜底清理磁力链子进程。
+        // 播放器关闭 ≠ 停止后台下载 —— 用户可能同时下了多个磁力链
+        // 子进程常驻，供下载管理页续传 / 进度查询使用
+        // 真正的清理在 app.before-quit 中执行（见 ipcHandler.js）
     });
 
     // 播放器窗口错误处理

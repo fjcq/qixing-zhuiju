@@ -28,6 +28,7 @@ const { setupIPC } = require('./src/main/modules/ipcHandler');
 const DLNAManager = require('./src/main/modules/dlnaManager');
 const UpdateManager = require('./src/main/modules/updateManager');
 const { setupMainProcessErrorHandling, ErrorTypes, globalErrorHandler } = require('./src/main/modules/errorHandler');
+const DownloadManager = require('./src/main/modules/DownloadManager');
 
 // 初始化日志
 setupLogger();
@@ -43,6 +44,7 @@ class QixingZhuiju {
         this.isDev = isDev;
         this.dlnaManager = new DLNAManager(this.isDev); // 使用DLNA管理器
         this.updateManager = new UpdateManager(this); // 使用自动更新管理器
+        this.downloadManager = new DownloadManager(); // 下载管理器
         this.currentVideoUrl = null; // 当前播放的视频URL（用于投屏）
     }
 
@@ -139,6 +141,8 @@ async function main() {
     app.on('ready', async () => {
         console.log('[MAIN] 应用就绪，创建主窗口...');
         try {
+            // 初始化下载管理器
+            qixingApp.downloadManager.initialize();
             // 创建主窗口
             await qixingApp.createMainWindow();
             // 设置IPC通信

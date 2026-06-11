@@ -1,4 +1,6 @@
 const { ipcMain, BrowserWindow, app } = require('electron');
+const fs = require('fs');
+const path = require('path');
 const {
     validateVideoData,
     validateDeviceId,
@@ -12,6 +14,22 @@ const {
  * @param {object} qixingApp - 应用实例
  */
 function setupIPC(qixingApp) {
+    // 磁力链原始 URI 缓存（key: infoHash, value: 原始 magnetUri）
+    // 关键：子进程首次上报 magnet-status 时只回传 infoHash/fileName，没有原始 magnetUri
+    // 但 manifest 记录需要 magnetUri（"继续"按钮的回退路径 magnet-replay 必须用到）
+    // 这里在用户首次提交磁力链时（play-magnet-file / magnet-replay 入口）缓存，
+    // 子进程状态上报时回填到 manifest —— 解决"有 infoHash 但无 magnetUri 无法续传"的问题
+    const magnetUriCache = new Map();
+    const rememberMagnetUri = (infoHash, magnetUri) => {
+        if (infoHash && magnetUri && magnetUri.startsWith('magnet:')) {
+            magnetUriCache.set(String(infoHash).toLowerCase(), magnetUri);
+        }
+    };
+    const getMagnetUri = (infoHash) => {
+        if (!infoHash) return '';
+        return magnetUriCache.get(String(infoHash).toLowerCase()) || '';
+    };
+
     // 打开播放器窗口
     ipcMain.handle('open-player', async (event, videoData) => {
         try {
@@ -40,10 +58,11 @@ function setupIPC(qixingApp) {
     });
 
     // 关闭播放器窗口
+    // 关键：不再调 cleanupMagnetProcess()，关闭播放器 ≠ 停止后台下载
+    // 现在有专门的下载管理页，下载状态由该页维护，子进程应常驻供续传/并行下载使用
+    // 子进程的生命周期仅在「应用退出」时结束（见 app.on('before-quit')）
     ipcMain.handle('close-player', () => {
         try {
-            // 清理磁力链子进程资源
-            cleanupMagnetProcess();
             if (qixingApp.playerWindow) {
                 qixingApp.playerWindow.close();
             }
@@ -80,6 +99,27 @@ function setupIPC(qixingApp) {
         const window = BrowserWindow.fromWebContents(event.sender);
         if (window) {
             window.close();
+        }
+    });
+
+    // 校验文件是否存在（用于下载页面"播放"前先确认文件还在）
+    // 入参: filePath 绝对路径
+    // 返回: { exists: boolean, size?: number }
+    ipcMain.handle('check-file-exists', async (event, filePath) => {
+        try {
+            if (!filePath || typeof filePath !== 'string') {
+                return { exists: false };
+            }
+            if (!fs.existsSync(filePath)) {
+                return { exists: false };
+            }
+            const stat = fs.statSync(filePath);
+            if (!stat.isFile()) {
+                return { exists: false };
+            }
+            return { exists: true, size: stat.size };
+        } catch (error) {
+            return { exists: false };
         }
     });
 
@@ -519,6 +559,142 @@ function setupIPC(qixingApp) {
         }
     });
 
+    // ========== 下载管理 IPC ==========
+    const dm = qixingApp.downloadManager;
+
+    // 列出已下载文件
+    ipcMain.handle('download-list', async (event, options) => {
+        try {
+            const list = dm.listFiles(options || {});
+            // 把绝对路径和下载根目录也返回，方便前端展示
+            return { success: true, list, rootDir: dm.getDownloadDir() };
+        } catch (error) {
+            console.error('[MAIN] 列出下载文件失败:', error);
+            return { success: false, error: error.message, list: [] };
+        }
+    });
+
+    // 列出活动下载任务
+    ipcMain.handle('download-list-active', async () => {
+        try {
+            return { success: true, tasks: dm.listActiveTasks() };
+        } catch (error) {
+            return { success: false, error: error.message, tasks: [] };
+        }
+    });
+
+    // 重命名
+    ipcMain.handle('download-rename', async (event, { id, newName }) => {
+        try {
+            return dm.renameFile(id, newName);
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    // 删除
+    ipcMain.handle('download-delete', async (event, { id }) => {
+        try {
+            return dm.deleteFile(id);
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    // 移动到子目录
+    ipcMain.handle('download-move', async (event, { id, subDir }) => {
+        try {
+            return dm.moveFile(id, subDir);
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    // 打开文件所在目录
+    ipcMain.handle('download-reveal', async (event, { id }) => {
+        try {
+            return dm.revealInFolder(id);
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    // 打开任意路径（用于"打开下载目录"按钮直接打开 rootDir）
+    ipcMain.handle('open-path', async (event, { path: targetPath }) => {
+        try {
+            if (!targetPath || typeof targetPath !== 'string') {
+                return { success: false, error: '无效的路径' };
+            }
+            if (!fs.existsSync(targetPath)) {
+                return { success: false, error: '路径不存在: ' + targetPath };
+            }
+            // shell.openPath 第二个参数是错误字符串（空字符串表示成功）
+            const errMsg = await require('electron').shell.openPath(targetPath);
+            if (errMsg) {
+                return { success: false, error: errMsg };
+            }
+            return { success: true, path: targetPath };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    // 启动 URL 下载任务
+    ipcMain.handle('download-start-url', async (event, opts) => {
+        try {
+            return dm.startUrlDownload(opts || {});
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    // 取消下载任务
+    ipcMain.handle('download-cancel-task', async (event, { taskId }) => {
+        try {
+            return dm.cancelTask(taskId);
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    // 列出子目录
+    ipcMain.handle('download-list-folders', async () => {
+        try {
+            return { success: true, folders: dm.listFolders() };
+        } catch (error) {
+            return { success: false, error: error.message, folders: [] };
+        }
+    });
+
+    // 选择本地视频文件并导入到下载管理
+    ipcMain.handle('download-import-local', async event => {
+        try {
+            const { dialog } = require('electron');
+            const result = await dialog.showOpenDialog({
+                title: '导入本地视频',
+                filters: [{ name: '视频文件', extensions: ['mp4', 'mkv', 'webm', 'avi', 'mov', 'm3u8', 'flv', 'wmv'] }],
+                properties: ['openFile', 'multiSelections']
+            });
+            if (result.canceled || result.filePaths.length === 0) {
+                return { success: false, message: '未选择文件' };
+            }
+            const imported = [];
+            for (const fp of result.filePaths) {
+                // 不复制文件，只在清单中添加一条记录指向原路径
+                const r = dm.addExistingFile({
+                    name: require('path').basename(fp),
+                    filePath: fp,
+                    sourceType: 'import'
+                });
+                if (r.success) imported.push(r.record);
+            }
+            return { success: true, imported };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    // ========== 下载管理 IPC END ==========
+
     // 磁力链子进程管理器
     let magnetProcess = null;
     let magnetMessageId = 0;
@@ -565,6 +741,19 @@ function setupIPC(qixingApp) {
                 ELECTRON_RUN_AS_NODE: ''
             }
         });
+
+        // 启动后立即发送 init 消息，告知子进程把磁力文件存到我们应用的下载目录
+        // 这样磁力下载的文件才能纳入「下载」页统一管理，并支持断点续传
+        try {
+            const initMsg = JSON.stringify({
+                action: 'init',
+                magnetDir: qixingApp.downloadManager.getMagnetDir()
+            }) + '\n';
+            magnetProcess.stdin.write(initMsg);
+            console.log('[MAIN] 已向磁力子进程发送 init 消息, magnetDir:', qixingApp.downloadManager.getMagnetDir());
+        } catch (err) {
+            console.error('[MAIN] 发送 init 消息失败:', err.message);
+        }
 
         // 处理stdout消息
         let buffer = '';
@@ -637,6 +826,15 @@ function setupIPC(qixingApp) {
 
     // 暴露到 qixingApp 实例，供 windowManager 等其他模块在窗口关闭时调用
     qixingApp.cleanupMagnetProcess = cleanupMagnetProcess;
+
+    // ========== 应用退出时的资源清理 ==========
+    // 关键：磁力子进程在播放器关闭时不应被杀（用户可能仍在后台下载），
+    // 但应用退出时必须优雅结束，否则会留下僵尸子进程
+    // 用 once 避免重入（多次 quit 事件触发）
+    app.once('before-quit', () => {
+        console.log('[MAIN] 应用退出，清理磁力链子进程');
+        cleanupMagnetProcess();
+    });
 
     /**
      * 发送消息到磁力链子进程并等待响应
@@ -713,6 +911,39 @@ function setupIPC(qixingApp) {
             if (qixingApp.playerWindow && !qixingApp.playerWindow.isDestroyed()) {
                 qixingApp.playerWindow.webContents.send('magnet-download-progress', progressData);
             }
+            // 透传 infoHash（子进程若带上）：把"下载速度/ETA/peer 数"等增量信息合并到 magnet-status 事件
+            // 让下载页能实时刷新这些数字（_handleMagnetStatus 已支持 downloadSpeed/numPeers/eta 字段）
+            if (msg.infoHash) {
+                const dmInner = qixingApp.downloadManager;
+                const matched = dmInner.manifest.find(m =>
+                    m.sourceType === 'magnet' && m.infoHash === msg.infoHash &&
+                    (!msg.fileName || m.name === msg.fileName)
+                );
+                if (matched) {
+                    const statusPayload = {
+                        infoHash: msg.infoHash,
+                        fileName: msg.fileName,
+                        downloaded: msg.downloaded,
+                        total: msg.total,
+                        progress: msg.progress,
+                        // 关键：使用 manifest 的 user-controlled status（paused/downloading/completed），
+                        // 而不是子进程发来的 peer-state status（no-peers/connected-waiting/downloading）
+                        // 否则用户暂停后，子进程 setInterval 持续发 'downloading' 会把 'paused' 状态覆盖
+                        // 导致下载页暂停按钮闪一下又恢复
+                        status: matched.status || 'downloading',
+                        downloadSpeed: msg.downloadSpeed,
+                        numPeers: msg.numPeers,
+                        wires: msg.wires,
+                        eta: progressData.eta,
+                        timestamp: Date.now()
+                    };
+                    for (const win of BrowserWindow.getAllWindows()) {
+                        if (win && !win.isDestroyed()) {
+                            win.webContents.send('magnet-status', statusPayload);
+                        }
+                    }
+                }
+            }
             return;
         }
 
@@ -726,17 +957,81 @@ function setupIPC(qixingApp) {
             return;
         }
 
+        // 磁力链状态变化（用于实时同步到「下载」页清单）
+        // 由子进程在开始下载/进度上报/暂停/完成/错误时发送
+        if (msg.type === 'magnet-status') {
+            const dm = qixingApp.downloadManager;
+            // 1) 找到/创建清单记录
+            let item = dm.manifest.find(m => m.sourceType === 'magnet' && m.infoHash === msg.infoHash);
+            // 关键：子进程首次上报时不带 magnetUri，缓存里取（用户在播放页提交时已记住）
+            // 否则创建的记录 sourceUrl 为空，"继续"按钮的回退路径 magnet-replay 会失败
+            const cachedMagnetUri = getMagnetUri(msg.infoHash);
+            if (msg.status !== 'removed' && !item && msg.fileName) {
+                // 首次上报：自动创建清单记录
+                const expectedPath = require('path').join(dm.getMagnetPath(msg.infoHash), msg.fileName);
+                const r = dm.addMagnetFile({
+                    name: msg.fileName,
+                    filePath: expectedPath,
+                    magnetUri: cachedMagnetUri, // 回填缓存的 magnetUri
+                    infoHash: msg.infoHash,
+                    totalSize: msg.total || 0,
+                    downloaded: msg.downloaded || 0,
+                    status: msg.status
+                });
+                if (r.success) item = r.record;
+            } else if (item && cachedMagnetUri && !item.sourceUrl) {
+                // 旧记录 sourceUrl 为空（例如历史 manifest 缺失）→ 补全
+                item.sourceUrl = cachedMagnetUri;
+                dm.flushMagnet(item);
+            }
+            // 2) 根据状态做对应处理
+            if (msg.status === 'removed' && item) {
+                dm.removeMagnetFile(item.id, { removeFiles: true, removeDir: true });
+            } else if (item) {
+                if (msg.status === 'paused') {
+                    // 暂停时刷新为磁盘上实际已下载的大小
+                    dm.refreshMagnetSize(item.id);
+                    item.status = 'paused';
+                    dm.flushMagnet(item);
+                } else if (msg.status === 'completed' || msg.status === 'error') {
+                    dm.updateMagnetProgress(msg.infoHash, msg.fileName, {
+                        downloaded: msg.downloaded,
+                        total: msg.total,
+                        status: msg.status
+                    });
+                    const refreshed = dm.manifest.find(m => m.id === item.id);
+                    if (refreshed) dm.flushMagnet(refreshed);
+                } else {
+                    // downloading 等：节流更新进度
+                    dm.updateMagnetProgress(msg.infoHash, msg.fileName, {
+                        downloaded: msg.downloaded,
+                        total: msg.total,
+                        status: msg.status
+                    });
+                }
+            }
+            // 3) 转发到所有渲染窗口（主窗口 + 播放器窗口）
+            const payload = { ...msg, timestamp: Date.now() };
+            for (const win of BrowserWindow.getAllWindows()) {
+                if (win && !win.isDestroyed()) {
+                    win.webContents.send('magnet-status', payload);
+                }
+            }
+            return;
+        }
+
         // 带id的响应消息，匹配到pending request
         if (msg.id && magnetPendingRequests.has(msg.id)) {
             const pending = magnetPendingRequests.get(msg.id);
             clearTimeout(pending.timeout);
             magnetPendingRequests.delete(msg.id);
 
-            if (msg.type === 'error') {
-                pending.reject(new Error(msg.error));
-            } else {
-                pending.resolve(msg);
-            }
+            // 业务级"软错误"（type: 'error'）也走 resolve 而非 reject，
+            // 避免 reject 时把 msg 序列化成 Error 后只丢出 error.message、**code 字段被吃掉**。
+            // 原来 pause/resume 因此误把 TORRENT_NOT_FOUND 当作"真错误"提示给用户
+            // —— 现在保留完整 msg（含 code），渲染端可正确区分"软错误"和"真异常"。
+            // 真异常（进程启动失败、超时等）由外层 try/catch 处理
+            pending.resolve(msg);
             return;
         }
 
@@ -812,6 +1107,8 @@ function setupIPC(qixingApp) {
     ipcMain.handle('play-magnet-file', async (event, { magnetUri, fileName, infoHash }) => {
         console.log('[MAIN] 收到播放磁力文件请求:', fileName, 'infoHash:', infoHash);
         try {
+            // 缓存原始 magnetUri（用于后续 magnet-replay 断点续传）
+            rememberMagnetUri(infoHash, magnetUri);
             // 发送初始进度
             const initialProgress = {
                 fileName,
@@ -885,6 +1182,120 @@ function setupIPC(qixingApp) {
             return { success: false, error: error.message };
         }
     });
+
+    // ========== 磁力下载管理 IPC（用于下载页面的暂停/继续/删除控制） ==========
+
+    // 暂停指定 infoHash 的磁力下载
+    // 入参: { infoHash, fileName } —— 必传，子进程用 infoHash 找到对应 torrent；
+    //       不传则按 currentTorrent 处理（兼容旧调用方）
+    // 返回: { type: 'paused' | 'error', error?: string, code?: 'TORRENT_NOT_FOUND' }
+    //       code=TORRENT_NOT_FOUND 表示子进程没有这个 torrent（多见于播放器关闭后子进程被销毁），
+    //       渲染端收到此码应将文件状态直接置为 paused（磁力下载此时实际上已经停了）
+    ipcMain.handle('magnet-pause', async (event, payload = {}) => {
+        try {
+            return await sendMagnetMessage({
+                action: 'pause',
+                infoHash: payload.infoHash || '',
+                fileName: payload.fileName || ''
+            });
+        } catch (error) {
+            return { type: 'error', error: error.message };
+        }
+    });
+
+    // 继续指定 infoHash 的磁力下载
+    // 入参: { infoHash, fileName } —— 同上
+    // 返回: { type: 'resumed' | 'error', code?: 'TORRENT_NOT_FOUND' }
+    //       code=TORRENT_NOT_FOUND 表示子进程没有这个 torrent，渲染端应回退到 magnet-replay 重新启动
+    ipcMain.handle('magnet-resume', async (event, payload = {}) => {
+        try {
+            return await sendMagnetMessage({
+                action: 'resume',
+                infoHash: payload.infoHash || '',
+                fileName: payload.fileName || ''
+            });
+        } catch (error) {
+            return { type: 'error', error: error.message };
+        }
+    });
+
+    // 直接更新 manifest 中某条磁力记录的状态（用于子进程已销毁场景：
+    // 用户点暂停时磁力下载其实已经停了，UI 需要把状态切回 paused 让用户感知）
+    // 入参: { id, status } —— id 是 manifest 条目的 id，status 是 'paused' / 'downloading' / 'error' 等
+    ipcMain.handle('magnet-set-status', async (event, payload = {}) => {
+        try {
+            const dmLocal = qixingApp.downloadManager;
+            const item = dmLocal.manifest.find(m => m.id === payload.id);
+            if (!item) return { success: false, error: '记录不存在' };
+            if (payload.status) item.status = payload.status;
+            item.mtime = Date.now();
+            // 关键状态切换立即刷盘
+            dmLocal.flushMagnet(item);
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    // 删除磁力下载（销毁 torrent + 清理磁盘 + 从清单移除）
+    // 入参: { infoHash?, fileName? } —— 传 infoHash 可精确删除指定 torrent（不一定是 currentTorrent）
+    // 不传则删除 currentTorrent（兼容旧调用方）
+    ipcMain.handle('magnet-remove', async (event, payload = {}) => {
+        try {
+            return await sendMagnetMessage({
+                action: 'remove',
+                infoHash: payload.infoHash || '',
+                fileName: payload.fileName || ''
+            });
+        } catch (error) {
+            return { type: 'error', error: error.message };
+        }
+    });
+
+    // 重新启动一个磁力下载（用于从下载页"继续"未完成的）
+    // 复用现有 play 通道，但额外把记录预先登记到 manifest
+    ipcMain.handle('magnet-replay', async (event, { magnetUri, fileName, infoHash }) => {
+        console.log('[MAIN] 收到继续磁力下载请求:', fileName, 'infoHash:', infoHash);
+        try {
+            // 缓存 magnetUri（replay 入口可能传入新的 magnetUri，覆盖旧的）
+            rememberMagnetUri(infoHash, magnetUri);
+            // 1) 预先登记到 manifest（让用户立刻能在下载页看到记录）
+            if (infoHash && fileName) {
+                const dm = qixingApp.downloadManager;
+                const expectedPath = require('path').join(dm.getMagnetPath(infoHash), fileName);
+                dm.addMagnetFile({
+                    name: fileName,
+                    filePath: expectedPath,
+                    magnetUri: magnetUri || '',
+                    infoHash,
+                    totalSize: 0,
+                    downloaded: 0,
+                    status: 'downloading'
+                });
+            }
+            // 2) 调用子进程 play（从断点恢复：path 选项相同，自动复用已下载部分）
+            const result = await sendMagnetMessage({
+                action: 'play',
+                magnetUri,
+                fileName,
+                infoHash
+            });
+            if (result.type === 'ready') {
+                return {
+                    success: true,
+                    streamUrl: result.streamUrl,
+                    isLocal: result.isLocal || false
+                };
+            } else {
+                return { success: false, error: result.error || '恢复失败' };
+            }
+        } catch (error) {
+            console.error('[MAIN] 继续磁力下载失败:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    // ========== 旧缓存迁移 IPC（已移除：不需要迁移功能） ==========
 }
 
 module.exports = {

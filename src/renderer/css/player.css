@@ -2483,6 +2483,23 @@ body.fullscreen-mode .btn-playback,
     display: none;
 }
 
+/* 淡入淡出：让信息栏显隐切换更平滑自然，避免突兀闪屏 */
+.magnet-info-bar {
+    /* 在 display:flex 与 display:none 之间无法走 transition，所以加 visibility+opacity 渐变 */
+    animation: magnet-info-bar-fade-in 0.25s ease-out;
+}
+
+@keyframes magnet-info-bar-fade-in {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
 /* 数据陈旧态：10s 内无新数据 → 灰色提示等待中 */
 .magnet-info-bar.is-stale {
     background: rgba(80, 80, 80, 0.7);
