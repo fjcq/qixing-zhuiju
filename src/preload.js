@@ -6,7 +6,22 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer: {
         send: (channel, data) => {
             // 白名单安全的频道
-            const validChannels = ['open-player', 'close-player', 'player-progress', 'window-close', 'window-minimize', 'window-maximize', 'toggle-always-on-top', 'start-system-casting', 'stop-casting'];
+            // 关键:'player-canplay' 必须在此白名单中
+            // —— player.js 在 video canplay 时通过该 channel 通知主进程转发给主窗口,
+            // 用于关闭下载页的磁力播放浮动条。漏了它会导致浮动条永远不自动关闭。
+            const validChannels = [
+                'open-player',
+                'close-player',
+                'player-progress',
+                'player-canplay',
+                'player-loaded',
+                'window-close',
+                'window-minimize',
+                'window-maximize',
+                'toggle-always-on-top',
+                'start-system-casting',
+                'stop-casting'
+            ];
             if (validChannels.includes(channel)) {
                 ipcRenderer.send(channel, data);
             }
