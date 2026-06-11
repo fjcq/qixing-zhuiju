@@ -1119,17 +1119,18 @@
                     console.error('[DownloadController] player-canplay 回调异常:', err);
                 }
             };
-            // 同样：优先用 window.electron.on（preload 暴露的通用 API）
-            if (typeof window.electron.on === 'function') {
-                window.electron.on('player-canplay', this._playerCanplayHandler);
-            } else if (window.electron.onPlayerCanplay) {
-                // 兜底：preload 暴露的专用 API
+            // 关键:必须用 preload 暴露的专用 API (onPlayerCanplay)
+            // —— window.electron.on 的白名单 [preload.js:98-106] 不包含 'player-canplay',
+            // 调 window.electron.on('player-canplay', ...) 会被白名单拦截静默失败,
+            // 导致浮动条永远不关闭(用户报告的核心问题)
+            // 顺序: 专用 API > ipcRenderer.on (兜底,理论上用不到)
+            if (typeof window.electron.onPlayerCanplay === 'function') {
                 window.electron.onPlayerCanplay(this._playerCanplayHandler);
             } else if (window.electron.ipcRenderer
                 && typeof window.electron.ipcRenderer.on === 'function') {
                 window.electron.ipcRenderer.on('player-canplay', this._playerCanplayHandler);
             } else {
-                console.error('[DownloadController] _bindPlayerCanplay 失败: window.electron.on/onPlayerCanplay/ipcRenderer.on 都不存在');
+                console.error('[DownloadController] _bindPlayerCanplay 失败: window.electron.onPlayerCanplay 和 ipcRenderer.on 都不存在');
             }
         }
 
