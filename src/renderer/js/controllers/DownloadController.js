@@ -745,6 +745,8 @@
                     this._lastProgressRender = { status: '', percent: -1, peers: -1 };
                     this._bindMagnetProgress((data) => {
                         if (!data) return;
+                        // 诊断:每次回调触发都打印(精简格式,不刷屏)
+                        console.log('[DC] progress cb:', data.status, Math.floor(Number(data.progress || 0)) + '%');
                         const status = data.status || 'connecting';
                         // 数字安全
                         let pct = Number(data.progress);
@@ -823,7 +825,14 @@
                         vod_pic: ''
                     };
                     const openResult = await window.electron.ipcRenderer.invoke('open-player', videoData);
-                    if (!(openResult && openResult.success)) {
+                    if (openResult && openResult.success) {
+                        // 播放器窗口已打开,准备完成,立即隐藏浮动条
+                        // 不依赖 player-canplay IPC 链(该链路 preload 白名单/主进程转发/渲染端订阅
+                        // 任一环断了浮动条就不消失,用户已多次报告此问题)
+                        this._unbindMagnetProgress();
+                        this._unbindPlayerListeners();
+                        this._hideMagnetProgress();
+                    } else {
                         const reason = (openResult && openResult.message) || '未知错误';
                         this._unbindMagnetProgress();
                         this._unbindPlayerListeners();
