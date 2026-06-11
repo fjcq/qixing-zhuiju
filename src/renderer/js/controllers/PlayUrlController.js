@@ -491,46 +491,126 @@
 
         /**
          * 播放磁力链指定文件
+         * 6 阶段进度反馈:P1 准备 → P2 元数据/下载 → P3 流服务器 → P4 打开播放器 → P5 缓冲 → P6 播放就绪
+         * P1-P4 由本函数驱动;P5/P6 来自主进程 player-loaded/player-canplay 事件;
+         * 子进程 download-progress 通过 MagnetDownloadProgressMapper 映射后填充 P2 子阶段文本
          * @param {string} magnetUri
-         * @param {{ name: string, length: number, [k: string]: any }} file
+         * @param {{ name: string, length: number, size?: number, [k: string]: any }} file
          */
         async _playMagnetFile(magnetUri, file) {
             if (!this._magnetParser || !file) return;
+
+            // 清理之前的订阅(防御性:防止重复订阅导致回调多次触发)
+            this._magnetParser.removeDownloadProgressListener();
+            if (window.electron && window.electron.removePlayerLoadedListener) {
+                window.electron.removePlayerLoadedListener();
+                window.electron.removePlayerCanplayListener();
+            }
+
             this._setState(STATE.PLAYING);
-            this._showProgress(`正在准备: ${file.name}`, 0, 'info');
+
+            // 阶段 P1: 准备播放资源
+            this._showProgress('① 准备播放: ' + file.name, 5, 'info');
+
             try {
-                // 写入历史：用户真正挑了文件后，episode_name = 文件名
+                // 写入历史:用户真正挑了文件后,episode_name = 文件名(避免显示"正片")
                 this._addHistory(magnetUri, '磁力', 'magnet', {
                     vod_name: file.name,
                     episode_name: file.name
                 });
-                const result = await this._magnetParser.play(magnetUri, file.name, this._currentInfoHash);
+
+                // 阶段 P2: 解析磁力元数据(订阅 download-progress 后,子进程会持续发进度)
+                this._showProgress('② 解析磁力元数据...', 10, 'info');
+                if (window.electron && window.electron.onPlayerLoaded) {
+                    window.electron.onPlayerLoaded(() => this._handlePlayerLoaded());
+                }
+                if (window.electron && window.electron.onPlayerCanplay) {
+                    window.electron.onPlayerCanplay(() => this._handlePlayerCanplay());
+                }
+                this._magnetParser.onDownloadProgress((data) => this._handleMagnetDownloadProgress(data));
+
+                const playResult = await this._magnetParser.play(
+                    magnetUri,
+                    file.name,
+                    this._currentInfoHash
+                );
+
                 if (this._parseCancelled) {
                     return;
                 }
-                if (result && result.success) {
-                    const videoData = {
-                        url: result.streamUrl,
-                        title: file.name,
-                        vod_name: file.name,
-                        episode_name: file.name,    // 用文件名作集名，避免显示"正片"
-                        isDirectPlay: true,
-                        playSource: 'magnet',
-                        isStreaming: !result.isLocal,
-                        isLocal: !!result.isLocal,
-                        type_name: '磁力',
-                        siteName: '磁力'
-                    };
-                    await this._openPlayer(videoData);
-                    this._hideProgress();
-                } else {
-                    throw new Error((result && result.error) || '播放失败');
+                if (!playResult || !playResult.streamUrl) {
+                    throw new Error('播放准备失败:未获取到流地址');
                 }
-            } catch (error) {
-                console.error('[PlayUrlController] 播放磁力文件失败:', error);
-                this._showProgress(`播放失败: ${error.message}`, 0, 'error');
-                this._notify(`播放失败: ${error.message}`, 'error');
+
+                // 阶段 P3: 启动流服务器(play 已 resolve,streamUrl 拿到)
+                this._showProgress('③ 启动流服务器...', 30, 'info');
+
+                const videoData = {
+                    url: playResult.streamUrl,
+                    type: 'magnet',
+                    title: file.name,
+                    vod_name: file.name,
+                    episode_name: file.name,
+                    isDirectPlay: true,
+                    playSource: 'magnet',
+                    isStreaming: !playResult.isLocal,
+                    isLocal: !!playResult.isLocal,
+                    type_name: '磁力',
+                    siteName: '磁力',
+                    magnetUri: magnetUri,
+                    infoHash: this._currentInfoHash,
+                    fileName: file.name,
+                    fileSize: file.length || file.size || 0
+                };
+
+                // 阶段 P4: 打开播放器(进入后,主进程会发 player-loaded → 阶段 P5;视频 canplay → 阶段 P6)
+                // 关键:不立即 _hideProgress,等 player-canplay 事件
+                this._showProgress('④ 打开播放器窗口...', 40, 'info');
+                await this._openPlayer(videoData);
+            } catch (err) {
+                console.error('[PlayUrlController] 播放磁力文件失败:', err);
+                this._showProgress('✗ 播放失败: ' + ((err && err.message) || err), 0, 'error');
+                this._magnetParser.removeDownloadProgressListener();
+                if (window.electron && window.electron.removePlayerLoadedListener) {
+                    window.electron.removePlayerLoadedListener();
+                    window.electron.removePlayerCanplayListener();
+                }
+                this._notify('播放失败: ' + ((err && err.message) || err), 'error');
+                throw err;
             }
+        }
+
+        /**
+         * 处理磁力子进程 download-progress 事件
+         * 把子进程 payload 映射到阶段对象并显示
+         * @param {{ status?: string, progress?: number, numPeers?: number }} data
+         */
+        _handleMagnetDownloadProgress(data) {
+            if (!data || !window.MagnetDownloadProgressMapper) return;
+            const mapped = window.MagnetDownloadProgressMapper.mapMagnetDownloadProgress(data);
+            this._showProgress(mapped.stageText, mapped.progress, mapped.variant);
+        }
+
+        /**
+         * 处理主进程 player-loaded 事件
+         * 进入 P5 视频缓冲中阶段
+         */
+        _handlePlayerLoaded() {
+            this._showProgress('⑤ 视频缓冲中...', 50, 'info');
+        }
+
+        /**
+         * 处理主进程 player-canplay 事件
+         * 关闭进度条,允许 200ms 渐隐动画
+         */
+        _handlePlayerCanplay() {
+            // 解绑订阅,避免内存泄露
+            this._magnetParser.removeDownloadProgressListener();
+            if (window.electron && window.electron.removePlayerLoadedListener) {
+                window.electron.removePlayerLoadedListener();
+                window.electron.removePlayerCanplayListener();
+            }
+            this._hideProgress();
         }
 
         /**
