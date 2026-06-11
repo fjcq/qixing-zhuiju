@@ -1804,6 +1804,14 @@ class VideoPlayer {
 
         this.video.addEventListener('canplay', () => {
             this.hideLoading();
+            // 关键:通知主进程视频已可播放,主进程会转发给主窗口以关闭进度条
+            if (window.electron && window.electron.ipcRenderer) {
+                try {
+                    window.electron.ipcRenderer.send('player-canplay', {});
+                } catch (err) {
+                    console.warn('[PLAYER] player-canplay 通知失败:', err);
+                }
+            }
         });
 
         // 键盘快捷键
