@@ -3,7 +3,7 @@
 
 const CHANGELOG_DATA = [
     {
-        version: 'v1.7.0',
+        version: 'v1.6.1',
         date: '2026-06-12',
         items: [
             ' 新增下载管理页面：磁力/URL/本地视频统一管理，支持查看下载进度和文件列表',
