@@ -740,11 +740,52 @@
                         this._unbindPlayerListeners();
                         this._hideMagnetProgress();
                     });
-                    // 订阅磁力下载进度（play-magnet-file 内部会持续转发子进程 progress 消息）
+                    // 订阅磁力下载进度,让浮动条文本随真实状态变化
+                    // 节流:相同 status+相近 progress 不重复更新,避免刷屏
+                    this._lastProgressRender = { status: '', percent: -1, peers: -1 };
                     this._bindMagnetProgress((data) => {
                         if (!data) return;
-                        // 不再展示刷屏文字 + 进度条 —— 进度条对"边下边播"是噪音（数字停滞/小跳）
-                        // 保留订阅是为了让 player-canplay 事件能关闭浮动条
+                        const status = data.status || 'connecting';
+                        // 数字安全
+                        let pct = Number(data.progress);
+                        if (!isFinite(pct) || pct < 0) pct = 0;
+                        if (pct > 100) pct = 100;
+                        const peers = Number(data.numPeers || 0);
+                        // 节流:status 变了或 percent 跨过 1% 整数边界才更新
+                        const last = this._lastProgressRender;
+                        const pctFloor = Math.floor(pct);
+                        if (last.status === status
+                            && last.percent === pctFloor
+                            && last.peers === peers) {
+                            return;
+                        }
+                        this._lastProgressRender = { status, percent: pctFloor, peers };
+                        let text;
+                        switch (status) {
+                            case 'connecting':
+                                text = `准备播放: ${file.name} - 正在连接网络...`;
+                                this._showMagnetProgress(text, null, 'info');
+                                break;
+                            case 'metadata':
+                                text = `准备播放: ${file.name} - 正在解析元数据...`;
+                                this._showMagnetProgress(text, null, 'info');
+                                break;
+                            case 'downloading':
+                                text = `准备播放: ${file.name} - 下载中 ${pctFloor}% (${peers} 节点)`;
+                                this._showMagnetProgress(text, pct, 'info');
+                                break;
+                            case 'ready':
+                                text = `准备播放: ${file.name} - 准备就绪`;
+                                this._showMagnetProgress(text, 100, 'info');
+                                break;
+                            case 'error':
+                                text = `播放失败: ${data.message || '未知错误'}`;
+                                this._showMagnetProgress(text, null, 'error');
+                                break;
+                            default:
+                                text = `准备播放: ${file.name}`;
+                                this._showMagnetProgress(text, null, 'info');
+                        }
                     });
                     // 1) 调起/恢复磁力下载并获取 streamUrl
                     const result = await window.electron.ipcRenderer.invoke('play-magnet-file', {
@@ -1036,29 +1077,14 @@
                     }
                 }
             }
-            // 兜底:60 秒后强制关闭浮动条,无论 player-canplay 事件链是否正常
-            // 解决问题链路:player.js video canplay → preload send → 主进程转发 → 主窗口订阅
-            //   任何一环断了,player-canplay 都收不到 → 浮动条永远不消失(用户报告)
-            // 60 秒足够视频可播放 + 浮动条自然消失;60 秒还没消失,说明确实有故障,
-            // 此时强制隐藏避免遮挡 UI
-            if (this._magnetProgressForceHideTimer) {
-                clearTimeout(this._magnetProgressForceHideTimer);
-            }
-            this._magnetProgressForceHideTimer = setTimeout(() => {
-                console.warn('[DownloadController] 60 秒未收到 player-canplay,强制关闭浮动条');
-                this._hideMagnetProgress();
-            }, 60000);
+            // 不再设 60 秒硬切定时器 —— 浮动条必须由真实状态驱动
+            // 状态变化由 _bindMagnetProgress 监听 progress 事件更新
         }
 
         /**
          * 隐藏全局浮动进度条
          */
         _hideMagnetProgress() {
-            // 兜底:如果 _showMagnetProgress 设置了强制关闭定时器,清理它
-            if (this._magnetProgressForceHideTimer) {
-                clearTimeout(this._magnetProgressForceHideTimer);
-                this._magnetProgressForceHideTimer = null;
-            }
             const el = document.getElementById('global-magnet-progress');
             if (!el) return;
             el.style.display = 'none';
@@ -1077,8 +1103,6 @@
                 this._unbindMagnetProgress();
             }
             this._magnetProgressHandler = (data) => {
-                // 调试日志：让用户能从 DevTools 看到事件是否真进来
-                console.log('[DownloadController] 收到 magnet-download-progress:', JSON.stringify(data));
                 try {
                     callback(data);
                 } catch (err) {
