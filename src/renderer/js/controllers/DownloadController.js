@@ -780,7 +780,9 @@
                         type_name: '下载',
                         siteName: '磁力',
                         vod_id: 'dl_' + file.id,
-                        vod_pic: ''
+                        vod_pic: '',
+                        infoHash: file.infoHash || '',
+                        fileName: file.name
                     };
                     const openResult = await window.electron.ipcRenderer.invoke('open-player', videoData);
                     // 无论 open-player 成功还是失败,都隐藏浮动条

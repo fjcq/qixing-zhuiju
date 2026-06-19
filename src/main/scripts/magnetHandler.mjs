@@ -100,6 +100,94 @@ function getMagnetPath(infoHash) {
 }
 
 /**
+ * 规范化磁力链接
+ * 1. 对dn等参数中的特殊字符进行URL编码（如 [ ] @ 等）
+ * 2. 追加tracker列表作为tr参数，增加发现peer的概率
+ * 3. 保留原始xt参数不变
+ * @param {string} magnetUri - 原始磁力链接
+ * @returns {string} 规范化后的磁力链接
+ */
+function normalizeMagnetUri(magnetUri) {
+    if (!magnetUri || !magnetUri.startsWith('magnet:')) return magnetUri;
+
+    // 提取查询字符串部分
+    const queryStart = magnetUri.indexOf('?');
+    if (queryStart === -1) return magnetUri;
+
+    const queryString = magnetUri.substring(queryStart + 1);
+
+    // 手动解析参数（避免URLSearchParams的编码问题）
+    const params = {};
+    const trList = [];
+    const pairs = queryString.split('&');
+    for (const pair of pairs) {
+        const eqIdx = pair.indexOf('=');
+        if (eqIdx === -1) continue;
+        const key = pair.substring(0, eqIdx);
+        const value = pair.substring(eqIdx + 1);
+
+        if (key === 'tr') {
+            trList.push(value);
+        } else if (key === 'xt') {
+            params.xt = value;
+        } else if (key === 'dn') {
+            // 检查dn是否包含未编码的特殊字符
+            // 常见问题：[ ] @ 等字符未编码导致webtorrent解析异常
+            if (/[<>[\]{}|\\^`]/.test(decodeURIComponentSafe(value))) {
+                params.dn = encodeURIComponent(decodeURIComponentSafe(value));
+            } else {
+                params.dn = value;
+            }
+        } else {
+            // 保留其他参数（如 xl、kt 等）
+            params[key] = value;
+        }
+    }
+
+    // 追加tracker列表（去重）
+    const existingTrs = new Set(trList);
+    for (const tracker of activeTrackers) {
+        if (!existingTrs.has(tracker)) {
+            trList.push(tracker);
+            existingTrs.add(tracker);
+        }
+    }
+
+    // 重建磁力链接
+    let result = 'magnet:?';
+    const parts = [];
+    if (params.xt) parts.push(`xt=${params.xt}`);
+    if (params.dn) parts.push(`dn=${params.dn}`);
+    // 追加其他参数
+    for (const [key, value] of Object.entries(params)) {
+        if (key !== 'xt' && key !== 'dn') {
+            parts.push(`${key}=${value}`);
+        }
+    }
+    // 追加tracker参数
+    for (const tr of trList) {
+        parts.push(`tr=${encodeURIComponent(tr)}`);
+    }
+
+    result += parts.join('&');
+    sendMessage({ type: 'log', message: `磁力链已规范化: 追加${trList.length}个tracker, dn参数已编码` });
+    return result;
+}
+
+/**
+ * 安全的decodeURIComponent，遇到编码错误时返回原字符串
+ * @param {string} str - 待解码的字符串
+ * @returns {string} 解码后的字符串
+ */
+function decodeURIComponentSafe(str) {
+    try {
+        return decodeURIComponent(str);
+    } catch (e) {
+        return str;
+    }
+}
+
+/**
  * 可靠的tracker列表（已测试验证可达性，按响应速度排序）
  * 优先使用HTTP/HTTPS tracker（国内网络友好），UDP tracker作为备用
  * 数据来源：ngosang/trackerslist + CSDN国内电信测试 + 自测验证
@@ -245,6 +333,9 @@ function getClient() {
 async function resolveMagnet(magnetUri, infoHash) {
     const c = getClient();
 
+    // 规范化磁力链接：编码特殊字符、追加tracker
+    const normalizedUri = normalizeMagnetUri(magnetUri);
+
     // 检查是否已存在相同infoHash且元数据已就绪的torrent
     const existingTorrent = c.get(infoHash);
     if (existingTorrent && existingTorrent.files && existingTorrent.files.length > 0) {
@@ -261,28 +352,55 @@ async function resolveMagnet(magnetUri, infoHash) {
     // 先尝试HTTP缓存API获取torrent文件
     const torrentBuffer = await fetchTorrentFromCache(infoHash);
 
-    let torrentId = magnetUri;
+    let torrentId = normalizedUri;
     if (torrentBuffer) {
         torrentId = torrentBuffer;
         sendMessage({ type: 'log', message: '使用HTTP缓存API获取的torrent文件' });
     }
 
     return new Promise((resolve, reject) => {
+        let settled = false;
         const timeout = setTimeout(() => {
-            reject(new Error('解析磁力链接超时（60秒），请检查网络连接或尝试其他链接'));
-        }, 60000);
+            if (settled) return;
+            settled = true;
+            c.off('error', onClientError);
+            reject(new Error('解析磁力链接超时（120秒），请检查网络连接或尝试其他链接'));
+        }, 120000);
 
         try {
             sendMessage({ type: 'log', message: `使用${activeTrackers.length}个tracker: ${activeTrackers.slice(0, 5).join(', ')}...` });
 
             // 捕获重复添加错误，降级为等待已有torrent
             let addFailed = false;
+
+            // 定期上报解析进度（发现peer数、tracker状态等）
+            // 间隔 5 秒（原 10 秒太长，用户等待时无反馈体验差）
+            let peerCount = 0;
+            let resolvePhase = 0; // 阶段计数器，用于区分不同解析阶段
+            const progressInterval = setInterval(() => {
+                const t = c.get(infoHash);
+                const peers = t ? t.numPeers : peerCount;
+                resolvePhase++;
+                // 阶段化描述：前3次显示"正在搜索节点"，之后显示"正在获取元数据"
+                const phaseText = resolvePhase <= 3
+                    ? `解析中... 正在搜索节点，已发现 ${peers} 个peer`
+                    : `解析中... 正在获取元数据，已发现 ${peers} 个peer`;
+                sendMessage({
+                    type: 'log',
+                    message: phaseText
+                });
+            }, 5000);
+
             try {
                 c.add(torrentId, {
                     path: getMagnetPath(infoHash),
                     announce: activeTrackers
                 }, torrent => {
+                    if (settled) return;
+                    settled = true;
                     clearTimeout(timeout);
+                    clearInterval(progressInterval);
+                    c.off('error', onClientError);
                     currentTorrent = torrent;
 
                     // 输出torrent使用的所有tracker
@@ -291,6 +409,7 @@ async function resolveMagnet(magnetUri, infoHash) {
 
                     // 监听torrent事件
                     torrent.on('wire', (wire, addr) => {
+                        peerCount++;
                         sendMessage({ type: 'wire', address: addr });
                     });
 
@@ -338,8 +457,13 @@ async function resolveMagnet(magnetUri, infoHash) {
             if (addFailed) {
                 const pendingTorrent = c.get(infoHash);
                 if (pendingTorrent && typeof pendingTorrent.on === 'function') {
-                    pendingTorrent.on('ready', () => {
+                    const onPendingReady = () => {
+                        if (settled) return;
+                        settled = true;
                         clearTimeout(timeout);
+                        clearInterval(progressInterval);
+                        c.off('error', onClientError);
+                        pendingTorrent.off('error', onPendingError);
                         currentTorrent = pendingTorrent;
                         const files = pendingTorrent.files.map(f => ({
                             name: f.name,
@@ -347,23 +471,36 @@ async function resolveMagnet(magnetUri, infoHash) {
                             path: f.path
                         }));
                         resolve(files);
-                    });
-                    pendingTorrent.on('error', err => {
+                    };
+                    const onPendingError = (err) => {
+                        if (settled) return;
+                        settled = true;
                         clearTimeout(timeout);
+                        clearInterval(progressInterval);
+                        c.off('error', onClientError);
+                        pendingTorrent.off('ready', onPendingReady);
                         reject(err);
-                    });
+                    };
+                    pendingTorrent.on('ready', onPendingReady);
+                    pendingTorrent.on('error', onPendingError);
                 } else {
                     clearTimeout(timeout);
+                    clearInterval(progressInterval);
                     reject(new Error('无法获取已有的torrent实例'));
                 }
             }
         } catch (err) {
+            if (settled) return;
+            settled = true;
             clearTimeout(timeout);
+            clearInterval(progressInterval);
+            c.off('error', onClientError);
             reject(err);
         }
 
-        c.on('error', err => {
-            clearTimeout(timeout);
+        // 客户端级别错误监听（具名函数，Promise settle 后移除，防止重复累积）
+        const onClientError = (err) => {
+            if (settled) return;
             // 过滤 "Cannot add duplicate torrent" 异步错误：
             // webtorrent v2 在 c.add 传入已存在 infoHash 时，既会异步触发 error 事件，
             // 也会调用 ready 回调（传入已存在的 torrent 实例）。这里忽略该错误，
@@ -372,8 +509,12 @@ async function resolveMagnet(magnetUri, infoHash) {
                 sendMessage({ type: 'log', message: '忽略duplicate错误，等待ready回调处理' });
                 return;
             }
+            settled = true;
+            clearTimeout(timeout);
+            clearInterval(progressInterval);
             reject(err);
-        });
+        };
+        c.on('error', onClientError);
     });
 }
 
@@ -421,7 +562,10 @@ async function fetchTorrentFromCache(infoHash) {
     const cacheUrls = [
         `https://itorrents.org/torrent/${upperHash}.torrent`,
         `https://btcache.me/torrent/${upperHash}`,
-        `https://torrage.info/torrent/${upperHash}.torrent`
+        `https://torrage.info/torrent/${upperHash}.torrent`,
+        // 新增缓存源：提高冷门资源命中率
+        `https://api-h2.heitor.online/torrents/${upperHash}`,
+        `https://watercache.libtorrent.io/torrent/${upperHash}`
     ];
 
     for (let i = 0; i < cacheUrls.length; i++) {
@@ -463,6 +607,9 @@ async function fetchTorrentFromCache(infoHash) {
 async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) {
     const c = getClient();
 
+    // 规范化磁力链接：编码特殊字符、追加tracker
+    const normalizedUri = normalizeMagnetUri(magnetUri);
+
     // 通知主进程：开始下载（让下载页能立即看到"正在下载"任务）
     sendMagnetStatus(infoHash, {
         status: 'downloading',
@@ -473,7 +620,7 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
     });
 
     // 优先使用主进程已缓存的torrent文件，避免重复网络获取
-    let torrentId = magnetUri;
+    let torrentId = normalizedUri;
 
     // 统一使用本地缓存路径读取（主进程传入的cachedTorrentPath本质也是同一个文件）
     const localCachePath = path.join(MAGNET_DIR, `${infoHash}.torrent`);
@@ -509,6 +656,7 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
     }
 
     return new Promise((resolve, reject) => {
+        let settled = false;
         let peerCheckInterval = null;
         let noPeerTimeout = null;
         let slowTimeout = null;
@@ -518,12 +666,14 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
         // 替代原来的"固定 2 分钟总超时"——原来不论下载有没有在跑，到点就 reject，
         // 慢速但确实在传输的场景会被误判为"连接超时"，与用户实际感受严重不符
         const STALL_TIMEOUT_MS = 120000;
-        const STALL_CHECK_INTERVAL_MS = 10000;
+        const STALL_CHECK_INTERVAL_MS = 5000; // 缩短为5秒检查一次，提供更及时的反馈
         // 记录上一次观察到的已下载字节数 + 上次进展时刻
         let lastDownloadedBytes = 0;
         let lastProgressAt = Date.now();
         // 是否曾经收到过数据：用于区分"从一开始就连不上"和"中途停滞"
         let hasReceivedData = false;
+        // 记录上次发送等待提示的时间（用于节流）
+        let lastWaitNoticeAt = 0;
 
         /**
          * 清理本次 play 启动的所有定时器/定时任务（停滞检测、peer 检查、警告）
@@ -546,10 +696,14 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
                 clearTimeout(slowTimeout);
                 slowTimeout = null;
             }
+            // 移除客户端级别错误监听，防止内存泄漏
+            if (c && typeof onClientError === 'function') {
+                c.off('error', onClientError);
+            }
         }
 
         /**
-         * 停滞检测：每 10 秒观察一次 torrent.downloaded 是否仍在增长
+         * 停滞检测：每 5 秒观察一次 torrent.downloaded 是否仍在增长
          * 仍在增长就刷新基准时间；连续 STALL_TIMEOUT_MS 无增长才拒绝
          * @param {object} t 当前 webtorrent torrent 实例
          */
@@ -568,6 +722,42 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
                     return;
                 }
                 const stalledFor = Date.now() - lastProgressAt;
+                
+                // 发送进度提示（节流，每30秒一次）
+                if (Date.now() - lastWaitNoticeAt > 30000) {
+                    lastWaitNoticeAt = Date.now();
+                    const seconds = Math.round(stalledFor / 1000);
+                    if (hasReceivedData) {
+                        sendMessage({
+                            type: 'progress',
+                            infoHash,
+                            fileName,
+                            progress: Math.round((t.progress || 0) * 100),
+                            downloaded: currentDownloaded,
+                            total: Number(t.length || 0),
+                            wires: t.wires ? t.wires.length : 0,
+                            downloadSpeed: 0,
+                            numPeers: t.numPeers || 0,
+                            status: 'waiting',
+                            message: `等待中（已暂停 ${seconds} 秒），正在尝试重新连接...`
+                        });
+                    } else {
+                        sendMessage({
+                            type: 'progress',
+                            infoHash,
+                            fileName,
+                            progress: 0,
+                            downloaded: 0,
+                            total: Number(t.length || 0),
+                            wires: 0,
+                            downloadSpeed: 0,
+                            numPeers: 0,
+                            status: 'connecting',
+                            message: `连接中（已等待 ${seconds} 秒），请稍候...`
+                        });
+                    }
+                }
+                
                 if (stalledFor < STALL_TIMEOUT_MS) {
                     // 还没到阈值，再等下一轮
                     scheduleStallCheck(t);
@@ -677,6 +867,8 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
                 path: getMagnetPath(infoHash),
                 announce: activeTrackers
             }, torrent => {
+                    if (settled) return;
+                    settled = true;
                     currentTorrent = torrent;
 
                     // 初始化停滞检测的基准值
@@ -859,23 +1051,32 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
                         lastProgressAt = Date.now();
                     }
                     scheduleStallCheck(pendingTorrent);
-                    pendingTorrent.on('ready', () => {
+                    const onPendingReady = () => {
+                        if (settled) return;
+                        settled = true;
                         clearAllTimers();
+                        pendingTorrent.off('error', onPendingError);
                         currentTorrent = pendingTorrent;
                         startFileStream(pendingTorrent, fileName, resolve, reject);
-                    });
-                    pendingTorrent.on('error', err => {
+                    };
+                    const onPendingError = (err) => {
+                        if (settled) return;
+                        settled = true;
                         clearAllTimers();
+                        pendingTorrent.off('ready', onPendingReady);
                         reject(err);
-                    });
+                    };
+                    pendingTorrent.on('ready', onPendingReady);
+                    pendingTorrent.on('error', onPendingError);
                 } else {
                     clearAllTimers();
                     reject(new Error('无法获取已有的torrent实例'));
                 }
             }
 
-        c.on('error', err => {
-            clearAllTimers();
+        // 客户端级别错误监听（具名函数，Promise settle 后移除，防止重复累积）
+        const onClientError = (err) => {
+            if (settled) return;
             // 过滤 "Cannot add duplicate torrent" 异步错误：
             // webtorrent v2 在 c.add 传入已存在 infoHash 时，既会异步触发 error 事件，
             // 也会调用 ready 回调（传入已存在的 torrent 实例）。这里忽略该错误，
@@ -884,14 +1085,22 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
                 sendMessage({ type: 'log', message: '忽略duplicate错误，等待ready回调处理' });
                 return;
             }
+            settled = true;
+            clearAllTimers();
             reject(err);
-        });
+        };
+        c.on('error', onClientError);
     });
 }
 
 /**
  * 创建HTTP文件流服务器
  */
+// 最小缓冲大小：5MB（确保播放器能顺利开始播放）
+const MIN_BUFFER_SIZE = 5 * 1024 * 1024;
+// 缓冲等待超时：60秒（避免无限等待）
+const BUFFER_TIMEOUT_MS = 60000;
+
 function startFileStream(torrent, fileName, resolve, reject) {
     const file = torrent.files.find(f => f.name === fileName);
     if (!file) {
@@ -922,6 +1131,83 @@ function startFileStream(torrent, fileName, resolve, reject) {
     // 检查文件是否已下载完成
     const filePath = path.join(getMagnetPath(torrent.infoHash), file.path);
     const isDownloaded = fs.existsSync(filePath) && fs.statSync(filePath).size === file.length;
+    
+    /**
+     * 创建HTTP流服务器并返回streamUrl
+     */
+    function createStreamServerAndResolve() {
+        fileServer = http.createServer((req, res) => {
+            // 支持Range请求，实现拖动进度条
+            const range = req.headers.range;
+            const fileSize = file.length;
+
+            // 客户端关闭连接时静默处理，避免FileStream崩溃
+            res.on('close', () => {
+                // 连接被客户端关闭（正常行为，如seek/暂停/关闭播放器）
+            });
+
+            if (range) {
+                const parts = range.replace(/bytes=/, '').split('-');
+                const start = parseInt(parts[0], 10);
+                const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+                const chunkSize = end - start + 1;
+
+                res.writeHead(206, {
+                    'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                    'Accept-Ranges': 'bytes',
+                    'Content-Length': chunkSize,
+                    'Content-Type': getContentType(fileName),
+                    'Access-Control-Allow-Origin': '*'
+                });
+
+                if (isDownloaded) {
+                    // 文件已下载完成，直接从本地文件读取（更快更稳定）
+                    const readStream = fs.createReadStream(filePath, { start, end });
+                    readStream.on('error', () => { /* 忽略流错误 */ });
+                    readStream.pipe(res).on('error', () => { /* 忽略管道错误 */ });
+                } else {
+                    // 文件未下载完成，通过webtorrent流式读取
+                    const stream = file.createReadStream({ start, end });
+                    stream.on('error', () => { /* 静默处理流错误 */ });
+                    stream.pipe(res).on('error', () => { /* 静默处理管道错误 */ });
+                }
+            } else {
+                res.writeHead(200, {
+                    'Content-Length': fileSize,
+                    'Content-Type': getContentType(fileName),
+                    'Access-Control-Allow-Origin': '*'
+                });
+
+                if (isDownloaded) {
+                    const readStream = fs.createReadStream(filePath);
+                    readStream.on('error', () => { /* 忽略流错误 */ });
+                    readStream.pipe(res).on('error', () => { /* 忽略管道错误 */ });
+                } else {
+                    const stream = file.createReadStream();
+                    stream.on('error', () => { /* 静默处理流错误 */ });
+                    stream.pipe(res).on('error', () => { /* 静默处理管道错误 */ });
+                }
+            }
+        });
+
+        fileServer.listen(0, () => {
+            fileServerPort = fileServer.address().port;
+            const encodedName = encodeURIComponent(fileName);
+            const streamUrl = `http://localhost:${fileServerPort}/${encodedName}`;
+
+            sendMessage({ type: 'log', message: `文件流服务器启动: 端口${fileServerPort}` });
+
+            resolve({
+                streamUrl,
+                isLocal: false
+            });
+        });
+
+        fileServer.on('error', err => {
+            reject(new Error(`文件流服务器启动失败: ${err.message}`));
+        });
+    }
+
     if (isDownloaded) {
         sendMessage({ type: 'log', message: '文件已下载完成，通过HTTP流服务器播放本地文件' });
         // 文件已下载完成：延迟发送一次 progress（100%），让播放器信息栏显示"已完成"状态
@@ -941,7 +1227,108 @@ function startFileStream(torrent, fileName, resolve, reject) {
             });
         }, 300);
     } else {
-        // 文件未下载完成：立即发送一次 connecting 状态，并启动定期检查
+        // 文件未下载完成：添加缓冲等待机制，确保有足够数据后再返回streamUrl
+        // 这样可以避免播放器收到URL后因为没有足够缓冲而长时间加载
+
+        let bufferCheckInterval = null;
+        let bufferTimeout = null;
+        let downloadListener = null;
+
+        /**
+         * 检查是否有足够的缓冲数据
+         */
+        function checkBuffer() {
+            const downloaded = Number(torrent.downloaded || 0);
+            const progressPercent = Math.round((torrent.progress || 0) * 100);
+            
+            // 更新进度
+            sendMessage({
+                type: 'progress',
+                infoHash: torrent.infoHash,
+                fileName,
+                progress: progressPercent,
+                downloaded,
+                total: Number(file.length),
+                wires: torrent.wires ? torrent.wires.length : 0,
+                downloadSpeed: Number(torrent.downloadSpeed || 0),
+                numPeers: torrent.numPeers || 0,
+                eta: calcEta(torrent),
+                status: progressPercent >= 100 ? 'completed' : (torrent.wires && torrent.wires.length > 0 ? 'downloading' : 'connecting')
+            });
+
+            // 检查是否有足够缓冲或已完成下载
+            if (downloaded >= MIN_BUFFER_SIZE || progressPercent >= 100) {
+                clearBufferWait();
+                startStreaming();
+                return;
+            }
+
+            // 继续等待
+            const bufferedMB = (downloaded / (1024 * 1024)).toFixed(1);
+            const neededMB = (MIN_BUFFER_SIZE / (1024 * 1024));
+            sendMessage({ type: 'log', message: `缓冲中: ${bufferedMB}MB / ${neededMB}MB` });
+        }
+
+        /**
+         * 清理缓冲等待相关资源
+         */
+        function clearBufferWait() {
+            if (bufferCheckInterval) {
+                clearInterval(bufferCheckInterval);
+                bufferCheckInterval = null;
+            }
+            if (bufferTimeout) {
+                clearTimeout(bufferTimeout);
+                bufferTimeout = null;
+            }
+            if (downloadListener && torrent && typeof torrent.removeListener === 'function') {
+                torrent.removeListener('download', downloadListener);
+                downloadListener = null;
+            }
+        }
+
+        /**
+         * 开始流式传输
+         */
+        function startStreaming() {
+            // 启动定期进度上报（每 1 秒）
+            streamPeerCheckInterval = setInterval(() => {
+                const numPeers = torrent.numPeers || 0;
+                const wires = torrent.wires ? torrent.wires.length : 0;
+                const speed = Number(torrent.downloadSpeed || 0);
+                const progressPercent = Math.round((torrent.progress || 0) * 100);
+                sendMessage({
+                    type: 'progress',
+                    infoHash: torrent.infoHash,
+                    fileName,
+                    progress: progressPercent,
+                    downloaded: Number(torrent.downloaded || 0),
+                    total: Number(file.length),
+                    wires,
+                    downloadSpeed: speed,
+                    numPeers,
+                    eta: calcEta(torrent),
+                    status: progressPercent >= 100 ? 'completed' : (wires > 0 ? 'downloading' : 'connecting')
+                });
+                // 同步通知主进程更新下载清单进度（节流由主进程负责）
+                sendMagnetStatus(torrent.infoHash, {
+                    status: 'downloading',
+                    fileName,
+                    downloaded: Number(torrent.downloaded || 0),
+                    total: Number(file.length),
+                    progress: progressPercent
+                });
+                // 下载完成后停止上报
+                if (progressPercent >= 100) {
+                    clearInterval(streamPeerCheckInterval);
+                }
+            }, 1000);
+
+            // 创建流服务器并返回streamUrl
+            createStreamServerAndResolve();
+        }
+
+        // 立即发送初始进度
         sendMessage({
             type: 'progress',
             infoHash: torrent.infoHash,
@@ -955,113 +1342,40 @@ function startFileStream(torrent, fileName, resolve, reject) {
             eta: calcEta(torrent),
             status: 'downloading'
         });
-        // 启动定期进度上报（每 1 秒）
-        // 频率比之前 5 秒更平滑，同时控制 IPC 流量在合理范围（每条 ~150B，约 150B/s）
-        // 不再用 torrent.on('download') 高频回调，避免刷爆 IPC 通道
-        // 复用模块级 streamPeerCheckInterval（提为模块级后下次进入 startFileStream 时可清理）
-        streamPeerCheckInterval = setInterval(() => {
-            const numPeers = torrent.numPeers || 0;
-            const wires = torrent.wires ? torrent.wires.length : 0;
-            const speed = Number(torrent.downloadSpeed || 0);
-            const progressPercent = Math.round((torrent.progress || 0) * 100);
-            sendMessage({
-                type: 'progress',
-                infoHash: torrent.infoHash,
-                fileName,
-                progress: progressPercent,
-                downloaded: Number(torrent.downloaded || 0),
-                total: Number(file.length),
-                wires,
-                downloadSpeed: speed,
-                numPeers,
-                eta: calcEta(torrent),
-                status: progressPercent >= 100 ? 'completed' : (wires > 0 ? 'downloading' : 'connecting')
-            });
-            // 同步通知主进程更新下载清单进度（节流由主进程负责）
-            sendMagnetStatus(torrent.infoHash, {
-                status: 'downloading',
-                fileName,
-                downloaded: Number(torrent.downloaded || 0),
-                total: Number(file.length),
-                progress: progressPercent
-            });
-            // 下载完成后停止上报
-            if (progressPercent >= 100) {
-                clearInterval(streamPeerCheckInterval);
-            }
-        }, 1000);
-    }
 
-    fileServer = http.createServer((req, res) => {
-        // 支持Range请求，实现拖动进度条
-        const range = req.headers.range;
-        const fileSize = file.length;
-
-        // 客户端关闭连接时静默处理，避免FileStream崩溃
-        res.on('close', () => {
-            // 连接被客户端关闭（正常行为，如seek/暂停/关闭播放器）
-        });
-
-        if (range) {
-            const parts = range.replace(/bytes=/, '').split('-');
-            const start = parseInt(parts[0], 10);
-            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-            const chunkSize = end - start + 1;
-
-            res.writeHead(206, {
-                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-                'Accept-Ranges': 'bytes',
-                'Content-Length': chunkSize,
-                'Content-Type': getContentType(fileName),
-                'Access-Control-Allow-Origin': '*'
-            });
-
-            if (isDownloaded) {
-                // 文件已下载完成，直接从本地文件读取（更快更稳定）
-                const readStream = fs.createReadStream(filePath, { start, end });
-                readStream.on('error', () => { /* 忽略流错误 */ });
-                readStream.pipe(res).on('error', () => { /* 忽略管道错误 */ });
-            } else {
-                // 文件未下载完成，通过webtorrent流式读取
-                const stream = file.createReadStream({ start, end });
-                stream.on('error', () => { /* 静默处理流错误 */ });
-                stream.pipe(res).on('error', () => { /* 静默处理管道错误 */ });
-            }
-        } else {
-            res.writeHead(200, {
-                'Content-Length': fileSize,
-                'Content-Type': getContentType(fileName),
-                'Access-Control-Allow-Origin': '*'
-            });
-
-            if (isDownloaded) {
-                const readStream = fs.createReadStream(filePath);
-                readStream.on('error', () => { /* 忽略流错误 */ });
-                readStream.pipe(res).on('error', () => { /* 忽略管道错误 */ });
-            } else {
-                const stream = file.createReadStream();
-                stream.on('error', () => { /* 静默处理流错误 */ });
-                stream.pipe(res).on('error', () => { /* 静默处理管道错误 */ });
-            }
+        // 检查当前是否已有足够缓冲
+        const currentDownloaded = Number(torrent.downloaded || 0);
+        if (currentDownloaded >= MIN_BUFFER_SIZE) {
+            sendMessage({ type: 'log', message: '已有足够缓冲，立即开始播放' });
+            startStreaming();
+            return;
         }
-    });
 
-    fileServer.listen(0, () => {
-        fileServerPort = fileServer.address().port;
-        const encodedName = encodeURIComponent(fileName);
-        const streamUrl = `http://localhost:${fileServerPort}/${encodedName}`;
+        sendMessage({ type: 'log', message: `等待缓冲: 需要 ${MIN_BUFFER_SIZE / (1024 * 1024)}MB，当前 ${currentDownloaded / (1024 * 1024).toFixed(1)}MB` });
 
-        sendMessage({ type: 'log', message: `文件流服务器启动: 端口${fileServerPort}` });
+        // 设置缓冲等待超时（避免无限等待）
+        bufferTimeout = setTimeout(() => {
+            sendMessage({ type: 'log', message: '缓冲等待超时，直接开始播放' });
+            clearBufferWait();
+            startStreaming();
+        }, BUFFER_TIMEOUT_MS);
 
-        resolve({
-            streamUrl,
-            isLocal: false
-        });
-    });
+        // 设置定期检查（每500ms检查一次）
+        bufferCheckInterval = setInterval(checkBuffer, 500);
 
-    fileServer.on('error', err => {
-        reject(new Error(`文件流服务器启动失败: ${err.message}`));
-    });
+        // 同时监听download事件（更快响应数据到达）
+        downloadListener = () => {
+            const downloaded = Number(torrent.downloaded || 0);
+            if (downloaded >= MIN_BUFFER_SIZE) {
+                checkBuffer();
+            }
+        };
+        if (torrent && typeof torrent.on === 'function') {
+            torrent.on('download', downloadListener);
+        }
+
+        return; // 等待缓冲完成后再resolve
+    }
 }
 
 /**

@@ -96,6 +96,22 @@ function setupIPC(qixingApp) {
         }
     });
 
+    // 渲染进程日志转发到终端
+    ipcMain.on('renderer-log', (event, data) => {
+        if (!data) return;
+        const level = data.level || 'info';
+        const message = data.message || '';
+        const detail = data.detail || '';
+        const output = detail ? `${message}: ${detail}` : message;
+        if (level === 'error') {
+            console.error('[RENDERER]', output);
+        } else if (level === 'warn') {
+            console.warn('[RENDERER]', output);
+        } else {
+            console.log('[RENDERER]', output);
+        }
+    });
+
     // 获取应用版本
     ipcMain.handle('get-app-version', () => require('electron').app.getVersion());
 
@@ -1308,9 +1324,9 @@ function setupIPC(qixingApp) {
                 }
             }
 
-            // 从磁力链接中提取infoHash
+            // 从磁力链接中提取infoHash（支持40位hex和32位base32）
             if (!infoHash) {
-                const hashMatch = normalizedUri.match(/btih:([a-fA-F0-9]{40})/i);
+                const hashMatch = normalizedUri.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7]{32})/i);
                 if (hashMatch) {
                     infoHash = hashMatch[1].toLowerCase();
                 }
@@ -1349,6 +1365,7 @@ function setupIPC(qixingApp) {
             rememberMagnetUri(infoHash, magnetUri);
             // 发送初始进度
             const initialProgress = {
+                infoHash,
                 fileName,
                 progress: 0,
                 downloaded: 0,

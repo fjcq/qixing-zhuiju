@@ -20,19 +20,39 @@ class QixingZhuijuApp {
     }
 
     /**
+     * 将日志转发到主进程终端
+     * @param {string} level - 日志级别
+     * @param {string} message - 日志消息
+     * @param {*} detail - 详细信息
+     */
+    _logToTerminal(level, message, detail) {
+        try {
+            if (window.electron && window.electron.ipcRenderer) {
+                window.electron.ipcRenderer.send('renderer-log', { level, message, detail: detail ? String(detail) : undefined });
+            }
+        } catch (e) {
+            // 忽略转发失败
+        }
+    }
+
+    /**
      * 设置全局错误处理
      */
     setupGlobalErrorHandling() {
         // 捕获未处理的Promise拒绝
         window.addEventListener('unhandledrejection', event => {
-            console.error('[APP] 未处理的Promise拒绝:', event.reason);
+            const reason = event.reason;
+            console.error('[APP] 未处理的Promise拒绝:', reason);
+            this._logToTerminal('error', '[APP] 未处理的Promise拒绝', reason?.stack || reason?.message || reason);
             this.showError('操作失败，请稍后重试');
             event.preventDefault();
         });
 
         // 捕获全局错误
         window.addEventListener('error', event => {
-            console.error('[APP] 全局错误:', event.error || event.message);
+            const err = event.error || event.message;
+            console.error('[APP] 全局错误:', err);
+            this._logToTerminal('error', '[APP] 全局错误', err?.stack || err?.message || err);
             // 不阻止默认错误处理，只记录日志
         });
 

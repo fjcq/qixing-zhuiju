@@ -46,6 +46,8 @@
             this._currentMagnetUri = '';
             this._currentInfoHash = '';
             this._parseCancelled = false;
+            this._parseStartTime = 0;
+            this._parseTimeoutTimer = null;
             this._detectTimer = null;
 
             // 子模块：延迟创建，确保全局已就绪
@@ -434,10 +436,24 @@
             this._currentMagnetUri = magnetUri;
             this._currentInfoHash = infoHash || '';
             this._parseCancelled = false;
+            this._parseStartTime = Date.now();
             this._setState(STATE.PARSE_PROGRESS);
             this._showProgress('正在解析磁力链接...', 0, 'info');
             // 注意：磁力历史在 _playMagnetFile 用户真正挑了文件后才写入（这里不写）
             // 避免"未观看"却产生历史条目（之前一直显示"正片"就是这个原因）
+
+            // 解析阶段超时提示：30秒无结果时提醒用户，60秒时建议取消
+            this._parseTimeoutTimer = setTimeout(() => {
+                if (this.state !== STATE.PARSE_PROGRESS || this._parseCancelled) return;
+                const elapsed = Math.round((Date.now() - this._parseStartTime) / 1000);
+                this._showProgress(`解析中...已等待 ${elapsed} 秒，资源可能较冷门`, 5, 'warning');
+                // 60秒二次提醒
+                this._parseTimeoutTimer = setTimeout(() => {
+                    if (this.state !== STATE.PARSE_PROGRESS || this._parseCancelled) return;
+                    const elapsed2 = Math.round((Date.now() - this._parseStartTime) / 1000);
+                    this._showProgress(`解析超时（${elapsed2} 秒），建议取消后重试或更换链接`, 5, 'error');
+                }, 30000);
+            }, 30000);
 
             try {
                 const result = await this._magnetParser.parse(magnetUri);
@@ -460,6 +476,12 @@
                 this._showProgress(`解析失败: ${error.message}`, 0, 'error');
                 this._setState(STATE.EDITING);
                 this._notify(`磁力链解析失败: ${error.message}`, 'error');
+            } finally {
+                // 清理超时计时器
+                if (this._parseTimeoutTimer) {
+                    clearTimeout(this._parseTimeoutTimer);
+                    this._parseTimeoutTimer = null;
+                }
             }
         }
 
@@ -473,10 +495,85 @@
             if (this.state !== STATE.PARSE_PROGRESS && this.state !== STATE.PLAYING) {
                 return;
             }
-            const status = data.status || (data.progress >= 100 ? '完成' : '处理中...');
-            // 主进程日志转发的 progress 通常是 0（不确定进度），下载阶段是 0-100
-            const pct = typeof data.progress === 'number' ? data.progress : 0;
-            this._showProgress(status, pct, 'info');
+            const status = data.status || '';
+            const rawPct = typeof data.progress === 'number' ? data.progress : 0;
+
+            // resolve 阶段（source === 'log'）：子进程 log 消息，progress 始终为 0
+            // 需要根据日志内容推断阶段并给伪进度，让用户感知到系统在推进
+            if (data.source === 'log' && this.state === STATE.PARSE_PROGRESS) {
+                const mapped = this._mapResolveLogToStage(status);
+                this._showProgress(mapped.text, mapped.progress, mapped.variant);
+                return;
+            }
+
+            // 非 log 来源（如 play 阶段的 magnet-download-progress）：直接用原始进度
+            const pct = rawPct >= 100 ? 100 : rawPct;
+            this._showProgress(status || '处理中...', pct, 'info');
+        }
+
+        /**
+         * 将 resolve 阶段的子进程日志消息映射为阶段化进度
+         * 解决"正在解析磁力链..."长时间无变化的用户体验问题
+         * @param {string} logMessage - 子进程 log 消息文本
+         * @returns {{ text: string, progress: number, variant: string }}
+         */
+        _mapResolveLogToStage(logMessage) {
+            if (!logMessage) {
+                return { text: '正在解析磁力链接...', progress: 0, variant: 'info' };
+            }
+
+            // 计算已等待时间，用于显示等待秒数
+            const elapsed = this._parseStartTime
+                ? Math.round((Date.now() - this._parseStartTime) / 1000)
+                : 0;
+            const elapsedText = elapsed > 0 ? ` (${elapsed}秒)` : '';
+
+            // 阶段1：规范化/初始化（tracker、缓存等）
+            if (/规范化|tracker|缓存|DHT/.test(logMessage)) {
+                return {
+                    text: '正在初始化连接...' + elapsedText,
+                    progress: 3,
+                    variant: 'info'
+                };
+            }
+
+            // 阶段2：发现 peer
+            const peerMatch = logMessage.match(/已发现\s*(\d+)\s*个\s*peer/);
+            if (peerMatch) {
+                const peerCount = parseInt(peerMatch[1], 10) || 0;
+                // peer 数越多，伪进度越高（给用户"快了"的感觉），上限 15%
+                const pseudoProgress = Math.min(15, 5 + peerCount);
+                return {
+                    text: `正在搜索节点...已发现 ${peerCount} 个peer` + elapsedText,
+                    progress: pseudoProgress,
+                    variant: peerCount > 0 ? 'info' : 'warning'
+                };
+            }
+
+            // 阶段3：解析中（通用）
+            if (/解析中/.test(logMessage)) {
+                return {
+                    text: '正在获取元数据...' + elapsedText,
+                    progress: 8,
+                    variant: 'info'
+                };
+            }
+
+            // 阶段4：复用已有 torrent
+            if (/复用/.test(logMessage)) {
+                return {
+                    text: '复用已有资源，快速加载中...',
+                    progress: 15,
+                    variant: 'info'
+                };
+            }
+
+            // 其他日志：保留原文但加等待时间
+            return {
+                text: logMessage + elapsedText,
+                progress: 2,
+                variant: 'info'
+            };
         }
 
         /**
@@ -484,6 +581,11 @@
          */
         _handleParseCancel() {
             this._parseCancelled = true;
+            // 清理超时计时器
+            if (this._parseTimeoutTimer) {
+                clearTimeout(this._parseTimeoutTimer);
+                this._parseTimeoutTimer = null;
+            }
             this._hideProgress();
             this._setState(STATE.EDITING);
             this._notify('已取消磁力链解析', 'info');
@@ -738,10 +840,15 @@
                 if (!stageEl) {
                     stageEl = document.createElement('div');
                     stageEl.className = 'progress-stage';
-                    if (progressFill) {
-                        progress.insertBefore(stageEl, progressFill);
-                    } else {
-                        progress.appendChild(stageEl);
+                    try {
+                        if (progressFill && progressFill.parentNode === progress) {
+                            progress.insertBefore(stageEl, progressFill);
+                        } else {
+                            progress.appendChild(stageEl);
+                        }
+                    } catch (e) {
+                        // DOM操作失败时回退到appendChild
+                        try { progress.appendChild(stageEl); } catch (ignored) { /* 忽略 */ }
                     }
                 }
                 stageEl.textContent = text || '';

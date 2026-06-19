@@ -345,6 +345,8 @@ class VideoPlayer {
         this._magnetCasting = false;
         // 视频处于暂停态（含 ended）时为 true；暂停时画面静止，显示信息栏不干扰观影
         this._magnetPaused = false;
+        // 当前播放的磁力文件 infoHash，用于过滤非当前文件的进度消息
+        this._currentMagnetInfoHash = null;
 
         // 初始化标题栏控制
         this.initializeTitlebarControls();
@@ -447,6 +449,11 @@ class VideoPlayer {
 
             // 监听磁力链下载进度
             this._magnetProgressHandler = (data) => {
+                // 过滤非当前播放文件的进度消息，防止同时下载多个磁力文件时信息栏来回切换
+                if (this._currentMagnetInfoHash && data.infoHash &&
+                    data.infoHash !== this._currentMagnetInfoHash) {
+                    return;
+                }
                 // 一旦收到磁力链进度事件，强制设置播放源为 magnet 并显示信息栏
                 this.playSource = 'magnet';
                 this.updateMagnetInfo(data);
@@ -543,6 +550,8 @@ class VideoPlayer {
         if (incomingPlaySource === 'magnet') {
             this.playSource = 'magnet';
             this.isDirectPlayMode = true;
+            // 保存当前播放磁力文件的 infoHash，用于过滤进度消息
+            this._currentMagnetInfoHash = data.infoHash || data.videoData?.infoHash || null;
             // 切换到新磁力链源：重置智能显隐状态（避免残留旧源 buffering/error/paused）
             this._magnetBuffering = false;
             this._magnetHasError = false;
@@ -562,6 +571,7 @@ class VideoPlayer {
         } else if (this.playSource === 'magnet' && incomingPlaySource && incomingPlaySource !== 'magnet') {
             // 切换到非磁力链源时隐藏
             this.playSource = incomingPlaySource;
+            this._currentMagnetInfoHash = null;
             this.hideMagnetInfo();
         } else if (incomingPlaySource) {
             this.playSource = incomingPlaySource;

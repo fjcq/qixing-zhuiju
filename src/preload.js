@@ -20,7 +20,8 @@ contextBridge.exposeInMainWorld('electron', {
                 'window-maximize',
                 'toggle-always-on-top',
                 'start-system-casting',
-                'stop-casting'
+                'stop-casting',
+                'renderer-log'
             ];
             if (validChannels.includes(channel)) {
                 ipcRenderer.send(channel, data);
