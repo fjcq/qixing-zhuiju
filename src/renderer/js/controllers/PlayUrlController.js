@@ -47,7 +47,8 @@
             this._currentInfoHash = '';
             this._parseCancelled = false;
             this._parseStartTime = 0;
-            this._parseTimeoutTimer = null;
+            this._parseTimeoutTimer1 = null;
+            this._parseTimeoutTimer2 = null;
             this._detectTimer = null;
 
             // 子模块：延迟创建，确保全局已就绪
@@ -443,12 +444,12 @@
             // 避免"未观看"却产生历史条目（之前一直显示"正片"就是这个原因）
 
             // 解析阶段超时提示：30秒无结果时提醒用户，60秒时建议取消
-            this._parseTimeoutTimer = setTimeout(() => {
+            this._parseTimeoutTimer1 = setTimeout(() => {
                 if (this.state !== STATE.PARSE_PROGRESS || this._parseCancelled) return;
                 const elapsed = Math.round((Date.now() - this._parseStartTime) / 1000);
                 this._showProgress(`解析中...已等待 ${elapsed} 秒，资源可能较冷门`, 5, 'warning');
                 // 60秒二次提醒
-                this._parseTimeoutTimer = setTimeout(() => {
+                this._parseTimeoutTimer2 = setTimeout(() => {
                     if (this.state !== STATE.PARSE_PROGRESS || this._parseCancelled) return;
                     const elapsed2 = Math.round((Date.now() - this._parseStartTime) / 1000);
                     this._showProgress(`解析超时（${elapsed2} 秒），建议取消后重试或更换链接`, 5, 'error');
@@ -474,13 +475,17 @@
                 }
                 console.error('[PlayUrlController] 磁力链解析失败:', error);
                 this._showProgress(`解析失败: ${error.message}`, 0, 'error');
+                this._autoHideProgressOnError();
                 this._setState(STATE.EDITING);
-                this._notify(`磁力链解析失败: ${error.message}`, 'error');
             } finally {
                 // 清理超时计时器
-                if (this._parseTimeoutTimer) {
-                    clearTimeout(this._parseTimeoutTimer);
-                    this._parseTimeoutTimer = null;
+                if (this._parseTimeoutTimer1) {
+                    clearTimeout(this._parseTimeoutTimer1);
+                    this._parseTimeoutTimer1 = null;
+                }
+                if (this._parseTimeoutTimer2) {
+                    clearTimeout(this._parseTimeoutTimer2);
+                    this._parseTimeoutTimer2 = null;
                 }
             }
         }
@@ -582,9 +587,13 @@
         _handleParseCancel() {
             this._parseCancelled = true;
             // 清理超时计时器
-            if (this._parseTimeoutTimer) {
-                clearTimeout(this._parseTimeoutTimer);
-                this._parseTimeoutTimer = null;
+            if (this._parseTimeoutTimer1) {
+                clearTimeout(this._parseTimeoutTimer1);
+                this._parseTimeoutTimer1 = null;
+            }
+            if (this._parseTimeoutTimer2) {
+                clearTimeout(this._parseTimeoutTimer2);
+                this._parseTimeoutTimer2 = null;
             }
             this._hideProgress();
             this._setState(STATE.EDITING);
@@ -689,12 +698,12 @@
             } catch (err) {
                 console.error('[PlayUrlController] 播放磁力文件失败:', err);
                 this._showProgress('✗ 播放失败: ' + ((err && err.message) || err), 0, 'error');
+                this._autoHideProgressOnError();
                 this._magnetParser.removeDownloadProgressListener();
                 if (window.electron && window.electron.removePlayerLoadedListener) {
                     window.electron.removePlayerLoadedListener();
                     window.electron.removePlayerCanplayListener();
                 }
-                this._notify('播放失败: ' + ((err && err.message) || err), 'error');
                 throw err;
             }
         }
@@ -887,6 +896,26 @@
                 }
                 globalProgress.style.display = 'none';
             }
+            // 清理自动隐藏计时器
+            if (this._autoHideTimer) {
+                clearTimeout(this._autoHideTimer);
+                this._autoHideTimer = null;
+            }
+        }
+
+        /**
+         * 错误状态下自动隐藏进度条
+         * 先展示错误信息 4 秒让用户看到，然后自动隐藏（含 spinner）
+         * 避免失败后浮动条一直转圈不消失
+         */
+        _autoHideProgressOnError() {
+            if (this._autoHideTimer) {
+                clearTimeout(this._autoHideTimer);
+            }
+            this._autoHideTimer = setTimeout(() => {
+                this._hideProgress();
+                this._autoHideTimer = null;
+            }, 4000);
         }
 
         /**
@@ -991,13 +1020,13 @@
             } catch (error) {
                 console.error('[PlayUrlController] 恢复磁力文件失败:', error);
                 this._showProgress(`恢复失败: ${error.message}`, 0, 'error');
+                this._autoHideProgressOnError();
                 // 清理订阅
                 this._magnetParser.removeDownloadProgressListener();
                 if (window.electron && window.electron.removePlayerLoadedListener) {
                     window.electron.removePlayerLoadedListener();
                     window.electron.removePlayerCanplayListener();
                 }
-                this._notify(`恢复失败: ${error.message}`, 'error');
                 return false;
             }
         }
