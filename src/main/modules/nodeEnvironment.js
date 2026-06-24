@@ -303,12 +303,14 @@ async function getStatus() {
     // 检测 magnet-runtime 完整性
     // 关键：magnet-runtime/node_modules 必须在打包资源里
     // 缺失时所有 Node.js 路径都救不了——必须明确告诉用户
+    // 优先检查开发环境路径是否存在，避免 app.isPackaged 误判
     let magnetRuntimePath = '';
     let magnetRuntimeOk = false;
-    if (app && app.isPackaged) {
-        magnetRuntimePath = path.join(process.resourcesPath, 'magnet-runtime');
+    const devMagnetRuntimePath = path.join(__dirname, '..', '..', '..', 'magnet-runtime');
+    if (fs.existsSync(devMagnetRuntimePath)) {
+        magnetRuntimePath = devMagnetRuntimePath;
     } else {
-        magnetRuntimePath = path.join(__dirname, '..', '..', '..', 'magnet-runtime');
+        magnetRuntimePath = path.join(process.resourcesPath, 'magnet-runtime');
     }
     try {
         // 必须存在 webtorrent 才能用，否则只算半个环境

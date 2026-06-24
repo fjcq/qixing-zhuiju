@@ -337,7 +337,15 @@ async function resolveMagnet(magnetUri, infoHash) {
     const normalizedUri = normalizeMagnetUri(magnetUri);
 
     // 检查是否已存在相同infoHash且元数据已就绪的torrent
-    const existingTorrent = c.get(infoHash);
+    // 关键：webtorrent v2.x 的 c.get() 返回 Promise，不能同步使用
+    // 改用 c.torrents 数组同步查找（与 playMagnetFile 中 findReusableTorrent 一致）
+    const lowerHash = String(infoHash || '').toLowerCase();
+    let existingTorrent = null;
+    if (currentTorrent && currentTorrent.infoHash === lowerHash) {
+        existingTorrent = currentTorrent;
+    } else if (c && Array.isArray(c.torrents)) {
+        existingTorrent = c.torrents.find(t => t && t.infoHash === lowerHash) || null;
+    }
     if (existingTorrent && existingTorrent.files && existingTorrent.files.length > 0) {
         sendMessage({ type: 'log', message: '复用已存在的torrent实例' });
         currentTorrent = existingTorrent;
@@ -661,6 +669,8 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
         let noPeerTimeout = null;
         let slowTimeout = null;
         let stallWatchdog = null;
+        // 客户端级别错误监听（提前声明，避免 clearAllTimers 在路径 A/B 调用时 TDZ 报错）
+        let onClientError = null;
 
         // 停滞检测阈值：自上次收到新数据起，N 秒内完全无进展才判失败
         // 替代原来的"固定 2 分钟总超时"——原来不论下载有没有在跑，到点就 reject，
@@ -697,7 +707,7 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
                 slowTimeout = null;
             }
             // 移除客户端级别错误监听，防止内存泄漏
-            if (c && typeof onClientError === 'function') {
+            if (c && onClientError) {
                 c.off('error', onClientError);
             }
         }
@@ -1075,7 +1085,8 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
             }
 
         // 客户端级别错误监听（具名函数，Promise settle 后移除，防止重复累积）
-        const onClientError = (err) => {
+        // 已在 Promise 构造器顶部声明为 let onClientError = null，此处赋值
+        onClientError = (err) => {
             if (settled) return;
             // 过滤 "Cannot add duplicate torrent" 异步错误：
             // webtorrent v2 在 c.add 传入已存在 infoHash 时，既会异步触发 error 事件，

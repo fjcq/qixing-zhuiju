@@ -667,7 +667,10 @@
                     return;
                 }
                 if (!playResult || !playResult.streamUrl) {
-                    throw new Error('播放准备失败:未获取到流地址');
+                    const detail = playResult && playResult.error
+                        ? playResult.error
+                        : '未获取到流地址';
+                    throw new Error('播放准备失败:' + detail);
                 }
 
                 // 阶段 P3: 启动流服务器(play 已 resolve,streamUrl 拿到)

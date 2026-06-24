@@ -899,22 +899,24 @@ function setupIPC(qixingApp) {
         const { spawn } = require('child_process');
         const path = require('path');
 
-        // 脚本路径：打包后在resources/magnet-scripts，开发环境在src/main/scripts
+        // 脚本路径：优先检查开发环境路径是否存在，再回退到打包路径
+        // 关键：app.isPackaged 在某些开发环境（如 npx electron .）下可能误判为 true，
+        //       导致路径指向 Electron 二进制目录下不存在的 resources/ 子目录
+        const devScriptPath = path.join(__dirname, '..', 'scripts', 'magnetHandler.mjs');
         let scriptPath;
-        if (app.isPackaged) {
-            scriptPath = path.join(process.resourcesPath, 'magnet-scripts', 'magnetHandler.mjs');
+        if (fs.existsSync(devScriptPath)) {
+            scriptPath = devScriptPath;
         } else {
-            scriptPath = path.join(__dirname, '..', 'scripts', 'magnetHandler.mjs');
+            scriptPath = path.join(process.resourcesPath, 'magnet-scripts', 'magnetHandler.mjs');
         }
 
-        // magnet-runtime目录：开发环境在项目根目录，打包后在resources目录
+        // magnet-runtime目录：优先检查开发环境路径，再回退到打包路径
+        const devMagnetRuntimeDir = path.join(__dirname, '..', '..', '..', 'magnet-runtime');
         let magnetRuntimeDir;
-        if (app.isPackaged) {
-            // 打包后：extraResources放在resources/magnet-runtime
-            magnetRuntimeDir = path.join(process.resourcesPath, 'magnet-runtime');
+        if (fs.existsSync(devMagnetRuntimeDir)) {
+            magnetRuntimeDir = devMagnetRuntimeDir;
         } else {
-            // 开发环境：项目根目录/magnet-runtime
-            magnetRuntimeDir = path.join(__dirname, '..', '..', '..', 'magnet-runtime');
+            magnetRuntimeDir = path.join(process.resourcesPath, 'magnet-runtime');
         }
         const nodeModulesPath = path.join(magnetRuntimeDir, 'node_modules');
 
@@ -1001,6 +1003,7 @@ function setupIPC(qixingApp) {
                     }
                     magnetPendingRequests.clear();
                     magnetProcess = null;
+                    magnetProcessStartPromise = null;
                 });
 
                 child.on('exit', (code, signal) => {
@@ -1016,6 +1019,7 @@ function setupIPC(qixingApp) {
                         magnetPendingRequests.clear();
                     }
                     magnetProcess = null;
+                    magnetProcessStartPromise = null;
                 });
 
                 return child;
@@ -1041,6 +1045,7 @@ function setupIPC(qixingApp) {
         // 立即取出引用并清空全局变量，避免重入时重复处理同一个进程
         const proc = magnetProcess;
         magnetProcess = null;
+        magnetProcessStartPromise = null;
 
         if (proc && !proc.killed) {
             try {
