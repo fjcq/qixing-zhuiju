@@ -1120,13 +1120,29 @@ function setupIPC(qixingApp) {
     }
 
     /**
+     * 判断磁力日志是否为需要输出到终端的关键消息
+     * 屏蔽高频刷屏消息：缓冲进度、wire连接、tracker超时、操作中止等
+     */
+    const MAGNET_NOISY_PATTERNS = [
+        /^缓冲中:/,
+        /tracker request timed out/,
+        /This operation was aborted/
+    ];
+    function isMagnetKeyLog(text) {
+        if (!text || typeof text !== 'string') return false;
+        return !MAGNET_NOISY_PATTERNS.some(p => p.test(text));
+    }
+
+    /**
      * 处理磁力链子进程的消息
      */
     function handleMagnetMessage(msg) {
-        // 日志消息：主进程控制台输出 + 转发为 magnet-progress 事件到主窗口
+        // 日志消息：仅关键消息输出到终端，所有消息仍转发为 magnet-progress 事件到主窗口
         // 解决 resolve 阶段 60s 阻塞等待期间，渲染端进度区一直卡在 0% 的问题
         if (msg.type === 'log') {
-            console.log('[MAIN] [MAGNET]', msg.message);
+            if (isMagnetKeyLog(msg.message)) {
+                console.log('[MAIN] [MAGNET]', msg.message);
+            }
             if (qixingApp.mainWindow && !qixingApp.mainWindow.isDestroyed()) {
                 qixingApp.mainWindow.webContents.send('magnet-progress', {
                     status: msg.message,
@@ -1138,13 +1154,16 @@ function setupIPC(qixingApp) {
             return;
         }
 
+        // wire连接消息：不输出到终端（高频刷屏），仅转发到渲染端
         if (msg.type === 'wire') {
-            console.log('[MAIN] [MAGNET] wire连接:', msg.address);
             return;
         }
 
+        // 警告消息：仅关键警告输出到终端（屏蔽tracker超时/操作中止等高频噪音）
         if (msg.type === 'warning') {
-            console.warn('[MAIN] [MAGNET] 警告:', msg.message);
+            if (isMagnetKeyLog(msg.message)) {
+                console.warn('[MAIN] [MAGNET] 警告:', msg.message);
+            }
             return;
         }
 
