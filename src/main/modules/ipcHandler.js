@@ -899,21 +899,23 @@ function setupIPC(qixingApp) {
         const { spawn } = require('child_process');
         const path = require('path');
 
-        // 脚本路径：优先检查开发环境路径是否存在，再回退到打包路径
-        // 关键：app.isPackaged 在某些开发环境（如 npx electron .）下可能误判为 true，
-        //       导致路径指向 Electron 二进制目录下不存在的 resources/ 子目录
+        // 脚本路径：检测是否在 asar 包内运行
+        // 关键：打包后 __dirname 指向 app.asar 内部，fs.existsSync 能命中 asar 内文件
+        //       （Electron 补丁），但子进程用原生 import() 无法读取 asar 路径
+        //       所以必须检测 asar，打包环境下直接用 process.resourcesPath 路径
+        const isAsar = __dirname.includes('.asar');
         const devScriptPath = path.join(__dirname, '..', 'scripts', 'magnetHandler.mjs');
         let scriptPath;
-        if (fs.existsSync(devScriptPath)) {
+        if (!isAsar && fs.existsSync(devScriptPath)) {
             scriptPath = devScriptPath;
         } else {
             scriptPath = path.join(process.resourcesPath, 'magnet-scripts', 'magnetHandler.mjs');
         }
 
-        // magnet-runtime目录：优先检查开发环境路径，再回退到打包路径
+        // magnet-runtime目录：同上，asar 内的路径不能被子进程的 import() 读取
         const devMagnetRuntimeDir = path.join(__dirname, '..', '..', '..', 'magnet-runtime');
         let magnetRuntimeDir;
-        if (fs.existsSync(devMagnetRuntimeDir)) {
+        if (!isAsar && fs.existsSync(devMagnetRuntimeDir)) {
             magnetRuntimeDir = devMagnetRuntimeDir;
         } else {
             magnetRuntimeDir = path.join(process.resourcesPath, 'magnet-runtime');
