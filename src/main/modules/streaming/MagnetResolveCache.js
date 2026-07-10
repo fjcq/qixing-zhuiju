@@ -75,8 +75,9 @@ class MagnetResolveCache
         {
             this._entries.delete(infoHash);
         }
+        // 深拷贝 files，避免调用方修改输入数组污染内部缓存（与 get 防御对称）
         const entry = {
-            files,
+            files: structuredClone(files),
             totalSize,
             cachedAt: Date.now()
         };

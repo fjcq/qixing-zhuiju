@@ -198,6 +198,18 @@ describe('MagnetResolveCache', () =>
             cache.set('hash1', [{ path: 'updated.mp4', length: 999 }], 999);
             expect(cache.size()).toBe(2);
         });
+
+        it('set 后修改输入 files 不影响内部缓存', () =>
+        {
+            const cache = new MagnetResolveCache({ ttlMs: 1000, maxEntries: 3 });
+            const files = [{ name: 'a.mp4', size: 100 }];
+            cache.set('hash1', files, 100);
+            files[0].name = 'modified';
+            files.push({ name: 'b.mp4', size: 200 });
+            const result = cache.get('hash1');
+            expect(result.files[0].name).toBe('a.mp4');
+            expect(result.files).toHaveLength(1);
+        });
     });
 
     describe('has', () =>
