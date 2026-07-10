@@ -348,6 +348,9 @@ class VideoPlayer {
         // 当前播放的磁力文件 infoHash，用于过滤非当前文件的进度消息
         this._currentMagnetInfoHash = null;
 
+        // 边下边播缓冲监测的清理函数（由 setupStreamingBufferMonitor 返回）
+        this._streamingBufferCleanup = null;
+
         // 初始化标题栏控制
         this.initializeTitlebarControls();
     }
@@ -474,6 +477,84 @@ class VideoPlayer {
                 topRightControls.style.pointerEvents = 'none';
             }
         }, 100);
+
+        // 启动边下边播缓冲监测（返回 cleanup，由 cleanup() 统一回收）
+        this._streamingBufferCleanup = this.setupStreamingBufferMonitor();
+    }
+
+    /**
+     * 设置边下边播缓冲监测
+     * 监听 video 元素的 waiting/playing 事件与 streaming:prebuffer 事件,
+     * 当缓冲可用时长 < 10 秒且未 ready 时显示"缓冲中..."提示, 恢复后隐藏
+     * @returns {Function} cleanup 函数, 调用以移除所有监听并隐藏提示
+     */
+    setupStreamingBufferMonitor() {
+        // 缓冲告警阈值（秒）：低于此值显示提示
+        const BUFFER_WARN_THRESHOLD = 10;
+
+        // 创建或复用缓冲提示元素（与 player-loading 同层，避免抢占）
+        let warnEl = document.querySelector('.player-buffer-warn');
+        if (!warnEl) {
+            warnEl = document.createElement('div');
+            warnEl.className = 'player-buffer-warn';
+            const textEl = document.createElement('p');
+            textEl.textContent = '缓冲中...';
+            warnEl.appendChild(textEl);
+            // 优先挂到 video 父容器，回退到 .player-container
+            const container = (this.video && this.video.parentElement)
+                || document.querySelector('.player-container');
+            if (container) {
+                container.appendChild(warnEl);
+            }
+        }
+
+        // 显示/隐藏提示
+        const showWarn = () => warnEl.classList.add('is-active');
+        const hideWarn = () => warnEl.classList.remove('is-active');
+
+        // video 事件：waiting 显示提示，playing 隐藏提示
+        const onWaiting = () => showWarn();
+        const onPlaying = () => hideWarn();
+
+        if (this.video) {
+            this.video.addEventListener('waiting', onWaiting);
+            this.video.addEventListener('playing', onPlaying);
+        }
+
+        // 订阅 streaming:prebuffer 事件（payload: { taskId, bufferedSeconds, target, ready }）
+        let unsubscribe = null;
+        if (window.electron && window.electron.streaming
+            && typeof window.electron.streaming.on === 'function') {
+            unsubscribe = window.electron.streaming.on('streaming:prebuffer', (payload) => {
+                if (!payload) {
+                    return;
+                }
+                // ready 为 true 表示首批缓冲就绪，立即隐藏
+                if (payload.ready === true) {
+                    hideWarn();
+                    return;
+                }
+                // 缓冲可用时长低于阈值时显示，否则隐藏
+                if (typeof payload.bufferedSeconds === 'number'
+                    && payload.bufferedSeconds < BUFFER_WARN_THRESHOLD) {
+                    showWarn();
+                } else {
+                    hideWarn();
+                }
+            });
+        }
+
+        // 返回 cleanup 函数：移除所有监听并隐藏提示
+        return () => {
+            if (this.video) {
+                this.video.removeEventListener('waiting', onWaiting);
+                this.video.removeEventListener('playing', onPlaying);
+            }
+            if (typeof unsubscribe === 'function') {
+                unsubscribe();
+            }
+            hideWarn();
+        };
     }
 
     // 初始化弹幕系统
@@ -3843,6 +3924,12 @@ class VideoPlayer {
 
         // 清理网页播放器
         this.cleanupWebPage();
+
+        // 移除边下边播缓冲监测
+        if (typeof this._streamingBufferCleanup === 'function') {
+            this._streamingBufferCleanup();
+            this._streamingBufferCleanup = null;
+        }
     }
 
     // 投屏功能 - 切换投屏状态

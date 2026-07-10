@@ -794,6 +794,35 @@ body .player-container .player-overlay.show .top-right-controls {
     margin: 0;
 }
 
+/* 边下边播缓冲提示（默认隐藏，添加 .is-active 显示） */
+.player-buffer-warn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 140;
+    background: rgba(0, 0, 0, 0.55);
+    padding: var(--spacing-lg) var(--spacing-xl);
+    border-radius: var(--radius-lg);
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.player-buffer-warn.is-active {
+    opacity: 1;
+}
+
+.player-buffer-warn p {
+    font-size: var(--font-size-base);
+    color: var(--color-text-secondary);
+    margin: 0;
+}
+
 .player-error {
     position: absolute;
     top: 50%;
