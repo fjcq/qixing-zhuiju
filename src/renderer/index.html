@@ -299,6 +299,21 @@
                             </div>
                         </div>
 
+                        <!-- 剩余空间指示器 + 全局限速（Task 16 新增） -->
+                        <div class="downloads-meta-bar">
+                            <div id="downloads-storage-indicator" class="storage-indicator hidden">
+                                <!-- 由 DownloadController._refreshStorageInfo 动态填充 -->
+                            </div>
+                            <div class="global-speed-control">
+                                <label for="downloads-global-speed">全局限速：</label>
+                                <input type="range" id="downloads-global-speed" min="0" max="5" step="1" value="0" title="拖动调整全局下载速度上限">
+                                <span id="downloads-global-speed-label">不限</span>
+                            </div>
+                        </div>
+
+                        <!-- 完成通知横幅（Notification API 不可用时的 fallback） -->
+                        <div id="downloads-completion-banner" class="completion-banner hidden"></div>
+
                         <!-- 工具栏：搜索 + 分类筛选 + 排序 -->
                         <div class="downloads-toolbar">
                             <div class="downloads-search">

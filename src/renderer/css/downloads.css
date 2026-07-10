@@ -383,3 +383,169 @@
         padding: 1px 6px;
     }
 }
+
+/* ==================== Task 16: 下载页元数据栏（剩余空间 + 全局限速） ==================== */
+.downloads-meta-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 14px;
+    background: var(--glass-bg-soft, rgba(255, 255, 255, 0.05));
+    border-radius: 10px;
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+/* 剩余空间指示器 */
+.storage-indicator {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1 1 240px;
+    min-width: 0;
+}
+
+.storage-bar {
+    width: 120px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.storage-bar-used {
+    height: 100%;
+    background: var(--color-accent, #4dabf7);
+    transition: width 0.3s ease;
+}
+
+.storage-text {
+    font-size: 13px;
+    color: var(--text-primary, #fff);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.storage-path {
+    font-size: 12px;
+    color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 220px;
+}
+
+/* 空间不足警告（< 5GB） */
+.storage-indicator.storage-warning .storage-bar-used {
+    background: #ffa94d;
+}
+
+.storage-indicator.storage-warning .storage-text {
+    color: #ffa94d;
+}
+
+/* 全局限速控制 */
+.global-speed-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-primary, #fff);
+    flex-shrink: 0;
+}
+
+.global-speed-control label {
+    color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.global-speed-control input[type="range"] {
+    width: 120px;
+    cursor: pointer;
+    accent-color: var(--color-accent, #4dabf7);
+}
+
+.global-speed-control span {
+    min-width: 60px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary, #fff);
+}
+
+/* ==================== 完成通知横幅（fallback） ==================== */
+.completion-banner {
+    position: fixed;
+    top: 60px;
+    right: 20px;
+    padding: 12px 20px;
+    background: #69db7c;
+    color: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    opacity: 0;
+    transform: translateX(20px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none;
+    font-size: 13px;
+    max-width: 320px;
+}
+
+.completion-banner.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* ==================== 任务卡片错误状态 + 行动按钮 ==================== */
+.downloads-item.task-error {
+    border-color: rgba(255, 107, 107, 0.5) !important;
+    background: rgba(255, 107, 107, 0.05);
+}
+
+.task-error-area {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: rgba(255, 107, 107, 0.1);
+    border-radius: 6px;
+    border-left: 3px solid #ff6b6b;
+    width: 100%;
+}
+
+.task-error-message {
+    font-size: 12px;
+    color: #ff8b8b;
+    margin-bottom: 8px;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.task-error-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.task-error-action {
+    padding: 4px 12px;
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary, #fff);
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.task-error-action:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* 让 task-error-area 在 flex 容器中占满整行 */
+.downloads-item.task-error {
+    flex-wrap: wrap;
+}

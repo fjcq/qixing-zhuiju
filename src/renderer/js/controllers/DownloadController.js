@@ -42,6 +42,18 @@
             this.initialized = true;
             this._bindEvents();
             this._bindIpcListeners();
+            // Task 16: 刷新剩余空间指示器 + 绑定全局限速滑块
+            this._refreshStorageInfo();
+            this._bindGlobalSpeedControl();
+            // 请求通知权限（用户偏好：清晰的完成反馈）
+            if ('Notification' in window && Notification.permission === 'default') {
+                try {
+                    const p = Notification.requestPermission();
+                    if (p && typeof p.catch === 'function') p.catch(() => {});
+                } catch (e) {
+                    // 旧版浏览器回调式 API，忽略
+                }
+            }
             // 首次加载（不阻塞 UI）
             this._setState('LOADING');
             this._loadFiles().finally(() => this._setState('READY'));
@@ -53,6 +65,8 @@
         onShow() {
             // 列表可能在后台有变化（其他窗口触发下载完成），这里也刷新一次
             this._loadFiles();
+            // Task 16: 同步刷新剩余空间指示器（下载/删除后空间会变化）
+            this._refreshStorageInfo();
         }
 
         /**
@@ -223,6 +237,34 @@
                     self._hideMagnetProgress();
                 };
                 document.addEventListener('magnet-progress-cancel', this._onMagnetProgressCancel);
+            }
+
+            // === streaming 事件监听（Task 16 新增）===
+            // 旧 magnet-* 通道保留不变，此处增量订阅新的 streaming 事件
+            if (window.electron.streaming) {
+                // 进度更新（由 StreamEngine 200ms 节流，不会刷屏）
+                this._streamingProgressUnsub = window.electron.streaming.on('streaming:progress', (payload) => {
+                    self._handleStreamingProgress(payload);
+                });
+                // 状态切换（downloading ↔ paused ↔ error）
+                this._streamingStateUnsub = window.electron.streaming.on('streaming:state-change', (payload) => {
+                    self._handleStreamingStateChange(payload);
+                });
+                // 任务完成：弹出通知 + 刷新剩余空间
+                this._streamingCompletedUnsub = window.electron.streaming.on('streaming:completed', (payload) => {
+                    self._showCompletionNotification(payload && payload.taskId, payload);
+                    self._refreshStorageInfo();
+                });
+                // 错误：在对应卡片渲染错误状态 + 行动按钮
+                this._streamingErrorUnsub = window.electron.streaming.on('streaming:error', (payload) => {
+                    self._showErrorCard(payload && payload.taskId, payload);
+                });
+                // 队列变化：静默刷新列表（不打扰用户）
+                this._streamingQueueUnsub = window.electron.streaming.on('streaming:queue-changed', () => {
+                    if (typeof self._loadFiles === 'function' && self.state === 'READY') {
+                        self._loadFiles();
+                    }
+                });
             }
         }
 
@@ -1143,6 +1185,330 @@
                 }
                 this[key] = null;
             });
+        }
+
+        // ============================================================
+        // Task 16: streaming API 集成（增量添加，不破坏现有 magnet-* 调用）
+        // 后续 Task 23 会清理废弃的 magnet-* 通道
+        // ============================================================
+
+        /**
+         * 刷新剩余空间指示器
+         * 调用 streaming.getStorageInfo 获取磁盘空间，更新 DOM
+         * 空间不足（< 5GB）时挂上 storage-warning 类，文字/进度条变橙色
+         */
+        async _refreshStorageInfo() {
+            if (!window.electron || !window.electron.streaming) return;
+            const indicator = document.getElementById('downloads-storage-indicator');
+            if (!indicator) return;
+            try {
+                const result = await window.electron.streaming.getStorageInfo();
+                if (!result || !result.success) {
+                    indicator.classList.add('hidden');
+                    return;
+                }
+                const { total, free, used, downloadPath } = result;
+                const usedPercent = total > 0 ? Math.round(used / total * 100) : 0;
+                const freeGB = (free / 1024 / 1024 / 1024).toFixed(1);
+                const totalGB = (total / 1024 / 1024 / 1024).toFixed(1);
+                indicator.classList.remove('hidden');
+                const safePath = this._escapeHtml(downloadPath || '');
+                indicator.innerHTML = `
+                    <div class="storage-bar">
+                        <div class="storage-bar-used" style="width: ${usedPercent}%"></div>
+                    </div>
+                    <div class="storage-text">
+                        剩余 ${freeGB} GB / 共 ${totalGB} GB
+                    </div>
+                    <div class="storage-path" title="${safePath}">${safePath}</div>
+                `;
+                // 空间不足警告（< 5GB）
+                if (free < 5 * 1024 * 1024 * 1024) {
+                    indicator.classList.add('storage-warning');
+                } else {
+                    indicator.classList.remove('storage-warning');
+                }
+            } catch (err) {
+                console.error('[DownloadController] _refreshStorageInfo failed:', err);
+                indicator.classList.add('hidden');
+            }
+        }
+
+        /**
+         * 绑定全局限速滑块
+         * 预设值：0(不限) / 1MB / 2MB / 5MB / 10MB / 20MB
+         * 300ms 去抖后调用 streaming.setSpeedLimit(value, null)（null 表示全局限速）
+         */
+        _bindGlobalSpeedControl() {
+            const slider = document.getElementById('downloads-global-speed');
+            const label = document.getElementById('downloads-global-speed-label');
+            if (!slider || !label) return;
+            if (!window.electron || !window.electron.streaming) return;
+
+            // 预设值（字节/秒）
+            const PRESETS = [
+                { value: 0, label: '不限' },
+                { value: 1 * 1024 * 1024, label: '1 MB/s' },
+                { value: 2 * 1024 * 1024, label: '2 MB/s' },
+                { value: 5 * 1024 * 1024, label: '5 MB/s' },
+                { value: 10 * 1024 * 1024, label: '10 MB/s' },
+                { value: 20 * 1024 * 1024, label: '20 MB/s' }
+            ];
+
+            // 设置滑块范围
+            slider.min = 0;
+            slider.max = PRESETS.length - 1;
+            slider.step = 1;
+            slider.value = 0; // 默认不限
+            label.textContent = PRESETS[0].label;
+
+            // 去抖：避免拖动过程中频繁 IPC 调用
+            let debounceTimer = null;
+            slider.addEventListener('input', () => {
+                const idx = parseInt(slider.value, 10);
+                label.textContent = PRESETS[idx].label;
+                if (debounceTimer) clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(async () => {
+                    try {
+                        await window.electron.streaming.setSpeedLimit(PRESETS[idx].value, null);
+                        console.log(`[DownloadController] 全局限速设置为: ${PRESETS[idx].label}`);
+                    } catch (err) {
+                        console.error('[DownloadController] 设置全局限速失败:', err);
+                    }
+                }, 300);
+            });
+        }
+
+        /**
+         * 带确认对话框的取消任务
+         * @param {string} taskId - 任务 ID
+         * @param {string} taskName - 任务名（用于显示）
+         */
+        async _cancelWithConfirm(taskId, taskName) {
+            if (!taskId) return;
+            if (!window.electron || !window.electron.streaming) return;
+            const displayName = taskName || taskId;
+            const confirmed = window.confirm(
+                `确定取消下载「${displayName}」吗？\n\n已下载的部分将被删除。`
+            );
+            if (!confirmed) return;
+            try {
+                await window.electron.streaming.cancel(taskId, true);
+                this._refreshStorageInfo();
+            } catch (err) {
+                console.error('[DownloadController] 取消任务失败:', err);
+                this._showErrorCard(taskId, {
+                    errorType: 'cancel-failed',
+                    message: '取消任务失败: ' + (err && err.message ? err.message : '未知错误'),
+                    recoverable: false,
+                    actions: []
+                });
+            }
+        }
+
+        /**
+         * 显示任务完成通知
+         * 优先用 Notification API（如果用户授权），否则 fallback 到 UI 横幅
+         * @param {string} taskId - 任务 ID（保留参数，便于扩展）
+         * @param {Object} info - { name, size }
+         */
+        _showCompletionNotification(taskId, info) {
+            if (!info) return;
+            const sizeMB = info.size ? (info.size / 1024 / 1024).toFixed(1) : '?';
+            // 优先用 Notification API（如果用户授权）
+            if ('Notification' in window && Notification.permission === 'granted') {
+                try {
+                    new Notification('下载完成', {
+                        body: `${info.name || ''} (${sizeMB} MB)`,
+                        silent: false
+                    });
+                    return;
+                } catch (e) {
+                    // fallback 到 UI 横幅
+                }
+            }
+            // fallback: 在下载页右上角显示一个临时提示条
+            const banner = document.getElementById('downloads-completion-banner');
+            if (banner) {
+                banner.textContent = `✓ ${info.name || ''} (${sizeMB} MB) 下载完成`;
+                banner.classList.remove('hidden');
+                // 强制重排以触发过渡
+                void banner.offsetWidth;
+                banner.classList.add('show');
+                setTimeout(() => {
+                    banner.classList.remove('show');
+                    setTimeout(() => banner.classList.add('hidden'), 300);
+                }, 4000);
+            }
+        }
+
+        /**
+         * 在任务卡片上显示错误状态 + 行动按钮
+         * @param {string} taskId - 任务 ID
+         * @param {Object} error - { errorType, message, recoverable, actions[] }
+         */
+        _showErrorCard(taskId, error) {
+            if (!taskId || !error) return;
+            const card = document.querySelector(`[data-task-id="${CSS.escape(taskId)}"]`);
+            if (!card) return;
+            card.classList.add('task-error');
+            card.dataset.errorType = error.errorType || 'unknown';
+
+            // 在卡片底部添加错误信息区
+            let errorArea = card.querySelector('.task-error-area');
+            if (!errorArea) {
+                errorArea = document.createElement('div');
+                errorArea.className = 'task-error-area';
+                card.appendChild(errorArea);
+            }
+
+            // 行动按钮文本映射
+            const actionLabels = {
+                'manual-retry': '重试',
+                'switch-to-download': '切换为仅下载',
+                'cancel': '取消任务'
+            };
+            const actionsHtml = (error.actions || []).map(action => {
+                const label = actionLabels[action] || action;
+                return `<button class="task-error-action" data-action="${this._escapeHtml(action)}">${this._escapeHtml(label)}</button>`;
+            }).join('');
+
+            errorArea.innerHTML = `
+                <div class="task-error-message">${this._escapeHtml(error.message || '未知错误')}</div>
+                <div class="task-error-actions">${actionsHtml}</div>
+            `;
+
+            // 绑定行动按钮
+            errorArea.querySelectorAll('.task-error-action').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    this._handleErrorAction(taskId, btn.dataset.action);
+                });
+            });
+        }
+
+        /**
+         * 处理错误卡片上的行动按钮
+         * @param {string} taskId - 任务 ID
+         * @param {string} action - 'manual-retry' / 'switch-to-download' / 'cancel'
+         */
+        async _handleErrorAction(taskId, action) {
+            if (!window.electron || !window.electron.streaming) return;
+            try {
+                switch (action) {
+                    case 'manual-retry':
+                        await window.electron.streaming.retry(taskId);
+                        break;
+                    case 'switch-to-download': {
+                        // 切换为仅下载模式：取消当前 + 重新启动为 download 模式
+                        const task = await window.electron.streaming.getTask(taskId);
+                        if (task && task.success && task.task) {
+                            await window.electron.streaming.cancel(taskId, false);
+                            await window.electron.streaming.start({
+                                source: task.task.source,
+                                savePath: task.task.savePath,
+                                priority: 'normal',
+                                autoPlay: false,
+                                mode: 'download'
+                            });
+                        }
+                        break;
+                    }
+                    case 'cancel':
+                        await this._cancelWithConfirm(taskId, '');
+                        break;
+                    default:
+                        console.warn('[DownloadController] unknown error action:', action);
+                }
+            } catch (err) {
+                console.error('[DownloadController] _handleErrorAction failed:', err);
+            }
+        }
+
+        /**
+         * 处理 streaming:progress 事件
+         * 直接更新对应卡片的进度条/速度文本，避免重建整个列表（防刷屏）
+         * 找不到卡片时静默 return（streaming 任务卡片可能在其他页面或尚未渲染）
+         * @param {Object} payload - { taskId, downloadedBytes, totalBytes, speed, eta, status }
+         */
+        _handleStreamingProgress(payload) {
+            if (!payload || !payload.taskId) return;
+            const card = document.querySelector(`[data-task-id="${CSS.escape(payload.taskId)}"]`);
+            if (!card) return; // 找不到卡片：可能是 magnet 任务（data-id），交给 magnet-status 处理
+            const total = Number(payload.totalBytes || 0);
+            const downloaded = Number(payload.downloadedBytes || 0);
+            // 更新进度条
+            if (total > 0) {
+                const progress = Math.max(0, Math.min(100, (downloaded / total) * 100));
+                const bar = card.querySelector('.dl-progress-bar');
+                const text = card.querySelector('.dl-progress-text');
+                if (bar) bar.style.width = progress.toFixed(1) + '%';
+                if (text) text.textContent = progress.toFixed(1) + '%';
+            }
+            // 更新实时指标
+            const speed = Number(payload.speed || 0);
+            const eta = payload.eta;
+            const parts = [];
+            if (speed > 0) parts.push(`↓ ${this._formatSize(speed)}/s`);
+            if (Number.isFinite(eta) && eta > 0) parts.push(`剩余 ${this._formatEta(eta)}`);
+            let liveInfo = card.querySelector('.dl-live-info');
+            if (parts.length > 0) {
+                if (!liveInfo) {
+                    liveInfo = document.createElement('span');
+                    liveInfo.className = 'dl-live-info';
+                    const metaRow = card.querySelector('.dl-meta-row');
+                    if (metaRow) metaRow.appendChild(liveInfo);
+                }
+                liveInfo.textContent = parts.join(' · ');
+            } else if (liveInfo) {
+                liveInfo.remove();
+            }
+        }
+
+        /**
+         * 处理 streaming:state-change 事件
+         * 更新对应卡片的状态徽标（downloading/paused/cancelled/error）
+         * 找不到卡片时静默 return
+         * @param {Object} payload - { taskId, from, to }
+         */
+        _handleStreamingStateChange(payload) {
+            if (!payload || !payload.taskId || !payload.to) return;
+            const card = document.querySelector(`[data-task-id="${CSS.escape(payload.taskId)}"]`);
+            if (!card) return;
+            // streaming 状态 → 显示文本/图标映射
+            const STATE_META = {
+                downloading: { label: '下载中', icon: '⏬' },
+                paused:      { label: '已暂停', icon: '⏸' },
+                completed:   { label: '已完成', icon: '✓' },
+                cancelled:   { label: '已取消', icon: '✕' },
+                error:       { label: '失败',   icon: '✕' }
+            };
+            const meta = STATE_META[payload.to] || STATE_META.downloading;
+            // 更新状态徽标（如果是 cancelled 状态，移除卡片，等队列事件刷新）
+            if (payload.to === 'cancelled') {
+                card.remove();
+                this._refreshStorageInfo();
+                return;
+            }
+            // 找到状态徽标元素并更新
+            const statusTag = card.querySelector('.dl-status-active, .dl-status-paused, .dl-status-done, .dl-status-error');
+            if (statusTag) {
+                statusTag.className = `dl-tag dl-status-${
+                    payload.to === 'downloading' ? 'active' :
+                    payload.to === 'paused' ? 'paused' :
+                    payload.to === 'completed' ? 'done' :
+                    payload.to === 'error' ? 'error' : 'active'
+                }`;
+                statusTag.textContent = `${meta.icon} ${meta.label}`;
+            }
+            // error 状态额外触发错误卡片渲染（如果主进程没单独发 streaming:error）
+            if (payload.to === 'error') {
+                this._showErrorCard(payload.taskId, {
+                    errorType: 'state-error',
+                    message: '任务进入错误状态',
+                    recoverable: true,
+                    actions: ['manual-retry', 'cancel']
+                });
+            }
         }
     }
 
