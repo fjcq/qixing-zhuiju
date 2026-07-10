@@ -174,6 +174,64 @@ describe('StorageManager', () => {
                 fs.rmSync(newDir, { recursive: true, force: true });
             }
         });
+
+        it('跨设备迁移(EXDEV)时降级为 copy+unlink', async () => {
+            const srcFile = path.join(tmpDir, 'movie.mp4');
+            fs.writeFileSync(srcFile, 'content');
+            const newDir = fs.mkdtempSync(path.join(os.tmpdir(), 'storage-exdev-'));
+            try {
+                // 强制 renameSync 抛出 EXDEV，模拟 C: -> D: 跨分区场景
+                const renameSpy = jest.spyOn(fs, 'renameSync').mockImplementation(() => {
+                    const err = new Error('cross-device link not permitted');
+                    err.code = 'EXDEV';
+                    throw err;
+                });
+                const copySpy = jest.spyOn(fs, 'copyFileSync');
+                const unlinkSpy = jest.spyOn(fs, 'unlinkSync');
+                const result = await manager.setDownloadPath(newDir, true);
+                expect(result.migrated).toBe(true);
+                expect(result.fileCount).toBe(1);
+                // 文件已通过 copy+unlink 迁移到新路径
+                expect(fs.existsSync(path.join(newDir, 'movie.mp4'))).toBe(true);
+                expect(fs.existsSync(srcFile)).toBe(false);
+                // 验证 fallback 路径被调用
+                expect(copySpy).toHaveBeenCalledWith(srcFile, path.join(newDir, 'movie.mp4'));
+                expect(unlinkSpy).toHaveBeenCalledWith(srcFile);
+                renameSpy.mockRestore();
+                copySpy.mockRestore();
+                unlinkSpy.mockRestore();
+            } finally {
+                fs.rmSync(newDir, { recursive: true, force: true });
+            }
+        });
+
+        it('非 EXDEV 错误时不触发 copy+unlink 兜底', async () => {
+            const srcFile = path.join(tmpDir, 'movie.mp4');
+            fs.writeFileSync(srcFile, 'content');
+            const newDir = fs.mkdtempSync(path.join(os.tmpdir(), 'storage-non-exdev-'));
+            try {
+                // 模拟非 EXDEV 错误（如 EACCES），不应触发 copy+unlink 兜底
+                const renameSpy = jest.spyOn(fs, 'renameSync').mockImplementation(() => {
+                    const err = new Error('permission denied');
+                    err.code = 'EACCES';
+                    throw err;
+                });
+                const copySpy = jest.spyOn(fs, 'copyFileSync');
+                const result = await manager.setDownloadPath(newDir, true);
+                expect(result.migrated).toBe(true);
+                // 非 EXDEV 错误，文件未迁移
+                expect(result.fileCount).toBe(0);
+                expect(fs.existsSync(path.join(newDir, 'movie.mp4'))).toBe(false);
+                // 源文件仍存在
+                expect(fs.existsSync(srcFile)).toBe(true);
+                // 不应调用 copyFileSync
+                expect(copySpy).not.toHaveBeenCalled();
+                renameSpy.mockRestore();
+                copySpy.mockRestore();
+            } finally {
+                fs.rmSync(newDir, { recursive: true, force: true });
+            }
+        });
     });
 
     describe('getDownloadPath', () => {

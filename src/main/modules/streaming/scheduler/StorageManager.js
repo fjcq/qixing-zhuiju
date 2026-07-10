@@ -81,16 +81,7 @@ class StorageManager
      */
     async generateSavePath(filename)
     {
-        const ext = path.extname(filename);
-        const base = path.basename(filename, ext);
-        let candidate = path.join(this.downloadPath, filename);
-        let index = 1;
-        while (fs.existsSync(candidate))
-        {
-            candidate = path.join(this.downloadPath, `${base}(${index})${ext}`);
-            index++;
-        }
-        return candidate;
+        return this._resolveConflictPath(this.downloadPath, filename);
     }
 
     /**
@@ -197,7 +188,7 @@ class StorageManager
                     continue;
                 }
                 const dst = await this._resolveConflictPath(newPath, name);
-                fs.renameSync(src, dst);
+                this._moveFileSync(src, dst);
                 fileCount++;
             }
             catch (err)
@@ -227,6 +218,32 @@ class StorageManager
             index++;
         }
         return candidate;
+    }
+
+    /**
+     * 移动文件，跨设备时降级为复制+删除
+     * fs.renameSync 在跨磁盘分区（如 C: -> D:，Windows 常见场景）时抛 EXDEV
+     * 此时改用 fs.copyFileSync + fs.unlinkSync 兜底，保证迁移成功
+     * 其他错误仍向上抛出，交由调用方处理
+     * @param {string} src - 源文件路径
+     * @param {string} dst - 目标文件路径
+     */
+    _moveFileSync(src, dst)
+    {
+        try
+        {
+            fs.renameSync(src, dst);
+        }
+        catch (err)
+        {
+            if (err.code === 'EXDEV')
+            {
+                fs.copyFileSync(src, dst);
+                fs.unlinkSync(src);
+                return;
+            }
+            throw err;
+        }
     }
 
     /**
