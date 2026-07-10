@@ -46,6 +46,8 @@ class QixingZhuiju {
         this.updateManager = new UpdateManager(this); // 使用自动更新管理器
         this.downloadManager = new DownloadManager(); // 下载管理器
         this.currentVideoUrl = null; // 当前播放的视频URL（用于投屏）
+        // 初始化 streaming 模块（边下边播系统）
+        this._initStreamingModules();
     }
 
     // 检查更新
@@ -117,6 +119,114 @@ class QixingZhuiju {
         console.log('[MAIN] 系统投屏功能已被移除');
         throw new Error('系统投屏功能已被移除，请使用DLNA投屏');
     }
+
+    // 初始化 streaming 模块（边下边播系统）
+    _initStreamingModules() {
+        try {
+            const SpeedLimiter = require('./src/main/modules/streaming/scheduler/SpeedLimiter');
+            const DownloadQueue = require('./src/main/modules/streaming/scheduler/DownloadQueue');
+            const StorageManager = require('./src/main/modules/streaming/scheduler/StorageManager');
+            const ResumeManager = require('./src/main/modules/streaming/scheduler/ResumeManager');
+            const ManifestStore = require('./src/main/modules/streaming/persistence/ManifestStore');
+            const IntegrityChecker = require('./src/main/modules/streaming/IntegrityChecker');
+            const RetryController = require('./src/main/modules/streaming/RetryController');
+            const AdaptiveBitrateController = require('./src/main/modules/streaming/AdaptiveBitrateController');
+            const StreamEngine = require('./src/main/modules/streaming/StreamEngine');
+
+            // manifest 文件路径（用户数据目录下，保证跨平台一致）
+            const manifestPath = path.join(app.getPath('userData'), 'streaming-manifest.json');
+            // 默认下载路径（用户下载目录，始终存在）
+            const downloadPath = app.getPath('downloads');
+
+            // 创建各模块实例
+            this.speedLimiter = new SpeedLimiter({});
+            this.downloadQueue = new DownloadQueue({ maxConcurrent: 3 });
+            this.storageManager = new StorageManager({ downloadPath });
+            this.resumeManager = new ResumeManager({});
+            this.manifestStore = new ManifestStore({ manifestPath });
+            this.integrityChecker = new IntegrityChecker({});
+            this.retryController = new RetryController({});
+
+            // transportFactory：根据 source.type 返回对应 transport
+            // 懒加载 HttpTransport，magnet/local 待 Task 19/21 实现
+            this.transportFactory = (source) => {
+                if (!source || !source.type) {
+                    throw new Error('invalid source: missing type');
+                }
+                if (source.type === 'url') {
+                    const HttpTransport = require('./src/main/modules/streaming/transports/HttpTransport');
+                    return new HttpTransport();
+                }
+                throw new Error(`unsupported source type: ${source.type} (Task 19/21 pending)`);
+            };
+
+            // StreamEngine 实例（streamPort=0 表示随机端口，onReady 后更新）
+            this.streamEngine = new StreamEngine({
+                transportFactory: this.transportFactory,
+                downloadQueue: this.downloadQueue,
+                speedLimiter: this.speedLimiter,
+                resumeManager: this.resumeManager,
+                manifestStore: this.manifestStore,
+                storageManager: this.storageManager,
+                integrityChecker: this.integrityChecker,
+                retryController: this.retryController,
+                streamPort: 0,
+                prebufferTarget: 5
+            });
+
+            // AdaptiveBitrateController 实例
+            this.adaptiveBitrateController = new AdaptiveBitrateController({
+                streamEngine: this.streamEngine
+            });
+
+            // 暴露给 ipcHandler 路由使用（设计文档要求）
+            global.__streamEngine = this.streamEngine;
+
+            // IPC cleanup 函数（setupStreaming 后填充）
+            this._streamingCleanup = null;
+
+            console.log('[MAIN] streaming 模块初始化完成');
+        } catch (error) {
+            // 初始化失败不阻塞应用启动，仅记录错误
+            console.error('[MAIN] streaming 模块初始化失败:', error);
+            this._streamingCleanup = null;
+        }
+    }
+
+    // 装配 streaming IPC 网关 + 启动事件转发 + 异常恢复
+    async setupStreaming() {
+        if (!this.streamEngine || !this.manifestStore) {
+            console.warn('[MAIN] streaming 模块未初始化，跳过 IPC 装配');
+            return;
+        }
+        try {
+            const { setupStreamingIPC } = require('./src/main/modules/streaming/ipcGateway');
+
+            // 加载 manifest（异常恢复用）
+            await this.manifestStore.load();
+            // 恢复异常退出任务（downloading 状态归位为 paused）
+            await this.streamEngine.recover();
+            // 启动 AdaptiveBitrateController 监听
+            this.adaptiveBitrateController.start();
+
+            // 注册 IPC 频道 + 启动本地 HTTP 服务器 + 转发事件
+            this._streamingCleanup = setupStreamingIPC({
+                streamEngine: this.streamEngine,
+                storageManager: this.storageManager,
+                retryController: this.retryController,
+                speedLimiter: this.speedLimiter,
+                streamPort: 0,
+                onReady: (port) => {
+                    console.log(`[MAIN] streaming HTTP server listening on 127.0.0.1:${port}`);
+                    this.streamEngine.streamPort = port;
+                }
+            });
+
+            console.log('[MAIN] streaming IPC 网关已注册');
+        } catch (error) {
+            console.error('[MAIN] streaming IPC 装配失败:', error);
+        }
+    }
 }
 
 // 应用主逻辑
@@ -147,10 +257,30 @@ async function main() {
             await qixingApp.createMainWindow();
             // 设置IPC通信
             qixingApp.setupIPC();
+            // 装配 streaming 模块（边下边播 IPC + HTTP 服务器）
+            await qixingApp.setupStreaming();
             // 开始自动检查更新
             qixingApp.startAutoCheckUpdates();
         } catch (error) {
             console.error('[MAIN] 应用启动失败:', error);
+            app.quit();
+        }
+    });
+
+    // 应用退出前清理 streaming 资源
+    app.on('before-quit', (event) => {
+        if (qixingApp && qixingApp._streamingCleanup) {
+            event.preventDefault();
+            try {
+                qixingApp.adaptiveBitrateController.stop();
+                qixingApp._streamingCleanup();
+                qixingApp.retryController.destroy();
+                console.log('[MAIN] streaming 资源已清理');
+            } catch (err) {
+                console.error('[MAIN] streaming 清理失败:', err);
+            }
+            // 避免重复清理，重新触发退出
+            qixingApp._streamingCleanup = null;
             app.quit();
         }
     });
