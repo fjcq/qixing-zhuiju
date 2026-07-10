@@ -75,6 +75,22 @@ describe('ManifestStore', () =>
             expect(all[1].status).toBe('completed');
         });
 
+        it('兼容直接数组格式 [...] ', async () =>
+        {
+            const tasks = [
+                makeTask({ id: 'task-1', status: 'paused' }),
+                makeTask({ id: 'task-2', status: 'completed' })
+            ];
+            fs.writeFileSync(manifestPath, JSON.stringify(tasks), 'utf8');
+            await store.load();
+            const all = store.getAll();
+            expect(all).toHaveLength(2);
+            expect(all[0].id).toBe('task-1');
+            expect(all[0].status).toBe('paused');
+            expect(all[1].id).toBe('task-2');
+            expect(all[1].status).toBe('completed');
+        });
+
         it('文件损坏（无效 JSON）时初始化为空', async () =>
         {
             fs.writeFileSync(manifestPath, '{not valid json', 'utf8');
@@ -134,7 +150,7 @@ describe('ManifestStore', () =>
 
     describe('get', () =>
     {
-        it('返回任务浅拷贝，修改不影响内部状态', async () =>
+        it('返回任务深拷贝，修改顶层字段不影响内部状态', async () =>
         {
             await store.add(makeTask({ id: 'task-1', status: 'queued' }));
             const task = store.get('task-1');
@@ -143,6 +159,27 @@ describe('ManifestStore', () =>
             const internal = store.get('task-1');
             expect(internal.status).toBe('queued');
             expect(internal.name).toBe('a.mp4');
+        });
+
+        it('返回任务深拷贝，修改嵌套对象不影响内部状态', async () =>
+        {
+            await store.add(makeTask({
+                id: 'task-1',
+                source: { type: 'url', value: 'https://example.com/a.mp4' },
+                downloadedRanges: [{ start: 0, end: 100 }]
+            }));
+            const task = store.get('task-1');
+            // 修改嵌套 source 对象
+            task.source.value = 'https://example.com/tampered.mp4';
+            task.source.type = 'magnet';
+            // 修改嵌套 downloadedRanges 数组元素
+            task.downloadedRanges[0].start = 9999;
+            task.downloadedRanges.push({ start: 200, end: 300 });
+            const internal = store.get('task-1');
+            expect(internal.source.value).toBe('https://example.com/a.mp4');
+            expect(internal.source.type).toBe('url');
+            expect(internal.downloadedRanges[0].start).toBe(0);
+            expect(internal.downloadedRanges).toHaveLength(1);
         });
 
         it('不存在的 id 返回 undefined', () =>
@@ -222,13 +259,23 @@ describe('ManifestStore', () =>
             expect(ids).toEqual(['task-1', 'task-3']);
         });
 
-        it('返回浅拷贝，修改不影响内部状态', async () =>
+        it('返回深拷贝，修改嵌套对象不影响内部状态', async () =>
         {
-            await store.add(makeTask({ id: 'task-1', status: 'paused' }));
+            await store.add(makeTask({
+                id: 'task-1',
+                status: 'paused',
+                source: { type: 'url', value: 'https://example.com/a.mp4' },
+                downloadedRanges: [{ start: 0, end: 100 }]
+            }));
             const result = store.findByStatus('paused');
+            // 修改顶层与嵌套对象
             result[0].status = 'completed';
+            result[0].source.value = 'https://example.com/tampered.mp4';
+            result[0].downloadedRanges[0].start = 9999;
             const internal = store.get('task-1');
             expect(internal.status).toBe('paused');
+            expect(internal.source.value).toBe('https://example.com/a.mp4');
+            expect(internal.downloadedRanges[0].start).toBe(0);
         });
 
         it('无匹配时返回空数组', async () =>
@@ -267,22 +314,48 @@ describe('ManifestStore', () =>
             }));
             expect(store.findBySource('magnet', 'magnet:?xt=urn:btih:abc')).toEqual([]);
         });
+
+        it('返回深拷贝，修改嵌套对象不影响内部状态', async () =>
+        {
+            await store.add(makeTask({
+                id: 'task-1',
+                source: { type: 'url', value: 'https://example.com/a.mp4' },
+                downloadedRanges: [{ start: 0, end: 100 }]
+            }));
+            const matches = store.findBySource('url', 'https://example.com/a.mp4');
+            // 修改顶层与嵌套对象
+            matches[0].status = 'completed';
+            matches[0].source.value = 'https://example.com/tampered.mp4';
+            matches[0].downloadedRanges[0].start = 9999;
+            const internal = store.get('task-1');
+            expect(internal.status).toBe('queued');
+            expect(internal.source.value).toBe('https://example.com/a.mp4');
+            expect(internal.downloadedRanges[0].start).toBe(0);
+        });
     });
 
     describe('getAll', () =>
     {
-        it('返回所有任务的浅拷贝数组', async () =>
+        it('返回所有任务的深拷贝数组', async () =>
         {
-            await store.add(makeTask({ id: 'task-1' }));
+            await store.add(makeTask({
+                id: 'task-1',
+                source: { type: 'url', value: 'https://example.com/a.mp4' },
+                downloadedRanges: [{ start: 0, end: 100 }]
+            }));
             await store.add(makeTask({ id: 'task-2' }));
             const all = store.getAll();
             expect(all).toHaveLength(2);
-            // 修改返回数组不影响内部状态
+            // 修改返回数组与嵌套对象不影响内部状态
             all[0].status = 'completed';
+            all[0].source.value = 'https://example.com/tampered.mp4';
+            all[0].downloadedRanges[0].start = 9999;
             all.push({ id: 'fake' });
             const fresh = store.getAll();
             expect(fresh).toHaveLength(2);
             expect(fresh[0].status).toBe('queued');
+            expect(fresh[0].source.value).toBe('https://example.com/a.mp4');
+            expect(fresh[0].downloadedRanges[0].start).toBe(0);
         });
     });
 

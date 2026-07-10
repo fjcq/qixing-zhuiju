@@ -11,8 +11,8 @@ const TMP_SUFFIX = '.tmp';
  * 负责原子写 manifest.json 文件，记录所有下载任务（活动 + 历史）：
  * - load 从磁盘加载清单到内存，文件缺失或损坏时初始化为空
  * - save 使用 .tmp → rename 原子写策略，避免写入过程中崩溃损坏文件
- * - add/update/remove 提供 CRUD 接口，操作后自动触发 save
- * - getAll/get/findByStatus/findBySource 提供查询接口，返回浅拷贝
+ * - add/update/remove 提供 CRUD 接口，操作后立即触发 save（同步落盘）
+ * - getAll/get/findByStatus/findBySource 提供查询接口，返回深拷贝
  *
  * 任务对象字段由调用方维护，ManifestStore 仅负责存取，不验证结构。
  */
@@ -22,7 +22,6 @@ class ManifestStore
      * 构造清单存储器
      * @param {Object} opts - 配置项
      * @param {string} opts.manifestPath - manifest.json 文件路径（必需）
-     * @param {number} [opts.saveDelayMs=0] - 防抖写延迟毫秒，默认 0 立即写
      */
     constructor(opts)
     {
@@ -32,11 +31,8 @@ class ManifestStore
         }
         this.manifestPath = opts.manifestPath;
         this.tmpPath = `${opts.manifestPath}${TMP_SUFFIX}`;
-        this.saveDelayMs = opts.saveDelayMs !== undefined ? opts.saveDelayMs : 0;
         // 任务 id → 任务对象的映射
         this._tasks = new Map();
-        // 防抖写定时器
-        this._saveTimer = null;
     }
 
     /**
@@ -78,8 +74,8 @@ class ManifestStore
         {
             if (task && task.id)
             {
-                // 浅拷贝避免外部修改影响内存
-                this._tasks.set(task.id, { ...task });
+                // 深拷贝避免外部修改影响内存（含嵌套对象）
+                this._tasks.set(task.id, structuredClone(task));
             }
         }
         return this;
@@ -89,33 +85,16 @@ class ManifestStore
      * 将内存数据原子写入磁盘
      * 先写入 .tmp 文件，再 rename 到目标路径
      * rename 失败时清理 .tmp 并抛出错误，原文件保持不变
+     * 同步落盘，保证异常退出后可从 manifest 恢复
      * @returns {Promise<void>}
      */
     async save()
     {
-        // 立即写模式
-        if (this.saveDelayMs <= 0)
-        {
-            await this._writeNow();
-            return;
-        }
-        // 防抖写模式：合并短时间内的多次 save 为一次磁盘写入
-        if (this._saveTimer)
-        {
-            clearTimeout(this._saveTimer);
-        }
-        await new Promise((resolve, reject) =>
-        {
-            this._saveTimer = setTimeout(() =>
-            {
-                this._saveTimer = null;
-                this._writeNow().then(resolve, reject);
-            }, this.saveDelayMs);
-        });
+        await this._writeNow();
     }
 
     /**
-     * 返回所有任务的数组（浅拷贝）
+     * 返回所有任务的数组（深拷贝）
      * @returns {Array<Object>} 任务数组
      */
     getAll()
@@ -123,20 +102,20 @@ class ManifestStore
         const result = [];
         for (const task of this._tasks.values())
         {
-            result.push({ ...task });
+            result.push(structuredClone(task));
         }
         return result;
     }
 
     /**
-     * 返回单个任务的浅拷贝
+     * 返回单个任务的深拷贝
      * @param {string} taskId - 任务标识
      * @returns {Object|undefined} 任务对象或 undefined
      */
     get(taskId)
     {
         const task = this._tasks.get(taskId);
-        return task ? { ...task } : undefined;
+        return task ? structuredClone(task) : undefined;
     }
 
     /**
@@ -203,7 +182,7 @@ class ManifestStore
     }
 
     /**
-     * 返回指定状态的所有任务（浅拷贝数组）
+     * 返回指定状态的所有任务（深拷贝数组）
      * @param {string} status - 任务状态
      * @returns {Array<Object>} 匹配状态的任务数组
      */
@@ -214,14 +193,14 @@ class ManifestStore
         {
             if (task.status === status)
             {
-                result.push({ ...task });
+                result.push(structuredClone(task));
             }
         }
         return result;
     }
 
     /**
-     * 返回匹配 source.type 和 source.value 的任务
+     * 返回匹配 source.type 和 source.value 的任务（深拷贝数组）
      * 用于避免重复添加相同 URL 的任务
      * @param {string} sourceType - 资源类型（url/magnet/local）
      * @param {string} sourceValue - 资源值（URL/magnet URI/本地路径）
@@ -236,7 +215,7 @@ class ManifestStore
                 task.source.type === sourceType &&
                 task.source.value === sourceValue)
             {
-                result.push({ ...task });
+                result.push(structuredClone(task));
             }
         }
         return result;
