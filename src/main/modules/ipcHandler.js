@@ -1586,6 +1586,16 @@ function setupIPC(qixingApp) {
     //   1) setupIPC(qixingApp);                                  // 注册本文件中的常规 IPC
     //   2) const cleanup = setupStreamingIPC({ streamEngine, ... }); // 注册 streaming:* IPC + HTTP 服务器
     //   3) app.on('before-quit', cleanup);                       // 退出时清理
+
+    // 暴露 magnet bridge 给 main.js 的 transportFactory 使用（Task 22 接入 MagnetTransport）
+    // 注意：sendMagnetMessage 是闭包内函数，通过 global 暴露给 main.js
+    // Task 23 删除旧代码时会重构为独立 MagnetProcessBridge 模块
+    global.__magnetBridge = {
+        send: sendMagnetMessage,
+        // on/off 暂不实现（Task 23 重构时补全，用于 MagnetTransport.createSegmentWriter 订阅 progress 事件）
+        on: null,
+        off: null
+    };
 }
 
 module.exports = {

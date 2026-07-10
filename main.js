@@ -148,7 +148,7 @@ class QixingZhuiju {
             this.retryController = new RetryController({});
 
             // transportFactory：根据 source.type 返回对应 transport
-            // 懒加载 HttpTransport，magnet/local 待 Task 19/21 实现
+            // HttpTransport / MagnetTransport / LocalTransport 已全部实现（Task 9/19/21）
             this.transportFactory = (source) => {
                 if (!source || !source.type) {
                     throw new Error('invalid source: missing type');
@@ -157,7 +157,21 @@ class QixingZhuiju {
                     const HttpTransport = require('./src/main/modules/streaming/transports/HttpTransport');
                     return new HttpTransport();
                 }
-                throw new Error(`unsupported source type: ${source.type} (Task 19/21 pending)`);
+                if (source.type === 'magnet') {
+                    const MagnetTransport = require('./src/main/modules/streaming/transports/MagnetTransport');
+                    // bridge 由 ipcHandler.js 的 setupIPC 暴露到 global.__magnetBridge
+                    // 若 bridge 未就绪（setupIPC 尚未调用），抛出清晰错误
+                    const bridge = global.__magnetBridge;
+                    if (!bridge || typeof bridge.send !== 'function') {
+                        throw new Error('magnet bridge not ready (setupIPC not called yet)');
+                    }
+                    return new MagnetTransport({ bridge, source });
+                }
+                if (source.type === 'local') {
+                    const LocalTransport = require('./src/main/modules/streaming/transports/LocalTransport');
+                    return new LocalTransport(source);
+                }
+                throw new Error(`unsupported source type: ${source.type}`);
             };
 
             // StreamEngine 实例（streamPort=0 表示随机端口，onReady 后更新）
