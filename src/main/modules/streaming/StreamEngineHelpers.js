@@ -195,6 +195,28 @@ function pipeSegment(speedLimiter, isRunning, taskId, reader, writer)
                     // 忽略 abort 异常
                 }
             }
+            if (!ok)
+            {
+                // 失败/取消时同时关闭 writer，避免 Promise 悬空导致 writer 永不关闭
+                // 选用 end() 而非 abort()：abort() 会删除整个文件，
+                // 续传场景下 append 模式写入空文件会导致数据错位
+                if (writer && typeof writer.end === 'function')
+                {
+                    try
+                    {
+                        // end() 返回 Promise，可能 reject；attach catch 避免未处理拒绝
+                        const p = writer.end();
+                        if (p && typeof p.catch === 'function')
+                        {
+                            p.catch(() => {});
+                        }
+                    }
+                    catch (e)
+                    {
+                        // 忽略 end 错误
+                    }
+                }
+            }
             resolve({ ok, error: err });
         };
         const onData = (chunk) =>
@@ -380,19 +402,96 @@ class ProgressTracker
     }
 }
 
+/**
+ * 发出 queue-changed 事件（聚合 active/queued/paused 计数）
+ * @param {Object} engine - StreamEngine 实例
+ */
+function emitQueueChanged(engine)
+{
+    engine.emit('queue-changed', {
+        active: engine.downloadQueue.getActiveTasks().length,
+        queued: engine.downloadQueue.getQueuedTasks().length,
+        paused: engine.manifestStore.findByStatus('paused').length
+    });
+}
+
+/**
+ * 任务完成处理：标记完成、emit completed、异步触发完整性校验
+ * manifest.update 失败时仅记录日志，不阻塞后续事件 emit 与清理
+ * @param {Object} engine - StreamEngine 实例
+ * @param {string} taskId - 任务标识
+ */
+async function completeTask(engine, taskId)
+{
+    const task = engine.manifestStore.get(taskId);
+    if (!task) return;
+    engine.downloadQueue.complete(taskId);
+    engine.retryController.markSuccess(taskId);
+    try
+    {
+        await engine.manifestStore.update(taskId, {
+            status: 'completed',
+            completedAt: Date.now()
+        });
+    }
+    catch (err)
+    {
+        console.error(
+            `[StreamEngine] manifest update failed for ${taskId}:`, err);
+    }
+    engine.emit('completed', { taskId, name: task.fileName, size: task.size });
+    emitQueueChanged(engine);
+    // 清理 retry 监听器与 ProgressTracker 状态，避免内存泄漏
+    engine._detachRetryListeners(taskId);
+    engine._progress.delete(taskId);
+    engine.verify(taskId).catch(err =>
+    {
+        console.error(`[StreamEngine] verify ${taskId} failed:`, err);
+    });
+}
+
+/**
+ * 任务失败处理：标记错误、emit error（含 recoverable/actions）
+ * manifest.update 失败时仅记录日志，不阻塞后续事件 emit 与清理
+ * @param {Object} engine - StreamEngine 实例
+ * @param {string} taskId - 任务标识
+ * @param {Error} error - 错误对象
+ */
+async function failTask(engine, taskId, error)
+{
+    const task = engine.manifestStore.get(taskId);
+    if (!task) return;
+    const errorType = (error && error.errorType) || 'unknown';
+    engine.downloadQueue.markError(taskId, error);
+    try
+    {
+        await engine.manifestStore.update(taskId, {
+            status: 'error',
+            error: { errorType, message: error.message || String(error) }
+        });
+    }
+    catch (err)
+    {
+        console.error(
+            `[StreamEngine] manifest update failed for ${taskId}:`, err);
+    }
+    engine.emit('error', {
+        taskId,
+        errorType,
+        message: error.message || String(error),
+        recoverable: errorType === 'network',
+        actions: errorType === 'network' ? ['retry'] : []
+    });
+    emitQueueChanged(engine);
+    // 清理 retry 监听器与 ProgressTracker 状态，避免内存泄漏
+    engine._detachRetryListeners(taskId);
+    engine._progress.delete(taskId);
+}
+
 module.exports = {
-    DEFAULT_ASSUMED_BITRATE,
-    PROGRESS_THROTTLE_MS,
-    SPEED_LIMIT_POLL_MS,
-    makeError,
-    createTaskId,
-    createSegmentId,
-    computeEta,
-    computePrebufferBytes,
-    computeBufferedSeconds,
-    smoothSpeed,
-    acquireTokens,
-    cleanupPartialSegment,
-    pipeSegment,
-    ProgressTracker
+    DEFAULT_ASSUMED_BITRATE, PROGRESS_THROTTLE_MS, SPEED_LIMIT_POLL_MS,
+    makeError, createTaskId, createSegmentId, computeEta,
+    computePrebufferBytes, computeBufferedSeconds, smoothSpeed,
+    acquireTokens, cleanupPartialSegment, pipeSegment, ProgressTracker,
+    emitQueueChanged, completeTask, failTask
 };

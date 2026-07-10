@@ -10,7 +10,10 @@ const {
     createSegmentId,
     cleanupPartialSegment,
     pipeSegment,
-    ProgressTracker
+    ProgressTracker,
+    emitQueueChanged,
+    completeTask,
+    failTask
 } = require('./StreamEngineHelpers');
 
 // 分段大小：5MB
@@ -55,7 +58,9 @@ class StreamEngine extends EventEmitter
                 ? opts.prebufferTarget : DEFAULT_PREBUFFER_TARGET_SECONDS
         });
         this._activeSegments = new Map();
-        this._runningTasks = new Set();
+        // taskId → 唯一 token（Symbol），用于检测 _runTask 实例是否仍为当前实例
+        // 防止 pause/resume 后旧 _runTask 与新 _runTask 并发执行同一任务
+        this._runningTasks = new Map();
         this._retryBindings = new Map();
         this._taskTransports = new Map();
         this._progress = new ProgressTracker({
@@ -119,13 +124,15 @@ class StreamEngine extends EventEmitter
         this._progress.initTask(taskId, prebufferTarget,
             probe.bitrate || DEFAULT_ASSUMED_BITRATE);
         this._attachRetryListeners(taskId);
+        // 复用 probe 阶段的 transport，避免 _runTask 重复创建导致 probe transport 泄漏
+        this._taskTransports.set(taskId, transport);
         this._runTask(taskId).catch(err =>
         {
             console.error(`[StreamEngine] _runTask ${taskId} failed:`, err);
         });
         const playUrl = finalMode === 'stream'
             ? `http://127.0.0.1:${this.streamPort}/stream/${taskId}` : undefined;
-        this._emitQueueChanged();
+        emitQueueChanged(this);
         return { success: true, taskId, playUrl };
     }
 
@@ -140,7 +147,7 @@ class StreamEngine extends EventEmitter
         this._cancelActiveSegments(taskId);
         this._runningTasks.delete(taskId);
         this.emit('state-change', { taskId, from, to: 'paused' });
-        this._emitQueueChanged();
+        emitQueueChanged(this);
     }
 
     /** 恢复任务 */
@@ -173,6 +180,19 @@ class StreamEngine extends EventEmitter
         this._detachRetryListeners(taskId);
         this.speedLimiter.clearTaskLimit(taskId);
         this._progress.delete(taskId);
+        // 显式销毁 transport 释放底层 HTTP keep-alive 连接，避免 socket 泄漏
+        const transport = this._taskTransports.get(taskId);
+        if (transport && typeof transport.destroy === 'function')
+        {
+            try
+            {
+                transport.destroy();
+            }
+            catch (e)
+            {
+                // 忽略 destroy 异常
+            }
+        }
         this._taskTransports.delete(taskId);
         if (removeFiles)
         {
@@ -186,11 +206,12 @@ class StreamEngine extends EventEmitter
             }
         }
         this.emit('state-change', { taskId, from, to: 'cancelled' });
-        this._emitQueueChanged();
+        emitQueueChanged(this);
     }
 
     /**
      * 创建读取流（供本地 HTTP 服务器 /stream/<taskId> 调用）
+     * 文件不存在的错误通过返回流的 'error' 事件传递，由调用方（HTTP 服务器）处理
      * @param {string} taskId - 任务标识
      * @param {Object} [range] - { start, end } 字节范围（含端点）
      * @returns {import('stream').Readable}
@@ -204,18 +225,13 @@ class StreamEngine extends EventEmitter
             err.code = 'ENOENT';
             throw err;
         }
-        if (!fs.existsSync(task.savePath))
-        {
-            const err = new Error(`file not found: ${task.savePath}`);
-            err.code = 'ENOENT';
-            throw err;
-        }
         // 边下边播场景提升任务优先级，确保下载队列优先调度
         if (task.status === 'downloading' || task.status === 'queued')
         {
             this.downloadQueue.setPriority(taskId, 'high');
         }
         const streamEnd = end !== undefined ? end : task.size - 1;
+        // 不使用 fs.existsSync（热路径同步 IO）；ENOENT 等错误由 stream 'error' 事件传递
         return fs.createReadStream(task.savePath, { start, end: streamEnd });
     }
 
@@ -253,30 +269,46 @@ class StreamEngine extends EventEmitter
         return result;
     }
 
-    /** 应用启动时恢复：将所有 downloading 状态的任务转为 paused */
+    /**
+     * 应用启动时恢复：将所有 downloading 状态的任务转为 paused
+     * 每个任务独立 try/catch，单任务失败不阻塞其他任务恢复
+     */
     async recover()
     {
         const downloadingTasks = this.manifestStore.findByStatus('downloading');
         for (const task of downloadingTasks)
         {
-            await this.manifestStore.update(task.id, { status: 'paused' });
-            this.emit('state-change', {
-                taskId: task.id,
-                from: 'downloading',
-                to: 'paused',
-                reason: 'recovered'
-            });
+            try
+            {
+                await this.manifestStore.update(task.id, { status: 'paused' });
+                this.emit('state-change', {
+                    taskId: task.id,
+                    from: 'downloading',
+                    to: 'paused',
+                    reason: 'recovered'
+                });
+            }
+            catch (err)
+            {
+                console.error(
+                    `[StreamEngine] recover ${task.id} failed:`, err);
+            }
         }
     }
 
-    /** 任务执行主循环（顺序下载分段直到完成或被中断） */
+    /**
+     * 任务执行主循环（顺序下载分段直到完成或被中断）
+     * 使用 Symbol token 防止 pause/resume 后旧实例与新实例并发：
+     * 仅当 Map 中存储的 token 仍为本实例生成时，循环继续 / finally 清理才生效
+     */
     async _runTask(taskId)
     {
         if (this._runningTasks.has(taskId))
         {
             return;
         }
-        this._runningTasks.add(taskId);
+        const token = Symbol(taskId);
+        this._runningTasks.set(taskId, token);
         try
         {
             const task = this.manifestStore.get(taskId);
@@ -290,7 +322,7 @@ class StreamEngine extends EventEmitter
                 transport = this.transportFactory(task.source);
                 this._taskTransports.set(taskId, transport);
             }
-            while (this._runningTasks.has(taskId))
+            while (this._runningTasks.get(taskId) === token)
             {
                 const current = this.manifestStore.get(taskId);
                 if (!current || current.status !== 'downloading')
@@ -301,7 +333,7 @@ class StreamEngine extends EventEmitter
                     taskId, current.size);
                 if (start >= current.size)
                 {
-                    await this._completeTask(taskId);
+                    await completeTask(this, taskId);
                     return;
                 }
                 const end = Math.min(start + SEGMENT_SIZE - 1, current.size - 1);
@@ -315,11 +347,16 @@ class StreamEngine extends EventEmitter
         catch (err)
         {
             console.error(`[StreamEngine] _runTask ${taskId} exception:`, err);
-            await this._failTask(taskId, err);
+            await failTask(this, taskId, err);
         }
         finally
         {
-            this._runningTasks.delete(taskId);
+            // 仅当 Map 中存的仍是本实例的 token 时才删除
+            // 避免误删 resume 后新 _runTask 写入的条目
+            if (this._runningTasks.get(taskId) === token)
+            {
+                this._runningTasks.delete(taskId);
+            }
         }
     }
 
@@ -367,51 +404,24 @@ class StreamEngine extends EventEmitter
         }
         catch (err)
         {
+            // 先中止 reader 释放底层 HTTP 连接，避免 socket 泄漏
+            // （createSegmentWriter 抛错时 reader 已建立但尚未进入 pipeSegment）
+            if (reader && typeof reader.abort === 'function')
+            {
+                try
+                {
+                    reader.abort();
+                }
+                catch (e)
+                {
+                    // 忽略 abort 错误
+                }
+            }
             await cleanupPartialSegment(writer, task.savePath, start);
             segs.delete(segmentId);
             this._reportError(taskId, err);
             return false;
         }
-    }
-
-    /** 任务完成处理：标记完成、emit completed、异步触发完整性校验 */
-    async _completeTask(taskId)
-    {
-        const task = this.manifestStore.get(taskId);
-        if (!task) return;
-        this.downloadQueue.complete(taskId);
-        this.retryController.markSuccess(taskId);
-        await this.manifestStore.update(taskId, {
-            status: 'completed',
-            completedAt: Date.now()
-        });
-        this.emit('completed', { taskId, name: task.fileName, size: task.size });
-        this._emitQueueChanged();
-        this.verify(taskId).catch(err =>
-        {
-            console.error(`[StreamEngine] verify ${taskId} failed:`, err);
-        });
-    }
-
-    /** 任务失败处理：标记错误、emit error（含 recoverable/actions） */
-    async _failTask(taskId, error)
-    {
-        const task = this.manifestStore.get(taskId);
-        if (!task) return;
-        const errorType = (error && error.errorType) || 'unknown';
-        this.downloadQueue.markError(taskId, error);
-        await this.manifestStore.update(taskId, {
-            status: 'error',
-            error: { errorType, message: error.message || String(error) }
-        });
-        this.emit('error', {
-            taskId,
-            errorType,
-            message: error.message || String(error),
-            recoverable: errorType === 'network',
-            actions: errorType === 'network' ? ['retry'] : []
-        });
-        this._emitQueueChanged();
     }
 
     /** 挂接重试监听器（retry 触发重新下载，fatal/exhausted 触发失败） */
@@ -431,7 +441,7 @@ class StreamEngine extends EventEmitter
         {
             if (payload.taskId === taskId)
             {
-                this._failTask(taskId, payload.error);
+                failTask(this, taskId, payload.error);
             }
         };
         this.retryController.on('retry', onRetry);
@@ -483,16 +493,6 @@ class StreamEngine extends EventEmitter
         this.retryController.reportError(taskId, {
             errorType: error.errorType || 'network',
             message: error.message || String(error)
-        });
-    }
-
-    /** 发出 queue-changed 事件 */
-    _emitQueueChanged()
-    {
-        this.emit('queue-changed', {
-            active: this.downloadQueue.getActiveTasks().length,
-            queued: this.downloadQueue.getQueuedTasks().length,
-            paused: this.manifestStore.findByStatus('paused').length
         });
     }
 }
