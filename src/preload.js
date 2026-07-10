@@ -184,6 +184,77 @@ contextBridge.exposeInMainWorld('electron', {
         warn: (message, ...args) => ipcRenderer.invoke('player-log', 'warn', message, ...args),
         error: (message, ...args) => ipcRenderer.invoke('player-log', 'error', message, ...args),
         debug: (message, ...args) => ipcRenderer.invoke('player-log', 'debug', message, ...args)
+    },
+    // 边下边播 streaming API（新增）- 直接调用 ipcRenderer.invoke，无需走白名单
+    streaming: {
+        // 启动任务
+        // params: { source, savePath?, priority?, speedLimit?, autoPlay, mode? }
+        // 返回: { success, taskId, playUrl? }
+        start: (params) => ipcRenderer.invoke('streaming:start', params),
+        // 暂停任务
+        // 返回: { success }
+        pause: (taskId) => ipcRenderer.invoke('streaming:pause', { taskId }),
+        // 恢复任务
+        // 返回: { success }
+        resume: (taskId) => ipcRenderer.invoke('streaming:resume', { taskId }),
+        // 取消任务（removeFiles=true 时删除已下载文件）
+        // 返回: { success }
+        cancel: (taskId, removeFiles = false) => ipcRenderer.invoke('streaming:cancel', { taskId, removeFiles }),
+        // 设置任务优先级（priority ∈ {'high','normal','low'}）
+        // 返回: { success }
+        setPriority: (taskId, priority) => ipcRenderer.invoke('streaming:setPriority', { taskId, priority }),
+        // 设置限速（taskId 为 null 时设置全局限速）
+        // 返回: { success }
+        setSpeedLimit: (bytesPerSec, taskId = null) => ipcRenderer.invoke('streaming:setSpeedLimit', { taskId, bytesPerSec }),
+        // 列出任务（filter: { status?, sourceType? }）
+        // 返回: { success, tasks[] }
+        listTasks: (filter = {}) => ipcRenderer.invoke('streaming:listTasks', filter),
+        // 获取单个任务详情
+        // 返回: { success, task }
+        getTask: (taskId) => ipcRenderer.invoke('streaming:getTask', { taskId }),
+        // 触发完整性校验
+        // 返回: { success, integrity }
+        verify: (taskId) => ipcRenderer.invoke('streaming:verify', { taskId }),
+        // 设置下载根目录（migrate=true 时迁移现有文件）
+        // 返回: { success, migrated }
+        setStoragePath: (downloadPath, migrate = false) => ipcRenderer.invoke('streaming:setStoragePath', { path: downloadPath, migrate }),
+        // 查询磁盘空间与当前下载路径
+        // 返回: { success, total, free, used, downloadPath }
+        getStorageInfo: () => ipcRenderer.invoke('streaming:getStorageInfo'),
+        // 清理 N 天前的已完成任务
+        // 返回: { success, removed }
+        cleanup: (beforeDays) => ipcRenderer.invoke('streaming:cleanup', { beforeDays }),
+        // 手动重试失败任务
+        // 返回: { success }
+        retry: (taskId) => ipcRenderer.invoke('streaming:retry', { taskId }),
+        // 订阅 streaming 事件，返回取消订阅函数
+        // eventName 必须在白名单内，callback 必须为函数
+        on: (eventName, callback) => {
+            const validEvents = [
+                'streaming:progress',
+                'streaming:state-change',
+                'streaming:prebuffer',
+                'streaming:integrity',
+                'streaming:error',
+                'streaming:queue-changed',
+                'streaming:retry',
+                'streaming:completed'
+            ];
+            if (!validEvents.includes(eventName)) {
+                console.warn(`[preload] unknown streaming event: ${eventName}`);
+                return () => {};
+            }
+            if (typeof callback !== 'function') {
+                console.warn('[preload] streaming.on callback must be a function');
+                return () => {};
+            }
+            const handler = (event, payload) => callback(payload);
+            ipcRenderer.on(eventName, handler);
+            // 返回取消订阅函数
+            return () => {
+                ipcRenderer.removeListener(eventName, handler);
+            };
+        }
     }
 });
 
