@@ -268,7 +268,11 @@ describe('HttpTransport', () =>
 
     afterAll(async () =>
     {
-        await new Promise((resolve) => server.close(resolve));
+        await new Promise((resolve) =>
+        {
+            server.closeAllConnections();
+            server.close(resolve);
+        });
         cleanupTmpDir();
     });
 
@@ -427,24 +431,10 @@ describe('HttpTransport', () =>
 
             const terminationPromise = waitForStreamTermination(reader.stream);
 
-            // 显式挂载 data 监听器启动数据流 (newListener 延迟挂载机制要求)
-            reader.stream.on('data', () => {});
-
-            // 等待数据开始流动
+            // 等待第一个 data 事件 (newListener 延迟挂载机制要求显式订阅 'data')
             await new Promise((resolve) =>
             {
-                const check = () =>
-                {
-                    if (reader.bytesLoaded > 0)
-                    {
-                        resolve();
-                    }
-                    else
-                    {
-                        setTimeout(check, 20);
-                    }
-                };
-                check();
+                reader.stream.once('data', resolve);
             });
             expect(reader.bytesLoaded).toBeGreaterThan(0);
 
@@ -470,24 +460,10 @@ describe('HttpTransport', () =>
 
             const terminationPromise = waitForStreamTermination(reader.stream);
 
-            // 显式挂载 data 监听器启动数据流 (newListener 延迟挂载机制要求)
-            reader.stream.on('data', () => {});
-
-            // 等待数据开始流动
+            // 等待第一个 data 事件 (newListener 延迟挂载机制要求显式订阅 'data')
             await new Promise((resolve) =>
             {
-                const check = () =>
-                {
-                    if (reader.bytesLoaded > 0)
-                    {
-                        resolve();
-                    }
-                    else
-                    {
-                        setTimeout(check, 20);
-                    }
-                };
-                check();
+                reader.stream.once('data', resolve);
             });
 
             transport.cancel('seg-cancel');

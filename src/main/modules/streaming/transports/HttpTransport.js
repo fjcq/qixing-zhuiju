@@ -2,13 +2,13 @@
 const http = require('http');
 // HTTPS 模块
 const https = require('https');
-// 文件系统模块
-const fs = require('fs');
 // 路径模块
 const path = require('path');
 
 // 父类接口
 const ITransport = require('./ITransport');
+// 分段写入器
+const SegmentWriter = require('./SegmentWriter');
 
 // 最大重定向次数
 const MAX_REDIRECTS = 5;
@@ -85,14 +85,16 @@ class HttpTransport extends ITransport
             // Range GET 响应, 从 Content-Range 解析总大小: bytes 0-0/12345
             const cr = res.headers['content-range'] || '';
             const m = /bytes\s+\d+-\d+\/(\d+)/i.exec(cr);
-            size = m ? parseInt(m[1], 10) : 0;
+            const totalParsed = m ? parseInt(m[1], 10) : 0;
+            size = Number.isNaN(totalParsed) ? 0 : totalParsed;
             acceptRanges = true;
         }
         else
         {
             // HEAD 响应, Content-Length 即总大小
             const cl = res.headers['content-length'];
-            size = cl ? parseInt(cl, 10) : 0;
+            const clParsed = cl ? parseInt(cl, 10) : 0;
+            size = Number.isNaN(clParsed) ? 0 : clParsed;
             acceptRanges = res.headers['accept-ranges'] === 'bytes';
         }
 
@@ -116,6 +118,9 @@ class HttpTransport extends ITransport
      * 发起 Range GET 请求, 封装响应流为 SegmentReader
      * @param {Object} opts - { id, start, end, priority?, onProgress? }
      * @returns {Promise<Object>} SegmentReader 实例
+     * 注意：调用方必须通过 stream.on('data', ...) 消费数据以触发 onProgress 回调。
+     * 使用 stream.read() / stream.pipe() / for await...of / 'readable' 事件等消费模式
+     * 不会触发进度回调（bytesLoaded 也不会更新）。
      */
     createSegmentReader(opts)
     {
@@ -171,6 +176,8 @@ class HttpTransport extends ITransport
                         return;
                     }
                     internalAttached = true;
+                    // 移除 newListener 监听器, 避免后续每次 addListener 触发空检查
+                    res.removeListener('newListener', onNewListener);
                     res.prependListener('data', (chunk) =>
                     {
                         reader.bytesLoaded += chunk.length;
@@ -188,13 +195,14 @@ class HttpTransport extends ITransport
                     });
                 };
 
-                res.on('newListener', (event) =>
+                const onNewListener = (event) =>
                 {
                     if (event === 'data')
                     {
                         attachInternal();
                     }
-                });
+                };
+                res.on('newListener', onNewListener);
 
                 res.on('end', () =>
                 {
@@ -226,84 +234,14 @@ class HttpTransport extends ITransport
 
     /**
      * 创建分段写入器
-     * 用 fs.createWriteStream 写入指定文件, append 模式用 'a' flag
+     * 委托给 SegmentWriter 类, 等待文件打开后返回
      * @param {Object} opts - { savePath, append? }
      * @returns {Promise<Object>} SegmentWriter 实例
      */
     async createSegmentWriter(opts)
     {
-        const { savePath, append } = opts;
-        const flags = append ? 'a' : 'w';
-
-        const stream = fs.createWriteStream(savePath, { flags });
-
-        // 等待文件打开, 失败则抛出原始错误 (如目录不存在)
-        await new Promise((resolve, reject) =>
-        {
-            const onOpen = () =>
-            {
-                stream.removeListener('error', onError);
-                resolve();
-            };
-            const onError = (err) =>
-            {
-                stream.removeListener('open', onOpen);
-                reject(err);
-            };
-            stream.once('open', onOpen);
-            stream.once('error', onError);
-        });
-
-        const writer = {
-            savePath,
-            append: !!append,
-            bytesWritten: 0,
-            write: (chunk) => new Promise((resolve, reject) =>
-            {
-                const onError = (err) =>
-                {
-                    stream.removeListener('error', onError);
-                    reject(err);
-                };
-                stream.once('error', onError);
-                stream.write(chunk, () =>
-                {
-                    stream.removeListener('error', onError);
-                    writer.bytesWritten += chunk.length;
-                    resolve();
-                });
-            }),
-            end: () => new Promise((resolve, reject) =>
-            {
-                const onError = (err) =>
-                {
-                    stream.removeListener('error', onError);
-                    reject(err);
-                };
-                stream.once('error', onError);
-                stream.end(() =>
-                {
-                    stream.removeListener('error', onError);
-                    resolve();
-                });
-            }),
-            abort: () => new Promise((resolve) =>
-            {
-                // 抑制 destroy 过程中可能触发的 error 事件
-                stream.on('error', () => {});
-                stream.destroy();
-                try
-                {
-                    fs.unlinkSync(savePath);
-                }
-                catch (e)
-                {
-                    // 文件可能已被删除, 忽略
-                }
-                resolve();
-            })
-        };
-
+        const writer = new SegmentWriter(opts);
+        await writer.ready;
         return writer;
     }
 
