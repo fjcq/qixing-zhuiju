@@ -66,4 +66,26 @@ describe('DownloadQueue', () => {
         q.setPriority('t3', 'high');
         expect(q.getQueuedTasks()[0].id).toBe('t3');
     });
+
+    it('markError 标记错误并释放槽位激活下一个', () => {
+        const q = new DownloadQueue({ maxConcurrent: 1 });
+        q.enqueue({ id: 't1', priority: 'normal' });
+        q.enqueue({ id: 't2', priority: 'normal' });
+        const err = new Error('download failed');
+        q.markError('t1', err);
+        expect(q.getTask('t1').status).toBe('error');
+        expect(q.getTask('t1').error).toBe(err);
+        expect(q.getActiveTasks()[0].id).toBe('t2');
+    });
+
+    it('resume 恢复暂停任务重新进入调度', () => {
+        const q = new DownloadQueue({ maxConcurrent: 2 });
+        q.enqueue({ id: 't1', priority: 'normal' });
+        q.enqueue({ id: 't2', priority: 'normal' });
+        q.pause('t1');
+        expect(q.getTask('t1').status).toBe('paused');
+        q.resume('t1');
+        expect(q.getTask('t1').status).toBe('downloading');
+        expect(q.getActiveTasks().map(t => t.id).sort()).toEqual(['t1', 't2']);
+    });
 });

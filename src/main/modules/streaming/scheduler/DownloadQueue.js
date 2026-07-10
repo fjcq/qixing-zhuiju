@@ -41,7 +41,7 @@ class DownloadQueue
     {
         const t = Object.assign({ status: 'queued', priority: DEFAULT_PRIORITY }, task);
         this.tasks.set(t.id, t);
-        const result = { ...t };
+        let preemptedId = null;
         if (this.activeOrder.length < this.maxConcurrent)
         {
             t.status = 'downloading';
@@ -49,11 +49,13 @@ class DownloadQueue
         }
         else
         {
-            const preemptedId = this._tryPreempt(t.priority);
-            if (preemptedId)
-            {
-                result.preempted = preemptedId;
-            }
+            preemptedId = this._tryPreempt(t.priority);
+        }
+        // 在状态变更后再浅拷贝，确保返回值的 status 字段反映最新状态
+        const result = { ...t };
+        if (preemptedId)
+        {
+            result.preempted = preemptedId;
         }
         return result;
     }
