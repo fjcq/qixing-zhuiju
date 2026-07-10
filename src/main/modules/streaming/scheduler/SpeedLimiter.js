@@ -1,3 +1,6 @@
+// 播放优先模式下全局桶容量比例
+const PLAYBACK_MODE_RATIO = 0.5;
+
 // 令牌桶限速器
 class SpeedLimiter
 {
@@ -63,7 +66,7 @@ class SpeedLimiter
         if (this.globalBps > 0)
         {
             const effectiveBps = newActive
-                ? Math.floor(this.globalBps * 0.5) : this.globalBps;
+                ? Math.floor(this.globalBps * PLAYBACK_MODE_RATIO) : this.globalBps;
             this.globalBucket = effectiveBps;
         }
     }
@@ -120,7 +123,14 @@ class SpeedLimiter
             {
                 return false;
             }
+            // 先检查全局桶，不足则直接返回，不扣减任务桶
+            if (this.globalBps > 0 && !this._tryConsumeGlobal(bytes))
+            {
+                return false;
+            }
+            // 全局桶已扣减成功，再扣减任务桶
             this.taskBuckets.set(taskId, taskBucket - bytes);
+            return true;
         }
         if (this.globalBps > 0)
         {
@@ -146,7 +156,7 @@ class SpeedLimiter
         if (this.globalBps > 0)
         {
             const effectiveBps = this.playbackActive
-                ? Math.floor(this.globalBps * 0.5) : this.globalBps;
+                ? Math.floor(this.globalBps * PLAYBACK_MODE_RATIO) : this.globalBps;
             const refill = Math.floor((elapsed / 1000) * effectiveBps);
             this.globalBucket = Math.min(effectiveBps, this.globalBucket + refill);
         }
