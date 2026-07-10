@@ -18,6 +18,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { pathToFileURL } from 'url';
+import { createRequire } from 'module';
 
 // 关键：webtorrent v2.x 是纯 ESM（"type": "module"），
 //       createRequire/require 是 CommonJS 机制，无法加载 ESM（ERR_REQUIRE_ESM）
@@ -38,6 +39,14 @@ const WebTorrentModule = await import(pathToFileURL(webtorrentEntry).href);
 // ESM 模块的构造函数导出位置：default 上或模块本身（取决于包是否同时提供 default export）
 const WebTorrent = WebTorrentModule.default || WebTorrentModule;
 
+// 加载限速流 Transform（CommonJS 模块，可用 createRequire 在 ESM 中加载）
+// 注意：与 webtorrent 不同，ThrottleTransform.js 是 CommonJS（module.exports），
+//       不会触发 ERR_REQUIRE_ESM，可安全用 createRequire 加载
+// 路径相对 magnetHandler.mjs 所在目录（src/main/scripts/）：
+//   ../modules/streaming/ThrottleTransform.js → src/main/modules/streaming/ThrottleTransform.js
+const require = createRequire(import.meta.url);
+const ThrottleTransform = require('../modules/streaming/ThrottleTransform.js');
+
 // 全局错误处理，防止子进程崩溃
 process.on('uncaughtException', err => {
     // 忽略客户端关闭连接导致的流错误
@@ -57,6 +66,9 @@ process.on('unhandledRejection', err => {
 // 全局客户端实例
 let client = null;
 let currentTorrent = null;
+// 当前限速值（字节/秒），0 表示不限速；由 set-speed-limit 消息更新
+// 仅对 webtorrent 的 file.createReadStream 生效（本机已下载文件读取不限速）
+let currentSpeedLimit = 0;
 let fileServer = null;
 let fileServerPort = 0;
 // 文件流进度上报定时器（提为模块级，以便在新 torrent 播放时清理旧的）
@@ -1178,7 +1190,11 @@ function startFileStream(torrent, fileName, resolve, reject) {
                     readStream.pipe(res).on('error', () => { /* 忽略管道错误 */ });
                 } else {
                     // 文件未下载完成，通过webtorrent流式读取
-                    const stream = file.createReadStream({ start, end });
+                    // 若设置了限速（currentSpeedLimit > 0），用 ThrottleTransform 包装
+                    const rawStream = file.createReadStream({ start, end });
+                    const stream = currentSpeedLimit > 0
+                        ? rawStream.pipe(new ThrottleTransform({ bytesPerSec: currentSpeedLimit }))
+                        : rawStream;
                     stream.on('error', () => { /* 静默处理流错误 */ });
                     stream.pipe(res).on('error', () => { /* 静默处理管道错误 */ });
                 }
@@ -1194,7 +1210,12 @@ function startFileStream(torrent, fileName, resolve, reject) {
                     readStream.on('error', () => { /* 忽略流错误 */ });
                     readStream.pipe(res).on('error', () => { /* 忽略管道错误 */ });
                 } else {
-                    const stream = file.createReadStream();
+                    // 文件未下载完成，通过webtorrent流式读取（无 Range 请求，整文件流）
+                    // 若设置了限速（currentSpeedLimit > 0），用 ThrottleTransform 包装
+                    const rawStream = file.createReadStream();
+                    const stream = currentSpeedLimit > 0
+                        ? rawStream.pipe(new ThrottleTransform({ bytesPerSec: currentSpeedLimit }))
+                        : rawStream;
                     stream.on('error', () => { /* 静默处理流错误 */ });
                     stream.pipe(res).on('error', () => { /* 静默处理管道错误 */ });
                 }
@@ -1573,6 +1594,143 @@ process.stdin.on('data', chunk => {
                         }).catch(err => {
                             sendMessage({ id: msg.id, type: 'error', error: '查询 torrent 失败: ' + err.message });
                         });
+                    }
+                    break;
+
+                case 'set-priority':
+                    // 设置 torrent 下载优先级（high/normal/low）
+                    // webtorrent 没有原生优先级 API，用 select/deselect 模拟：
+                    //   high: select 全选（全片加速下载）
+                    //   normal: 默认行为，不动
+                    //   low: deselect 全片（停止下载，保留已下数据）；
+                    //        指定 fileName 时仅对该文件 file.deselect()
+                    // 找不到 torrent 时返回 TORRENT_NOT_FOUND（与 pause 一致）
+                    {
+                        const c = getClient();
+                        const hash = (msg.infoHash || '').toLowerCase();
+                        let torrent = null;
+                        if (hash) {
+                            // 指定 infoHash：用 c.torrents 数组同步查找（避开 c.get 异步陷阱，与 findReusableTorrent 一致）
+                            if (currentTorrent && currentTorrent.infoHash === hash) {
+                                torrent = currentTorrent;
+                            } else if (c && Array.isArray(c.torrents)) {
+                                torrent = c.torrents.find(t => t && t.infoHash === hash) || null;
+                            }
+                        } else {
+                            // 空 infoHash：回退到 currentTorrent（兼容旧调用）
+                            torrent = currentTorrent;
+                        }
+                        if (torrent) {
+                            try {
+                                const priority = msg.priority;
+                                if (priority === 'high') {
+                                    // 全选整个 torrent，加速下载
+                                    torrent.select(0, torrent.length - 1);
+                                } else if (priority === 'low') {
+                                    // 降低优先级：停止下载但保留已下数据
+                                    if (msg.fileName) {
+                                        // 指定文件：仅对该文件 deselect
+                                        const file = torrent.files.find(f => f.name === msg.fileName);
+                                        if (file) {
+                                            file.deselect();
+                                        }
+                                    } else {
+                                        // 未指定文件：deselect 整个 torrent
+                                        torrent.deselect(0, torrent.length - 1);
+                                    }
+                                }
+                                // normal: 默认行为，不操作
+                                sendMagnetStatus(torrent.infoHash, {
+                                    status: 'priority-changed',
+                                    fileName: msg.fileName || undefined,
+                                    priority
+                                });
+                                sendMessage({
+                                    id: msg.id,
+                                    type: 'priority-set',
+                                    priority,
+                                    fileName: msg.fileName || undefined
+                                });
+                            } catch (e) {
+                                sendMessage({
+                                    id: msg.id,
+                                    type: 'error',
+                                    error: '设置优先级失败: ' + e.message
+                                });
+                            }
+                        } else {
+                            sendMessage({
+                                id: msg.id,
+                                type: 'error',
+                                error: '当前没有活动的 torrent',
+                                code: 'TORRENT_NOT_FOUND'
+                            });
+                        }
+                    }
+                    break;
+
+                case 'set-speed-limit':
+                    // 设置全局下载限速（字节/秒），0 表示不限速
+                    // 仅对后续 file.createReadStream 生效（已运行的 play session 不重启）
+                    // 模块级 currentSpeedLimit 在 startFileStream 的 createReadStream 处读取
+                    {
+                        const bytesPerSec = Number(msg.bytesPerSec) || 0;
+                        currentSpeedLimit = bytesPerSec;
+                        sendMessage({
+                            id: msg.id,
+                            type: 'speed-limit-set',
+                            bytesPerSec
+                        });
+                    }
+                    break;
+
+                case 'verify-pieces':
+                    // 重新校验 torrent 的所有 pieces（webtorrent 原生 torrent.verify()）
+                    // 校验期间 downloaded 会重置并逐步恢复，期间推送 status: 'verifying'
+                    // 校验完成后通过 'verified' 事件回复（一次性监听）
+                    {
+                        const c = getClient();
+                        const hash = (msg.infoHash || '').toLowerCase();
+                        let torrent = null;
+                        if (hash) {
+                            if (currentTorrent && currentTorrent.infoHash === hash) {
+                                torrent = currentTorrent;
+                            } else if (c && Array.isArray(c.torrents)) {
+                                torrent = c.torrents.find(t => t && t.infoHash === hash) || null;
+                            }
+                        } else {
+                            torrent = currentTorrent;
+                        }
+                        if (torrent) {
+                            try {
+                                // 推送校验中状态（主进程据此更新 UI）
+                                sendMagnetStatus(torrent.infoHash, { status: 'verifying' });
+                                // 监听 verified 事件（一次性），校验完成后回复
+                                torrent.once('verified', () => {
+                                    sendMessage({
+                                        id: msg.id,
+                                        type: 'pieces-verified',
+                                        infoHash: torrent.infoHash,
+                                        downloaded: Number(torrent.downloaded)
+                                    });
+                                });
+                                // 触发异步校验
+                                torrent.verify();
+                            } catch (e) {
+                                sendMessage({
+                                    id: msg.id,
+                                    type: 'error',
+                                    error: '校验失败: ' + e.message
+                                });
+                            }
+                        } else {
+                            sendMessage({
+                                id: msg.id,
+                                type: 'error',
+                                error: '当前没有活动的 torrent',
+                                code: 'TORRENT_NOT_FOUND'
+                            });
+                        }
                     }
                     break;
 
