@@ -10,7 +10,7 @@
  *
  * 历史查看请进入"历史"页（#history-page），本页面不再维护独立抽屉
  *
- * 状态机：IDLE → EDITING → RECOGNIZED → PARSE_PROGRESS → FILES_READY → PLAYING
+ * 状态机：IDLE → EDITING → RECOGNIZED → PARSE_PROGRESS → FILES_READY → PREBUFFERING → PLAYING
  */
 (function () {
     'use strict';
@@ -22,6 +22,7 @@
         RECOGNIZED: 'recognized',
         PARSE_PROGRESS: 'parse_progress',
         FILES_READY: 'files_ready',
+        PREBUFFERING: 'prebuffering',  // 新增：预缓冲中（边下边播启动后等待首批数据）
         PLAYING: 'playing'
     };
 
@@ -50,6 +51,11 @@
             this._parseTimeoutTimer1 = null;
             this._parseTimeoutTimer2 = null;
             this._detectTimer = null;
+
+            // 边下边播任务跟踪（PREBUFFERING → PLAYING 期间使用）
+            this._streamingTaskId = null;
+            this._streamingPlayUrl = '';
+            this._streamingPrebufferTimer = null;
 
             // 子模块：延迟创建，确保全局已就绪
             this._historyManager = null;
@@ -297,9 +303,49 @@
 
         /**
          * 设置状态（带 UI 反馈）
+         * - 进入 PREBUFFERING：为页面添加 is-prebuffering 类、显示预缓冲进度元素
+         * - 离开 PREBUFFERING：移除类、隐藏进度元素
          */
         _setState(newState) {
+            const prevState = this.state;
             this.state = newState;
+            const page = this._dom && this._dom.page;
+            if (!page) return;
+            if (newState === STATE.PREBUFFERING) {
+                page.classList.add('is-prebuffering');
+                this._ensurePrebufferProgressEl(true);
+            } else if (prevState === STATE.PREBUFFERING) {
+                page.classList.remove('is-prebuffering');
+                this._ensurePrebufferProgressEl(false);
+            }
+        }
+
+        /**
+         * 确保 #play-url-prebuffer-progress 元素存在并控制其可见性
+         * 元素不存在时动态创建，挂在 submit 按钮之后（不修改 HTML 模板）
+         * @param {boolean} visible - 是否显示
+         */
+        _ensurePrebufferProgressEl(visible) {
+            let el = document.getElementById('play-url-prebuffer-progress');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'play-url-prebuffer-progress';
+                const submit = this._dom && this._dom.submit;
+                if (submit && submit.parentNode) {
+                    submit.parentNode.insertBefore(el, submit.nextSibling);
+                } else if (this._dom && this._dom.page) {
+                    this._dom.page.appendChild(el);
+                }
+            }
+            el.style.display = visible ? 'block' : 'none';
+            if (visible) {
+                if (!el.textContent) {
+                    el.textContent = '预加载中...';
+                }
+            } else {
+                el.textContent = '';
+                el.style.removeProperty('--prebuffer-percent');
+            }
         }
 
         /**
@@ -372,29 +418,23 @@
 
         /**
          * 处理网络 URL
+         * HTTP/HTTPS 直链走边下边播：PREBUFFERING → streaming:start → prebuffer → open-player
+         * 历史在调用 _startStreamAndPlay 前写入（避免任务启动失败时历史丢失）
          * @param {string} url
          */
         async _handleNetworkUrl(url) {
             if (!url) return;
-            this._setState(STATE.PLAYING);
             const fileName = this._extractFileName(url) || '网络视频';
             // 写入历史：episode_name 用文件名
             this._addHistory(url, '外链', 'url', {
                 vod_name: fileName,
                 episode_name: fileName
             });
-            const videoData = {
-                url,
-                title: fileName,
-                vod_name: fileName,
-                episode_name: fileName,
-                isDirectPlay: true,
-                playSource: 'network',
-                type_name: '外链',
-                siteName: '外链'
-            };
-            await this._openPlayer(videoData);
-            this._notify('正在加载视频...', 'info');
+            // 启动边下边播（PREBUFFERING → PLAYING）
+            await this._startStreamAndPlay(
+                { type: 'url', value: url },
+                { fileName: fileName, priority: 'high' }
+            );
         }
 
         /**
@@ -602,6 +642,8 @@
 
         /**
          * 渲染磁力链文件列表
+         * - 视频文件按大小降序排列（最大视频文件置顶，便于用户首选）
+         * - 默认高亮首个视频文件（与 fileListRenderer 的 is-recommended 一致）
          * @param {Array} files
          * @param {string} magnetUri
          */
@@ -612,9 +654,37 @@
                 container.innerHTML = '<div class="play-url-empty"><p>文件列表渲染器不可用</p></div>';
                 return;
             }
-            window.fileListRenderer.renderFileList(container, files, (file, index) => {
+            // 排序：视频文件按大小降序，非视频文件保持原顺序
+            const sortedFiles = this._sortMagnetFilesByVideoSize(Array.isArray(files) ? files : []);
+            window.fileListRenderer.renderFileList(container, sortedFiles, (file, index) => {
                 this._playMagnetFile(magnetUri, file);
             });
+        }
+
+        /**
+         * 磁力文件列表排序：视频文件按大小降序，非视频文件保持原顺序
+         * 复制一份避免修改原数组；为首个视频文件打 highlighted 标记
+         * @param {Array<{name:string, length?:number, size?:number}>} files
+         * @returns {Array} 排序后的新数组
+         */
+        _sortMagnetFilesByVideoSize(files) {
+            const VIDEO_EXTS = new Set(['mp4', 'mkv', 'webm', 'avi', 'mov', 'm3u8', 'flv', 'wmv', 'ts', 'mpeg', 'mpg']);
+            const getExt = (name) => (name || '').split('.').pop().toLowerCase();
+            const isVideo = (f) => VIDEO_EXTS.has(getExt(f.name));
+            const getSize = (f) => f.length || f.size || 0;
+            const cloned = files.map(f => Object.assign({}, f));
+            cloned.sort((a, b) => {
+                const aV = isVideo(a), bV = isVideo(b);
+                if (aV && !bV) return -1;
+                if (!aV && bV) return 1;
+                if (aV && bV) return getSize(b) - getSize(a);
+                return 0;
+            });
+            const firstVideoIdx = cloned.findIndex(f => isVideo(f));
+            if (firstVideoIdx >= 0) {
+                cloned[firstVideoIdx].highlighted = true;
+            }
+            return cloned;
         }
 
         /**
@@ -762,6 +832,157 @@
                 console.error('[PlayUrlController] 打开播放器失败:', error);
                 this._notify(`打开播放器失败: ${error.message}`, 'error');
                 throw error;
+            }
+        }
+
+        /**
+         * 启动边下边播：PREBUFFERING → streaming:start → 监听 prebuffer → ready 后打开播放器
+         * - 失败回退到 EDITING 状态并提示用户
+         * - 30 秒 prebuffer 超时则强制打开播放器（避免事件丢失导致永久卡死）
+         * - 订阅在 start() 之前建立，避免错过首批 prebuffer 事件
+         * @param {Object} source - { type: 'url'|'magnet'|'local', value: string, infoHash?: string }
+         * @param {Object} [options] - { fileName?, priority? }
+         */
+        async _startStreamAndPlay(source, options = {}) {
+            if (!window.electron || !window.electron.streaming) {
+                console.error('[PlayUrlController] streaming API 不可用');
+                this._setState(STATE.EDITING);
+                this._notify('streaming API 不可用', 'error');
+                return;
+            }
+
+            // 切换到 PREBUFFERING 状态（UI 显示"预加载中"动画）
+            this._setState(STATE.PREBUFFERING);
+
+            // 预缓冲监听器（提前订阅，避免错过首批事件）
+            let prebufferUnsub = null;
+            let errorUnsub = null;
+            let settled = false;
+
+            const cleanup = () => {
+                if (prebufferUnsub) {
+                    prebufferUnsub();
+                    prebufferUnsub = null;
+                }
+                if (errorUnsub) {
+                    errorUnsub();
+                    errorUnsub = null;
+                }
+                if (this._streamingPrebufferTimer) {
+                    clearTimeout(this._streamingPrebufferTimer);
+                    this._streamingPrebufferTimer = null;
+                }
+            };
+
+            try {
+                // 订阅 prebuffer 事件（更新进度；ready 时打开播放器）
+                prebufferUnsub = window.electron.streaming.on('streaming:prebuffer', (payload) => {
+                    if (settled || !payload || payload.taskId !== this._streamingTaskId) return;
+                    this._updatePrebufferProgress(payload.bufferedSeconds, payload.target);
+                    if (payload.ready) {
+                        settled = true;
+                        cleanup();
+                        this._openPlayerForStreaming(this._streamingTaskId, this._streamingPlayUrl, source, options);
+                    }
+                });
+
+                // 订阅错误事件（预缓冲失败时切回 EDITING）
+                errorUnsub = window.electron.streaming.on('streaming:error', (payload) => {
+                    if (settled || !payload || payload.taskId !== this._streamingTaskId) return;
+                    settled = true;
+                    cleanup();
+                    console.error('[PlayUrlController] streaming error:', payload);
+                    this._setState(STATE.EDITING);
+                    const errMsg = payload.message || payload.error || '未知错误';
+                    const errType = payload.errorType || 'unknown';
+                    this._notify(`播放失败: ${errMsg}（${errType}）`, 'error');
+                });
+
+                // 启动 streaming 任务
+                const result = await window.electron.streaming.start({
+                    source: source,
+                    autoPlay: true,
+                    mode: 'stream',
+                    priority: options.priority || 'high'
+                });
+
+                if (!result || !result.success || !result.taskId || !result.playUrl) {
+                    cleanup();
+                    this._setState(STATE.EDITING);
+                    const err = (result && result.error) || '未知错误';
+                    this._notify('启动播放失败: ' + err, 'error');
+                    return;
+                }
+
+                // 缓存 taskId 与 playUrl 供事件回调使用
+                this._streamingTaskId = result.taskId;
+                this._streamingPlayUrl = result.playUrl;
+
+                // 30 秒超时：防止 prebuffer 事件丢失导致永久卡在 PREBUFFERING
+                this._streamingPrebufferTimer = setTimeout(() => {
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
+                    console.warn('[PlayUrlController] prebuffer 超时，强制打开播放器');
+                    this._openPlayerForStreaming(this._streamingTaskId, this._streamingPlayUrl, source, options);
+                }, 30000);
+            } catch (err) {
+                cleanup();
+                console.error('[PlayUrlController] _startStreamAndPlay failed:', err);
+                this._setState(STATE.EDITING);
+                this._notify('启动播放异常: ' + (err && err.message || err), 'error');
+            }
+        }
+
+        /**
+         * 更新 PREBUFFERING 状态下的进度显示
+         * 显示格式："预加载中 3.2s / 5s"（避免"准备播放"等模糊词）
+         * @param {number} bufferedSeconds - 已缓冲秒数
+         * @param {number} target - 目标缓冲秒数
+         */
+        _updatePrebufferProgress(bufferedSeconds, target) {
+            const progressEl = document.getElementById('play-url-prebuffer-progress');
+            if (!progressEl) return;
+            const buffered = Number(bufferedSeconds) || 0;
+            const tgt = Number(target) || 0;
+            const percent = tgt > 0 ? Math.min(100, Math.round(buffered / tgt * 100)) : 0;
+            progressEl.textContent = `预加载中 ${buffered.toFixed(1)}s / ${tgt}s`;
+            progressEl.style.setProperty('--prebuffer-percent', percent + '%');
+        }
+
+        /**
+         * 打开播放器播放 streaming URL（prebuffer ready 后调用）
+         * 复用现有 _openPlayer 走 open-player IPC，保持错误处理一致
+         * @param {string} taskId - streaming 任务 ID
+         * @param {string} playUrl - 本地流服务地址（http://127.0.0.1:port/...）
+         * @param {Object} source - 原始 source 对象
+         * @param {Object} options - { fileName?, priority? }
+         */
+        async _openPlayerForStreaming(taskId, playUrl, source, options) {
+            const fileName = (options && options.fileName)
+                || this._extractFileName(source && source.value)
+                || '网络视频';
+            const videoData = {
+                url: playUrl,
+                title: fileName,
+                vod_name: fileName,
+                episode_name: fileName,
+                isDirectPlay: true,
+                playSource: 'streaming',
+                isStreaming: true,
+                type_name: '外链',
+                siteName: '外链',
+                source: 'streaming',
+                taskId: taskId,
+                sourceType: source && source.type
+            };
+            try {
+                await this._openPlayer(videoData);
+                this._setState(STATE.PLAYING);
+                this._notify('正在加载视频...', 'info');
+            } catch (err) {
+                console.error('[PlayUrlController] streaming 打开播放器失败:', err);
+                this._setState(STATE.EDITING);
             }
         }
 
