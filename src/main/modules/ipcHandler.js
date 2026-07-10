@@ -1577,6 +1577,15 @@ function setupIPC(qixingApp) {
     });
 
     // ========== 旧缓存迁移 IPC（已移除：不需要迁移功能） ==========
+
+    // ========== streaming 边下边播 IPC 网关 ==========
+    // 注意：streaming:* 频道（streaming:start/pause/resume/cancel 等 13 个）由
+    // src/main/modules/streaming/ipcGateway.js 的 setupStreamingIPC 注册，
+    // 不在本函数内调用，因为它依赖 streamEngine 实例（在 main.js Task 14 中初始化）。
+    // main.js 装配顺序：
+    //   1) setupIPC(qixingApp);                                  // 注册本文件中的常规 IPC
+    //   2) const cleanup = setupStreamingIPC({ streamEngine, ... }); // 注册 streaming:* IPC + HTTP 服务器
+    //   3) app.on('before-quit', cleanup);                       // 退出时清理
 }
 
 module.exports = {
