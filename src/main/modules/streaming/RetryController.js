@@ -7,18 +7,15 @@ const DEFAULT_DELAYS = [5000, 10000, 20000, 40000];
 // 默认最大重试次数
 const DEFAULT_MAX_RETRIES = 4;
 
-// 默认不可恢复的错误类型集合
-const DEFAULT_FATAL_ERRORS = ['disk-full', 'permission-denied', 'invalid-url'];
-
 /**
  * 指数退避重试控制器
- * 监听网络错误并按指数退避策略自动重试:
+ * 监听错误并按指数退避策略自动重试:
  * - network 错误: 按 delays 数组依次延迟后 emit 'retry'
- * - fatalErrors 中的错误: 直接 emit 'fatal', 不重试
- * - 其他错误: emit 'fatal' (非网络错误不重试)
+ * - 其他所有 errorType (如 disk-full/permission-denied/invalid-url/unknown):
+ *   直接 emit 'fatal', 不重试
  *
  * 事件:
- * - 'retry' { taskId, attempt, maxRetries } 即将重试
+ * - 'retry' { taskId, attempt, maxAttempts, nextRetryIn } 即将重试
  * - 'exhausted' { taskId, error } 重试次数耗尽
  * - 'fatal' { taskId, error } 不可恢复错误
  * - 'success' { taskId } 任务成功
@@ -30,7 +27,6 @@ class RetryController extends EventEmitter
      * @param {Object} [opts] - 配置项
      * @param {Array<number>} [opts.delays] - 退避延迟数组, 默认 [5000, 10000, 20000, 40000]
      * @param {number} [opts.maxRetries] - 最大重试次数, 默认 4
-     * @param {Set<string>|Array<string>} [opts.fatalErrors] - 不可恢复的错误类型集合
      */
     constructor(opts)
     {
@@ -38,16 +34,13 @@ class RetryController extends EventEmitter
         this.delays = (opts && opts.delays) || DEFAULT_DELAYS;
         this.maxRetries = (opts && opts.maxRetries !== undefined)
             ? opts.maxRetries : DEFAULT_MAX_RETRIES;
-        const fatalSource = (opts && opts.fatalErrors)
-            ? Array.from(opts.fatalErrors) : DEFAULT_FATAL_ERRORS;
-        this.fatalErrors = new Set(fatalSource);
         // taskId → { attempt, lastError, nextRetryAt, timer } 的映射
         this._states = new Map();
     }
 
     /**
      * 报告任务错误
-     * network 错误启动/继续指数退避重试; 其他错误直接 emit 'fatal'
+     * network 错误启动/继续指数退避重试; 其他所有 errorType 直接 emit 'fatal'
      * @param {string} taskId - 任务标识
      * @param {Object} error - 错误对象 { errorType, message }
      * @returns {void}
@@ -55,7 +48,8 @@ class RetryController extends EventEmitter
     reportError(taskId, error)
     {
         const errorType = error && error.errorType;
-        // 非网络错误(含 fatalErrors 与未知类型): 直接 emit fatal, 清除状态
+        // 非网络错误(disk-full/permission-denied/invalid-url/unknown 等):
+        // 直接 emit fatal, 清除状态, 不重试
         if (errorType !== 'network')
         {
             this._clearTask(taskId);
@@ -102,7 +96,8 @@ class RetryController extends EventEmitter
             this.emit('retry', {
                 taskId,
                 attempt: state.attempt,
-                maxRetries: this.maxRetries
+                maxAttempts: this.maxRetries,
+                nextRetryIn: delay
             });
         }, delay);
         // 定时器不阻塞进程退出
