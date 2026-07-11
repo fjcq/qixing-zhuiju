@@ -183,6 +183,50 @@ class MagnetParserAdapter {
             return { success: false, error: (error && error.message) || String(error) };
         }
     }
+
+    /**
+     * 解析磁力链返回文件列表（不启动下载）
+     * 用于添加任务前的文件选择对话框
+     * @param {string} magnetUri - 磁力链接
+     * @returns {Promise<{success: boolean, infoHash?: string, files?: Array, error?: string}>}
+     */
+    async resolveFiles(magnetUri) {
+        if (!this.isAvailable()) {
+            return { success: false, error: 'IPC 不可用' };
+        }
+        if (typeof magnetUri !== 'string' || !magnetUri) {
+            return { success: false, error: '无效的磁力链接' };
+        }
+        try {
+            return await this._ipc.ipcRenderer.invoke('magnet-resolve-files', { magnetUri });
+        } catch (e) {
+            return { success: false, error: (e && e.message) || String(e) };
+        }
+    }
+
+    /**
+     * 添加磁力任务（带选中的文件列表）
+     * @param {object} payload
+     * @param {string} payload.magnetUri - 磁力链接
+     * @param {string} payload.infoHash - 种子 info hash
+     * @param {Array} payload.selectedFiles - 选中的文件列表 [{name, size, ext}]
+     * @param {Array} payload.allFiles - 所有文件列表（含未选中的）
+     * @param {string} payload.taskName - 任务名
+     * @returns {Promise<{success: boolean, taskId?: string, error?: string}>}
+     */
+    async addTask(payload) {
+        if (!this.isAvailable()) {
+            return { success: false, error: 'IPC 不可用' };
+        }
+        if (!payload || typeof payload !== 'object') {
+            return { success: false, error: '无效的参数' };
+        }
+        try {
+            return await this._ipc.ipcRenderer.invoke('magnet-add-task', payload);
+        } catch (e) {
+            return { success: false, error: (e && e.message) || String(e) };
+        }
+    }
 }
 
 /**
