@@ -351,6 +351,21 @@
                             <h3>暂无下载内容</h3>
                             <p>从「外链」页可触发磁力链下载，或在「外链」页粘贴 HTTP 视频链接进行下载</p>
                         </div>
+
+                        <!-- 任务详情视图（默认隐藏，Task 7 新增） -->
+                        <div id="downloads-task-detail" class="task-detail hidden">
+                            <div class="task-detail-header">
+                                <button id="task-detail-back" class="btn-secondary" title="返回任务列表">← 返回</button>
+                                <h3 id="task-detail-title">任务详情</h3>
+                                <div class="task-detail-actions">
+                                    <button id="task-detail-play" class="btn-primary" title="播放任务">播放</button>
+                                    <button id="task-detail-pause" class="btn-secondary" title="暂停任务">暂停</button>
+                                    <button id="task-detail-resume" class="btn-secondary" title="继续任务">继续</button>
+                                    <button id="task-detail-delete" class="btn-danger" title="删除整个任务">删除任务</button>
+                                </div>
+                            </div>
+                            <div id="task-detail-files" class="task-detail-files"></div>
+                        </div>
                     </div>
                 </div>
 

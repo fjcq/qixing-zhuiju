@@ -27,8 +27,12 @@
         constructor(app) {
             this.app = app;
             this.state = 'IDLE';
-            // 当前内存中的文件列表
+            // 当前内存中的文件列表（兼容 playById 旧调用方）
             this.files = [];
+            // 当前内存中的任务列表（Task 7 新主结构）
+            this.tasks = [];
+            // 当前打开的任务详情（null 表示在任务列表视图）
+            this.currentTask = null;
             // 搜索/筛选状态（去抖）
             this._searchTimer = null;
             this.initialized = false;
@@ -82,9 +86,17 @@
                 // 懒初始化（避免从其他页面跳转过来时 controller 还没创建）
                 this.initialize();
             }
-            // 内存里没有 → 主动拉一次
+            // Task 7 后 _loadFiles 改为拉任务列表（this.tasks），不再填充 this.files
+            // 这里改用 download-list 拉扁平文件列表，兼容历史页面按文件 id 播放
             if (!this.files || !this.files.find(f => f.id === id)) {
-                await this._loadFiles();
+                try {
+                    const res = await window.electron.ipcRenderer.invoke('download-list', {});
+                    if (res && res.success) {
+                        this.files = res.list || [];
+                    }
+                } catch (e) {
+                    console.error('[DOWNLOAD-CTRL] playById 加载文件列表失败:', e);
+                }
             }
             if (!this.files.find(f => f.id === id)) {
                 this.app.componentService.showNotification('文件已不存在，请刷新下载页', 'error');
@@ -326,41 +338,40 @@
         }
 
         /**
-         * 处理磁力链状态变化（更新内存 + 增量渲染）
-         * 现在也承载"实时下载速度/ETA/peer 数"等增量信息（主进程从子进程的 progress 事件合并过来）
+         * 处理磁力链状态变化（更新内存任务 + 增量渲染）
+         * Task 7 后按 infoHash 找任务（替代旧的按 infoHash+fileName 找文件）
+         * 仍承载"实时下载速度/ETA/peer 数"等增量信息
          */
         _handleMagnetStatus(data) {
-            // 在内存列表中找到对应记录（按 infoHash + name 匹配）
-            const idx = this.files.findIndex(f =>
-                f.sourceType === 'magnet' && f.infoHash === data.infoHash &&
-                (!data.fileName || f.name === data.fileName)
+            // 按 infoHash 在任务列表中找到对应任务
+            const idx = this.tasks.findIndex(t =>
+                t.type === 'magnet' && t.infoHash === data.infoHash
             );
             if (data.status === 'removed') {
                 if (idx !== -1) {
-                    this.files.splice(idx, 1);
-                    this._renderFiles();
+                    this.tasks.splice(idx, 1);
+                    this._renderTasks();
                 }
                 return;
             }
             if (idx === -1) {
-                // 主进程已 addMagnetFile 创建了记录；下一轮 _loadFiles() 会拉到
-                // 立即刷新一次以展示新记录
+                // 主进程已创建任务；下一轮 _loadFiles() 会拉到，立即刷新一次展示新任务
                 this._loadFiles();
                 return;
             }
-            const item = this.files[idx];
-            if (Number.isFinite(data.downloaded)) item.size = data.downloaded;
-            if (Number.isFinite(data.total) && data.total > 0) item.totalSize = data.total;
+            const task = this.tasks[idx];
+            // 任务级聚合字段：downloaded/totalSize/progress/status/速度/peer/eta
+            if (Number.isFinite(data.downloaded)) task.downloaded = data.downloaded;
+            if (Number.isFinite(data.total) && data.total > 0) task.totalSize = data.total;
             // status 直接信任主进程透传过来的值（用户可控的 paused/downloading/completed），
             // 不要被 progress 事件里的 peer-state（no-peers/connected-waiting）覆盖
-            if (data.status) item.status = data.status;
-            // 实时下载指标（仅在传入时更新，避免无意义刷写）
-            if (Number.isFinite(data.downloadSpeed)) item.downloadSpeed = data.downloadSpeed;
-            if (Number.isFinite(data.numPeers)) item.numPeers = data.numPeers;
-            if (Number.isFinite(data.wires)) item.wires = data.wires;
-            if (data.eta != null) item.eta = data.eta; // 允许 null
-            item.mtime = Date.now();
-            this._renderFiles();
+            if (data.status) task.status = data.status;
+            if (Number.isFinite(data.downloadSpeed)) task.downloadSpeed = data.downloadSpeed;
+            if (Number.isFinite(data.numPeers)) task.numPeers = data.numPeers;
+            if (data.eta != null) task.eta = data.eta; // 允许 null
+            if (Number.isFinite(data.progress)) task.progress = data.progress;
+            task.mtime = Date.now();
+            this._renderTasks();
         }
 
         /**
@@ -380,37 +391,37 @@
         }
 
         /**
-         * 加载文件列表
+         * 加载任务列表（Task 7：改调 download-list-tasks，填充 this.tasks）
          */
         async _loadFiles() {
             const loading = document.getElementById('downloads-loading');
-            const list = document.getElementById('downloads-list');
             const empty = document.getElementById('downloads-empty');
             if (loading) loading.classList.remove('hidden');
 
             try {
                 const opts = this._collectOptions();
-                const res = await window.electron.ipcRenderer.invoke('download-list', opts);
+                // 改为调用任务级 IPC
+                const res = await window.electron.ipcRenderer.invoke('download-list-tasks', opts);
                 if (res && res.success) {
-                    this.files = res.list || [];
+                    this.tasks = res.list || [];
                     this.rootDir = res.rootDir || '';
-                    this._renderFiles();
+                    this._renderTasks();
                 } else {
-                    this.files = [];
-                    this._renderFiles();
+                    this.tasks = [];
+                    this._renderTasks();
                     if (res && res.error) {
-                        this.app.componentService.showNotification(`加载下载列表失败: ${res.error}`, 'error');
+                        this.app.componentService.showNotification(`加载任务列表失败: ${res.error}`, 'error');
                     }
                 }
             } catch (error) {
-                console.error('[DOWNLOAD-CTRL] 加载列表异常:', error);
-                this.files = [];
-                this._renderFiles();
-                this.app.componentService.showNotification('加载下载列表异常', 'error');
+                console.error('[DOWNLOAD-CTRL] 加载任务列表异常:', error);
+                this.tasks = [];
+                this._renderTasks();
+                this.app.componentService.showNotification('加载任务列表异常', 'error');
             } finally {
                 if (loading) loading.classList.add('hidden');
                 if (empty) {
-                    if (this.files.length === 0) {
+                    if (this.tasks.length === 0) {
                         empty.classList.remove('hidden');
                     } else {
                         empty.classList.add('hidden');
@@ -577,6 +588,352 @@
             `;
         }
 
+        // ============================================================
+        // Task 7: 任务列表 + 详情页渲染方法
+        // ============================================================
+
+        /**
+         * 渲染任务列表（主视图）
+         * 替代旧 _renderFiles，遍历 this.tasks 拼接任务卡片 HTML 并绑定事件
+         */
+        _renderTasks() {
+            const list = document.getElementById('downloads-list');
+            const empty = document.getElementById('downloads-empty');
+            if (!list) return;
+            if (!this.tasks || this.tasks.length === 0) {
+                list.innerHTML = '';
+                if (empty) empty.classList.remove('hidden');
+                return;
+            }
+            if (empty) empty.classList.add('hidden');
+
+            const html = this.tasks.map(t => this._renderTaskCard(t)).join('');
+            list.innerHTML = html;
+
+            // 绑定任务卡片事件
+            list.querySelectorAll('.downloads-task-card').forEach(el => {
+                const id = el.dataset.id;
+                // 点击卡片主体进入详情（排除操作按钮区）
+                el.addEventListener('click', e => {
+                    if (e.target.closest('.downloads-task-actions')) return;
+                    this._showTaskDetail(id);
+                });
+                el.querySelector('.dl-task-play')?.addEventListener('click', e => {
+                    e.stopPropagation();
+                    this._playTask(id);
+                });
+                el.querySelector('.dl-task-pause')?.addEventListener('click', e => {
+                    e.stopPropagation();
+                    this._pauseTask(id);
+                });
+                el.querySelector('.dl-task-resume')?.addEventListener('click', e => {
+                    e.stopPropagation();
+                    this._resumeTask(id);
+                });
+                el.querySelector('.dl-task-delete')?.addEventListener('click', e => {
+                    e.stopPropagation();
+                    this._deleteTask(id);
+                });
+            });
+        }
+
+        /**
+         * 渲染单个任务卡片 HTML
+         * 显示：任务名 + 状态徽章 + 聚合进度条 + 文件统计 + 操作按钮
+         */
+        _renderTaskCard(t) {
+            const statusMeta = STATUS_META[t.status] || STATUS_META.completed;
+            const sourceMeta = SOURCE_META[t.type] || SOURCE_META.import;
+            const progress = Math.round(t.progress || 0);
+            const fileCount = t.fileCount || 0;
+            const completedCount = t.completedFileCount || 0;
+            const activeCount = t.activeFileCount || 0;
+            const sizeText = this._formatSize(t.totalSize || 0);
+            const downloadedText = this._formatSize(t.downloaded || 0);
+            const safeName = this._escapeHtml(t.name);
+
+            return `
+                <div class="downloads-task-card" data-id="${this._escapeHtml(t.id)}">
+                    <div class="downloads-task-header">
+                        <span class="downloads-task-name" title="${safeName}">${sourceMeta.icon} ${safeName}</span>
+                        <span class="downloads-task-status ${statusMeta.tag}">${statusMeta.icon} ${statusMeta.label}</span>
+                    </div>
+                    <div class="downloads-task-progress">
+                        <div class="downloads-task-progress-fill" style="width: ${progress}%"></div>
+                    </div>
+                    <div class="downloads-task-meta">
+                        <span>${completedCount}/${fileCount} 已完成 · ${activeCount} 个下载中</span>
+                        <span>${downloadedText} / ${sizeText} · ${progress}%</span>
+                    </div>
+                    <div class="downloads-task-actions">
+                        <button class="btn-primary dl-task-play">播放</button>
+                        <button class="btn-secondary dl-task-pause">暂停</button>
+                        <button class="btn-secondary dl-task-resume">继续</button>
+                        <button class="btn-danger dl-task-delete">删除</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        /**
+         * 显示任务详情页：隐藏任务列表 + 工具栏，加载任务详情并渲染文件列表
+         */
+        async _showTaskDetail(taskId) {
+            const detailEl = document.getElementById('downloads-task-detail');
+            const listEl = document.getElementById('downloads-list');
+            const toolbarEl = document.querySelector('.downloads-toolbar');
+            if (!detailEl) return;
+
+            // 隐藏任务列表 + 工具栏，显示详情页
+            if (listEl) listEl.classList.add('hidden');
+            if (toolbarEl) toolbarEl.classList.add('hidden');
+            detailEl.classList.remove('hidden');
+
+            // 加载任务详情
+            const res = await window.electron.ipcRenderer.invoke('download-get-task', { taskId });
+            if (!res || !res.success) {
+                this.app.componentService.showNotification('加载任务详情失败', 'error');
+                return;
+            }
+            this.currentTask = res.task;
+            this._renderTaskDetail(this.currentTask);
+
+            // 绑定详情页头部按钮事件
+            document.getElementById('task-detail-back')?.addEventListener('click', () => this._hideTaskDetail());
+            document.getElementById('task-detail-play')?.addEventListener('click', () => this._playTask(taskId));
+            document.getElementById('task-detail-pause')?.addEventListener('click', () => this._pauseTask(taskId));
+            document.getElementById('task-detail-resume')?.addEventListener('click', () => this._resumeTask(taskId));
+            document.getElementById('task-detail-delete')?.addEventListener('click', () => this._deleteTask(taskId));
+        }
+
+        /**
+         * 隐藏任务详情页，返回任务列表
+         */
+        _hideTaskDetail() {
+            const detailEl = document.getElementById('downloads-task-detail');
+            const listEl = document.getElementById('downloads-list');
+            const toolbarEl = document.querySelector('.downloads-toolbar');
+            if (detailEl) detailEl.classList.add('hidden');
+            if (listEl) listEl.classList.remove('hidden');
+            if (toolbarEl) toolbarEl.classList.remove('hidden');
+            this.currentTask = null;
+            this._loadFiles();
+        }
+
+        /**
+         * 渲染任务详情页：标题 + 文件列表
+         */
+        _renderTaskDetail(task) {
+            const titleEl = document.getElementById('task-detail-title');
+            const filesEl = document.getElementById('task-detail-files');
+            if (titleEl) titleEl.textContent = task.name;
+            if (!filesEl) return;
+
+            const files = Array.isArray(task.files) ? task.files : [];
+            filesEl.innerHTML = files.map(f => this._renderFileDetailItem(task.id, f)).join('');
+
+            // 绑定文件操作事件
+            filesEl.querySelectorAll('.task-detail-file').forEach(el => {
+                const fileId = el.dataset.fileId;
+                el.querySelector('.dl-file-play')?.addEventListener('click', () => this._playTaskFile(task.id, fileId));
+                el.querySelector('.dl-file-delete')?.addEventListener('click', () => this._deleteTaskFile(task.id, fileId));
+                el.querySelector('.dl-file-toggle-priority')?.addEventListener('click', e => {
+                    const currentPriority = Number(e.currentTarget.dataset.priority);
+                    // priority > 0 表示"不下载"，切换为"下载"(1)；priority == 1 表示"下载"，切换为"不下载"(0)
+                    const newPriority = currentPriority > 0 ? 0 : 1;
+                    this._setFilePriority(task.id, fileId, newPriority);
+                });
+            });
+        }
+
+        /**
+         * 渲染任务详情页的单个文件项
+         * 显示：图标 + 名称 + 状态/大小/进度 + 进度条 + 优先级切换 + 播放/删除按钮
+         */
+        _renderFileDetailItem(taskId, f) {
+            const statusMeta = STATUS_META[f.status] || STATUS_META.completed;
+            const progress = f.size > 0 ? Math.round((f.downloaded / f.size) * 100) : 0;
+            const sizeText = this._formatSize(f.size);
+            const downloadedText = this._formatSize(f.downloaded);
+            // priority > 0 = 下载；priority == 0 = 不下载（与 _setFilePriority 的切换逻辑匹配）
+            const priorityLabel = f.priority > 0 ? '下载' : '不下载';
+            const safeName = this._escapeHtml(f.name);
+
+            return `
+                <div class="task-detail-file" data-file-id="${this._escapeHtml(f.id)}">
+                    <span class="task-detail-file-icon">🎬</span>
+                    <div class="task-detail-file-info">
+                        <div class="task-detail-file-name" title="${safeName}">${safeName}</div>
+                        <div class="task-detail-file-meta">${statusMeta.label} · ${downloadedText} / ${sizeText} · ${progress}%</div>
+                    </div>
+                    <div class="task-detail-file-progress">
+                        <div class="task-detail-file-progress-fill" style="width: ${progress}%"></div>
+                    </div>
+                    <div class="task-detail-file-actions">
+                        <button class="btn-primary dl-file-play">播放</button>
+                        <button class="btn-secondary dl-file-toggle-priority" data-priority="${f.priority}">${priorityLabel}</button>
+                        <button class="btn-danger dl-file-delete">删除</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ============================================================
+        // Task 7: 任务级操作方法
+        // ============================================================
+
+        /**
+         * 播放任务：单文件任务直接播放首个文件；多文件任务进入详情页让用户选
+         */
+        async _playTask(taskId) {
+            const task = this.tasks.find(t => t.id === taskId);
+            if (!task) return;
+            // 单文件任务直接播放
+            if (task.fileCount === 1 || !task.infoHash) {
+                const res = await window.electron.ipcRenderer.invoke('download-get-task', { taskId });
+                if (res && res.success && res.task && res.task.files.length > 0) {
+                    this._playTaskFile(taskId, res.task.files[0].id);
+                }
+                return;
+            }
+            // 多文件任务进入详情页让用户选
+            this._showTaskDetail(taskId);
+        }
+
+        /**
+         * 播放任务内单个文件
+         * 通过 download-get-task 拿到 file 对象，调用统一的 _playMagnetFile
+         */
+        async _playTaskFile(taskId, fileId) {
+            const res = await window.electron.ipcRenderer.invoke('download-get-task', { taskId });
+            if (!res || !res.success || !res.task) return;
+            const file = res.task.files.find(f => f.id === fileId);
+            if (!file) return;
+            // 调用统一的磁力播放逻辑（_playFile 也复用此方法）
+            await this._playMagnetFile(res.task, file);
+        }
+
+        /**
+         * 暂停任务（调 magnet-pause，入参 taskId）
+         * 子进程没有该 torrent 时也视为已暂停
+         */
+        async _pauseTask(taskId) {
+            const task = this.tasks.find(t => t.id === taskId);
+            if (!task) return;
+            try {
+                const res = await window.electron.ipcRenderer.invoke('magnet-pause', { taskId });
+                if (res && res.type === 'paused') {
+                    this.app.componentService.showNotification('已暂停任务', 'success');
+                } else if (res && res.code === 'TORRENT_NOT_FOUND') {
+                    // 子进程已销毁：下载其实已停，视为已暂停
+                    this.app.componentService.showNotification('已暂停任务', 'success');
+                } else {
+                    this.app.componentService.showNotification(`暂停失败: ${res?.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                this.app.componentService.showNotification('暂停异常', 'error');
+            }
+        }
+
+        /**
+         * 继续任务（调 magnet-resume，入参 taskId）
+         * 子进程已销毁时回退到 magnet-replay 断点续传
+         */
+        async _resumeTask(taskId) {
+            const task = this.tasks.find(t => t.id === taskId);
+            if (!task) return;
+            try {
+                const res = await window.electron.ipcRenderer.invoke('magnet-resume', { taskId });
+                if (res && res.type === 'resumed') {
+                    this.app.componentService.showNotification('已继续任务', 'success');
+                } else if (res && res.code === 'TORRENT_NOT_FOUND') {
+                    // 回退到 magnet-replay 断点续传
+                    const replayMagnetUri = task.sourceUrl || `magnet:?xt=urn:btih:${task.infoHash}`;
+                    const replay = await window.electron.ipcRenderer.invoke('magnet-replay', {
+                        magnetUri: replayMagnetUri,
+                        fileName: '',
+                        infoHash: task.infoHash
+                    });
+                    if (replay && replay.success) {
+                        this.app.componentService.showNotification('已从断点恢复', 'success');
+                    } else {
+                        this.app.componentService.showNotification(`恢复失败: ${replay?.error || '未知错误'}`, 'error');
+                    }
+                } else {
+                    this.app.componentService.showNotification(`继续失败: ${res?.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                this.app.componentService.showNotification('继续异常', 'error');
+            }
+        }
+
+        /**
+         * 删除整个任务（含所有文件 + infoHash 目录）
+         */
+        async _deleteTask(taskId) {
+            const task = this.tasks.find(t => t.id === taskId);
+            if (!task) return;
+            const fileCount = task.fileCount || 0;
+            if (!window.confirm(`确定要删除任务「${task.name}」吗？\n将删除 ${fileCount} 个文件，该操作不可撤销。`)) return;
+            try {
+                const res = await window.electron.ipcRenderer.invoke('download-delete-task', { taskId });
+                if (res && res.success) {
+                    this.app.componentService.showNotification('已删除任务', 'success');
+                    // 如果在详情页，返回列表；否则直接刷新列表
+                    const detailEl = document.getElementById('downloads-task-detail');
+                    if (detailEl && !detailEl.classList.contains('hidden')) {
+                        this._hideTaskDetail();
+                    } else {
+                        this._loadFiles();
+                    }
+                    this._refreshStorageInfo();
+                } else {
+                    this.app.componentService.showNotification(`删除失败: ${res?.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                this.app.componentService.showNotification('删除异常', 'error');
+            }
+        }
+
+        /**
+         * 删除任务内单个文件
+         */
+        async _deleteTaskFile(taskId, fileId) {
+            if (!window.confirm('确定要删除该文件吗？')) return;
+            try {
+                const res = await window.electron.ipcRenderer.invoke('download-delete-file', { taskId, fileId });
+                if (res && res.success) {
+                    this.app.componentService.showNotification('已删除文件', 'success');
+                    // 刷新详情页
+                    this._showTaskDetail(taskId);
+                    this._refreshStorageInfo();
+                } else {
+                    this.app.componentService.showNotification(`删除失败: ${res?.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                this.app.componentService.showNotification('删除异常', 'error');
+            }
+        }
+
+        /**
+         * 设置文件下载优先级（priority: 1=下载, 0=不下载）
+         */
+        async _setFilePriority(taskId, fileId, priority) {
+            try {
+                const res = await window.electron.ipcRenderer.invoke('download-set-file-priority', {
+                    taskId, fileId, priority
+                });
+                if (res && res.success) {
+                    this.app.componentService.showNotification(priority > 0 ? '已加入下载' : '已停止下载', 'success');
+                    this._showTaskDetail(taskId);
+                } else {
+                    this.app.componentService.showNotification(`操作失败: ${res?.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                this.app.componentService.showNotification('操作异常', 'error');
+            }
+        }
+
         /**
          * 暂停磁力下载（磁力来源专用）
          * 子进程没有该 torrent 时（多见于播放器关闭后子进程被销毁），
@@ -725,117 +1082,12 @@
                 return;
             }
             try {
-                // 磁力文件：本地优先快速路径 + 实时进度反馈
+                // 磁力文件：委托给统一的 _playMagnetFile（Task 7 提取，任务级 + 文件级复用）
                 if (file.sourceType === 'magnet') {
-                    if (!file.infoHash) {
-                        this.app.componentService.showNotification('缺少磁力信息，无法播放', 'error');
-                        return;
-                    }
-                    // 兜底：旧记录 sourceUrl 为空时用 infoHash 构造最小磁力链（无 tracker 走 DHT/PEX）
-                    const magnetUri = file.sourceUrl || `magnet:?xt=urn:btih:${file.infoHash}`;
-
-                    // === 快速路径 1：文件已下完，毫秒级 file:// 打开，**不显示浮动条** ===
-                    // 用户在下载页点播放，绝大多数场景是"之前下载过的"——文件应已在本地
-                    // 命中即跳过 webtorrent/子进程/流服务器,直接走本地播放器
-                    let localCheck = null;
-                    try {
-                        localCheck = await window.electron.ipcRenderer.invoke('magnet-check-local', {
-                            infoHash: file.infoHash,
-                            fileName: file.name
-                        });
-                    } catch (e) {
-                        // 快速路径查不到不报错,继续走 webtorrent 兜底
-                    }
-                    if (localCheck && localCheck.exists && localCheck.size > 0 && localCheck.path) {
-                        // 直接 file:// 打开播放器,完全跳过磁力子进程
-                        const videoData = {
-                            url: 'file:///' + localCheck.path.replace(/\\/g, '/'),
-                            title: file.name,
-                            vod_name: file.name,
-                            episode_name: file.name,
-                            isDirectPlay: true,
-                            playSource: 'local',
-                            isLocal: true,
-                            isStreaming: false,
-                            type_name: '下载',
-                            siteName: '本地',
-                            // 用统一 dl_ 前缀,历史页面可识别并路由回 DownloadController
-                            vod_id: 'dl_' + file.id,
-                            vod_pic: ''
-                        };
-                        await window.electron.ipcRenderer.invoke('open-player', videoData);
-                        return;
-                    }
-
-                    // === 快速路径 2：文件未下完,走 webtorrent 流服务器(边下边播) ===
-                    // 此时才需要显示"准备中"提示,告知用户后台在做什么
-                    // 防御性清理旧订阅（防止从下载页/历史页重复点播放导致回调多次触发）
-                    this._unbindMagnetProgress();
-                    this._unbindPlayerListeners();
-                    this._showMagnetProgress('正在连接资源...', file.name, 'info');
-                    // 订阅进度事件,让状态行实时更新(两行布局:状态行不会被文件名遮住)
-                    this._bindMagnetProgress((data) => {
-                        if (!data) return;
-                        const status = data.status || 'connecting';
-                        switch (status) {
-                            case 'connecting':
-                                this._showMagnetProgress('正在连接资源...', file.name, 'info');
-                                break;
-                            case 'downloading':
-                                this._showMagnetProgress('正在下载资源...', file.name, 'info');
-                                break;
-                            case 'completed':
-                                this._showMagnetProgress('下载完成，准备播放...', file.name, 'info');
-                                break;
-                            case 'error':
-                                this._showMagnetProgress('连接失败', file.name, 'error');
-                                break;
-                        }
-                    });
-                    // 1) 调起/恢复磁力下载并获取 streamUrl
-                    const result = await window.electron.ipcRenderer.invoke('play-magnet-file', {
-                        magnetUri,
-                        fileName: file.name,
-                        infoHash: file.infoHash
-                    });
-                    if (!(result && result.success)) {
-                        const reason = (result && (result.message || result.error)) || '未知错误';
-                        this._unbindMagnetProgress();
-                        this._hideMagnetProgress();
-                        this.app.componentService.showNotification(`播放失败: ${reason}`, 'error');
-                        return;
-                    }
-                    // play-magnet-file 返回成功 = streamUrl 已就绪
-                    // 立即取消进度订阅,防止后续 downloading 事件覆盖"准备就绪"状态
-                    this._unbindMagnetProgress();
-                    this._showMagnetProgress('准备就绪，正在打开播放器...', file.name, 'info');
-                    // 2) 真正打开播放器窗口（用 streamUrl）
-                    const videoData = {
-                        url: result.streamUrl,
-                        title: file.name,
-                        vod_name: file.name,
-                        episode_name: file.name,
-                        isDirectPlay: true,
-                        playSource: 'magnet',
-                        isStreaming: !result.isLocal,
-                        isLocal: !!result.isLocal,
-                        type_name: '下载',
-                        siteName: '磁力',
-                        vod_id: 'dl_' + file.id,
-                        vod_pic: '',
-                        infoHash: file.infoHash || '',
-                        fileName: file.name
-                    };
-                    const openResult = await window.electron.ipcRenderer.invoke('open-player', videoData);
-                    // 无论 open-player 成功还是失败,都隐藏浮动条
-                    // 浮动条的设计目的:准备过程提示,播放器窗口打开=准备完成
-                    this._unbindMagnetProgress();
-                    this._unbindPlayerListeners();
-                    this._hideMagnetProgress();
-                    if (!(openResult && openResult.success)) {
-                        const reason = (openResult && openResult.message) || '未知错误';
-                        this.app.componentService.showNotification(`打开播放器失败: ${reason}`, 'error');
-                    }
+                    await this._playMagnetFile(
+                        { infoHash: file.infoHash, sourceUrl: file.sourceUrl, magnetUri: file.sourceUrl },
+                        file
+                    );
                     return;
                 }
                 // 本地/URL 文件：先校验文件存在，避免 file:// 静默失败
@@ -868,6 +1120,130 @@
             } catch (error) {
                 console.error('[DOWNLOAD-CTRL] 播放失败:', error);
                 this.app.componentService.showNotification('播放失败', 'error');
+            }
+        }
+
+        /**
+         * 统一的磁力文件播放方法（Task 7 从 _playFile 提取）
+         * 被 _playFile（旧文件级）和 _playTaskFile（新任务级）复用
+         * 两条快速路径：
+         *   1) 文件已下完 → file:// 毫秒级打开，不显示浮动条
+         *   2) 文件未下完 → webtorrent 流服务器边下边播，显示浮动条反馈状态
+         * @param {object} task - 任务对象（需含 infoHash / sourceUrl / magnetUri）
+         * @param {object} file - 文件对象（需含 id / name）
+         */
+        async _playMagnetFile(task, file) {
+            const infoHash = (task && task.infoHash) || file.infoHash || '';
+            if (!infoHash) {
+                this.app.componentService.showNotification('缺少磁力信息，无法播放', 'error');
+                return;
+            }
+            // 兜底：旧记录 sourceUrl 为空时用 infoHash 构造最小磁力链（无 tracker 走 DHT/PEX）
+            const magnetUri = (task && (task.sourceUrl || task.magnetUri)) || `magnet:?xt=urn:btih:${infoHash}`;
+            const fileId = file.id;
+            const fileName = file.name;
+
+            // === 快速路径 1：文件已下完，毫秒级 file:// 打开，**不显示浮动条** ===
+            // 用户在下载页点播放，绝大多数场景是"之前下载过的"——文件应已在本地
+            // 命中即跳过 webtorrent/子进程/流服务器,直接走本地播放器
+            let localCheck = null;
+            try {
+                localCheck = await window.electron.ipcRenderer.invoke('magnet-check-local', {
+                    infoHash,
+                    fileName
+                });
+            } catch (e) {
+                // 快速路径查不到不报错,继续走 webtorrent 兜底
+            }
+            if (localCheck && localCheck.exists && localCheck.size > 0 && localCheck.path) {
+                // 直接 file:// 打开播放器,完全跳过磁力子进程
+                const videoData = {
+                    url: 'file:///' + localCheck.path.replace(/\\/g, '/'),
+                    title: fileName,
+                    vod_name: fileName,
+                    episode_name: fileName,
+                    isDirectPlay: true,
+                    playSource: 'local',
+                    isLocal: true,
+                    isStreaming: false,
+                    type_name: '下载',
+                    siteName: '本地',
+                    // 用统一 dl_ 前缀,历史页面可识别并路由回 DownloadController
+                    vod_id: 'dl_' + fileId,
+                    vod_pic: ''
+                };
+                await window.electron.ipcRenderer.invoke('open-player', videoData);
+                return;
+            }
+
+            // === 快速路径 2：文件未下完,走 webtorrent 流服务器(边下边播) ===
+            // 此时才需要显示"准备中"提示,告知用户后台在做什么
+            // 防御性清理旧订阅（防止从下载页/历史页重复点播放导致回调多次触发）
+            this._unbindMagnetProgress();
+            this._unbindPlayerListeners();
+            this._showMagnetProgress('正在连接资源...', fileName, 'info');
+            // 订阅进度事件,让状态行实时更新(两行布局:状态行不会被文件名遮住)
+            this._bindMagnetProgress((data) => {
+                if (!data) return;
+                const status = data.status || 'connecting';
+                switch (status) {
+                    case 'connecting':
+                        this._showMagnetProgress('正在连接资源...', fileName, 'info');
+                        break;
+                    case 'downloading':
+                        this._showMagnetProgress('正在下载资源...', fileName, 'info');
+                        break;
+                    case 'completed':
+                        this._showMagnetProgress('下载完成，准备播放...', fileName, 'info');
+                        break;
+                    case 'error':
+                        this._showMagnetProgress('连接失败', fileName, 'error');
+                        break;
+                }
+            });
+            // 1) 调起/恢复磁力下载并获取 streamUrl
+            const result = await window.electron.ipcRenderer.invoke('play-magnet-file', {
+                magnetUri,
+                fileName,
+                infoHash
+            });
+            if (!(result && result.success)) {
+                const reason = (result && (result.message || result.error)) || '未知错误';
+                this._unbindMagnetProgress();
+                this._hideMagnetProgress();
+                this.app.componentService.showNotification(`播放失败: ${reason}`, 'error');
+                return;
+            }
+            // play-magnet-file 返回成功 = streamUrl 已就绪
+            // 立即取消进度订阅,防止后续 downloading 事件覆盖"准备就绪"状态
+            this._unbindMagnetProgress();
+            this._showMagnetProgress('准备就绪，正在打开播放器...', fileName, 'info');
+            // 2) 真正打开播放器窗口（用 streamUrl）
+            const videoData = {
+                url: result.streamUrl,
+                title: fileName,
+                vod_name: fileName,
+                episode_name: fileName,
+                isDirectPlay: true,
+                playSource: 'magnet',
+                isStreaming: !result.isLocal,
+                isLocal: !!result.isLocal,
+                type_name: '下载',
+                siteName: '磁力',
+                vod_id: 'dl_' + fileId,
+                vod_pic: '',
+                infoHash,
+                fileName
+            };
+            const openResult = await window.electron.ipcRenderer.invoke('open-player', videoData);
+            // 无论 open-player 成功还是失败,都隐藏浮动条
+            // 浮动条的设计目的:准备过程提示,播放器窗口打开=准备完成
+            this._unbindMagnetProgress();
+            this._unbindPlayerListeners();
+            this._hideMagnetProgress();
+            if (!(openResult && openResult.success)) {
+                const reason = (openResult && openResult.message) || '未知错误';
+                this.app.componentService.showNotification(`打开播放器失败: ${reason}`, 'error');
             }
         }
 
