@@ -1297,15 +1297,19 @@ function setupIPC(qixingApp) {
 
         // 磁力链状态变化（用于实时同步到「下载」页清单）
         // 由子进程在开始下载/进度上报/暂停/完成/错误时发送
+        // Task 3 改造：按 infoHash 找 task（不再按 fileName 找 file），用 updateMagnetProgress 更新进度
         if (msg.type === 'magnet-status') {
             const dm = qixingApp.downloadManager;
-            // 1) 找到/创建清单记录
-            let item = dm.manifest.find(m => m.sourceType === 'magnet' && m.infoHash === msg.infoHash);
-            // 关键：子进程首次上报时不带 magnetUri，缓存里取（用户在播放页提交时已记住）
+            // 1) 按 infoHash 找任务（任务-文件两层结构下，记录本身是 task）
+            let task = dm.manifest.find(m =>
+                (m.type === 'magnet' || m.sourceType === 'magnet') && m.infoHash === msg.infoHash
+            );
+            // 关键：子进程首次上报时不带 magnetUri，缓存里取（用户在播放页/添加任务页提交时已记住）
             // 否则创建的记录 sourceUrl 为空，"继续"按钮的回退路径 magnet-replay 会失败
             const cachedMagnetUri = getMagnetUri(msg.infoHash);
-            if (msg.status !== 'removed' && !item && msg.fileName) {
-                // 首次上报：自动创建清单记录
+            if (msg.status !== 'removed' && !task && msg.fileName) {
+                // 首次上报：自动创建清单记录（兼容 play-magnet-file 旧路径，未走 magnet-add-task）
+                // addMagnetFile 内部已转为 addMagnetTask，返回的 record 指向 task
                 const expectedPath = require('path').join(dm.getMagnetPath(msg.infoHash), msg.fileName);
                 const r = dm.addMagnetFile({
                     name: msg.fileName,
@@ -1316,36 +1320,40 @@ function setupIPC(qixingApp) {
                     downloaded: msg.downloaded || 0,
                     status: msg.status
                 });
-                if (r.success) item = r.record;
-            } else if (item && cachedMagnetUri && !item.sourceUrl) {
+                if (r.success) {
+                    task = dm.manifest.find(m =>
+                        (m.type === 'magnet' || m.sourceType === 'magnet') && m.infoHash === msg.infoHash
+                    );
+                }
+            } else if (task && cachedMagnetUri && !task.sourceUrl) {
                 // 旧记录 sourceUrl 为空（例如历史 manifest 缺失）→ 补全
-                item.sourceUrl = cachedMagnetUri;
-                dm.flushMagnet(item);
+                task.sourceUrl = cachedMagnetUri;
+                if (!task.magnetUri) task.magnetUri = cachedMagnetUri;
+                dm.flushMagnet(task);
             }
             // 2) 根据状态做对应处理
-            if (msg.status === 'removed' && item) {
-                dm.removeMagnetFile(item.id, { removeFiles: true, removeDir: true });
-            } else if (item) {
+            if (msg.status === 'removed' && task) {
+                // 任务被销毁：删除整个任务（含 manifest + 磁盘 + infoHash 目录）
+                dm.deleteTask(task.id);
+            } else if (task) {
+                // 暂停状态：先刷新磁盘上实际已下载的大小（避免子进程上报的 downloaded 偏差）
                 if (msg.status === 'paused') {
-                    // 暂停时刷新为磁盘上实际已下载的大小
-                    dm.refreshMagnetSize(item.id);
-                    item.status = 'paused';
-                    dm.flushMagnet(item);
-                } else if (msg.status === 'completed' || msg.status === 'error') {
-                    dm.updateMagnetProgress(msg.infoHash, msg.fileName, {
-                        downloaded: msg.downloaded,
-                        total: msg.total,
-                        status: msg.status
-                    });
-                    const refreshed = dm.manifest.find(m => m.id === item.id);
-                    if (refreshed) dm.flushMagnet(refreshed);
-                } else {
-                    // downloading 等：节流更新进度
-                    dm.updateMagnetProgress(msg.infoHash, msg.fileName, {
-                        downloaded: msg.downloaded,
-                        total: msg.total,
-                        status: msg.status
-                    });
+                    dm.refreshMagnetSize(task.id);
+                }
+                // 用 updateMagnetProgress 按 infoHash 找 task、按 fileName 找 file 更新进度
+                // 内部已包含 _recomputeTaskStats + 节流持久化（每 2s 一次）
+                dm.updateMagnetProgress(msg.infoHash, msg.fileName, {
+                    downloaded: msg.downloaded,
+                    total: msg.total,
+                    status: msg.status
+                });
+                // 任务级聚合统计字段（updateMagnetProgress 不处理这些字段，需单独更新）
+                if (Number.isFinite(msg.downloadSpeed)) task.downloadSpeed = msg.downloadSpeed;
+                if (Number.isFinite(msg.numPeers)) task.numPeers = msg.numPeers;
+                if (msg.eta != null) task.eta = msg.eta;
+                // 关键状态切换立即刷盘（暂停/完成/错误）
+                if (msg.status === 'paused' || msg.status === 'completed' || msg.status === 'error') {
+                    dm.flushMagnet(task);
                 }
             }
             // 3) 转发到所有渲染窗口（主窗口 + 播放器窗口）
@@ -1460,6 +1468,231 @@ function setupIPC(qixingApp) {
         }
     });
 
+    // ========== 任务级磁力下载 IPC（Task 3 新增） ==========
+    // 设计意图：拆分原 handle-magnet-link 的"解析 + 添加"两步，
+    //   - magnet-resolve-files：仅解析返回文件列表（不启动下载，不写 manifest）
+    //   - magnet-add-task：根据用户选中的文件创建 manifest 任务并发起下载
+    // 这样渲染端可在添加任务前展示文件选择对话框，避免下载不需要的文件
+
+    /**
+     * 解析磁力链返回文件列表（不启动下载）
+     * 用于添加任务前的文件选择对话框
+     * 入参: { magnetUri }
+     * 出参: { success, infoHash, files: [{name, size, ext}] }
+     */
+    ipcMain.handle('magnet-resolve-files', async (event, { magnetUri } = {}) => {
+        try {
+            // 参数校验：必须是 magnet: 开头的字符串，防止注入攻击
+            if (!magnetUri || typeof magnetUri !== 'string' || !magnetUri.startsWith('magnet:')) {
+                return { success: false, error: '无效的磁力链接' };
+            }
+            // 复用 sendMagnetMessage 启动子进程并发送 resolve action
+            // 关键：只解析不下载，子进程不会创建 torrent（不调 addMagnetFile）
+            const result = await sendMagnetMessage({ action: 'resolve', magnetUri });
+            if (result.type === 'files') {
+                return {
+                    success: true,
+                    infoHash: result.infoHash || '',
+                    files: (result.files || []).map(f => ({
+                        name: f.name,
+                        size: f.length || f.size || 0,
+                        ext: (f.name || '').split('.').pop().toLowerCase()
+                    }))
+                };
+            }
+            return { success: false, error: result.error || '解析失败' };
+        } catch (error) {
+            console.error('[MAIN] 解析磁力链失败:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    /**
+     * 添加磁力任务（带选中的文件列表）
+     * 入参: { magnetUri, infoHash, selectedFiles: [{name, size, ext}], allFiles: [{name, size, ext}], taskName }
+     * 出参: { success, taskId }
+     */
+    ipcMain.handle('magnet-add-task', async (event, payload = {}) => {
+        try {
+            const { magnetUri, infoHash, selectedFiles = [], allFiles = [], taskName } = payload;
+            // 参数校验：infoHash 和 magnetUri 必传
+            if (!infoHash || typeof infoHash !== 'string') {
+                return { success: false, error: '缺少 infoHash' };
+            }
+            if (!magnetUri || typeof magnetUri !== 'string' || !magnetUri.startsWith('magnet:')) {
+                return { success: false, error: '缺少或无效的 magnetUri' };
+            }
+            // 缓存 magnetUri（子进程首次上报时回填到 manifest）
+            rememberMagnetUri(infoHash, magnetUri);
+            // 1) 创建 manifest 记录（任务-文件两层结构）
+            const r = dm.addMagnetTask({
+                magnetUri,
+                infoHash,
+                taskName: taskName || `magnet_${infoHash.slice(0, 8)}`,
+                selectedFiles,
+                allFiles: allFiles.length > 0 ? allFiles : selectedFiles
+            });
+            if (!r.success) {
+                return { success: false, error: r.error };
+            }
+            // 2) 启动子进程下载
+            // 关键修复：不用 action: 'play'（会启动流服务器 + deselect 除 fileName 外所有文件）
+            // 改用 action: 'resolve' 创建/复用 torrent（不启动流服务器，不强制 deselect）
+            // 然后 dm.addMagnetTask 已把 priority=0 的文件标记为 skipped，
+            // 这里并发对 priority=0 的文件调 set-file-priority 让子进程 deselect，
+            // webtorrent 默认 select 所有文件，deselect priority=0 后只剩 priority>0 的文件下载
+            // 子进程会通过 magnet-status 事件持续上报进度，handleMagnetMessage 按 infoHash 更新 task
+            try {
+                await sendMagnetMessage({
+                    action: 'resolve',
+                    magnetUri,
+                    infoHash
+                });
+                // 对 priority=0 的文件并发调 set-file-priority（deselect），避免下载不需要的文件
+                // allFiles 含所有文件，priority=0 的即未选中的文件
+                const skippedFiles = (allFiles.length > 0 ? allFiles : selectedFiles)
+                    .filter(f => !selectedFiles.some(s => s.name === f.name));
+                if (skippedFiles.length > 0) {
+                    await Promise.all(skippedFiles.map(f => {
+                        return sendMagnetMessage({
+                            action: 'set-file-priority',
+                            infoHash,
+                            fileName: f.name,
+                            priority: 0
+                        }).catch(e => {
+                            console.warn('[MAIN] deselect 文件失败:', f.name, e.message);
+                        });
+                    }));
+                }
+            } catch (e) {
+                console.warn('[MAIN] 启动下载失败（任务已创建，可手动继续）:', e.message);
+            }
+            return { success: true, taskId: r.task.id };
+        } catch (error) {
+            console.error('[MAIN] 添加磁力任务失败:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    /**
+     * 列出所有任务（聚合视图，不含完整 files 数组）
+     * 入参: { search, type, sortBy, sortDir }
+     * 出参: { success, list: [task], rootDir }
+     */
+    ipcMain.handle('download-list-tasks', async (event, opts = {}) => {
+        try {
+            const list = dm.listTasks(opts || {});
+            return { success: true, list, rootDir: dm.downloadDir };
+        } catch (error) {
+            return { success: false, error: error.message, list: [] };
+        }
+    });
+
+    /**
+     * 获取任务详情（含完整 files 数组）
+     * 入参: { taskId }
+     * 出参: { success, task }
+     */
+    ipcMain.handle('download-get-task', async (event, { taskId } = {}) => {
+        try {
+            if (!taskId || typeof taskId !== 'string') {
+                return { success: false, error: '缺少 taskId' };
+            }
+            const task = dm.getTask(taskId);
+            if (!task) return { success: false, error: '任务不存在' };
+            return { success: true, task };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    /**
+     * 删除整个任务
+     * 入参: { taskId }
+     * 完整删除链路：magnet-remove 销毁 torrent → deleteTask 删 manifest + 磁盘 + infoHash 目录
+     */
+    ipcMain.handle('download-delete-task', async (event, { taskId } = {}) => {
+        try {
+            if (!taskId || typeof taskId !== 'string') {
+                return { success: false, error: '缺少 taskId' };
+            }
+            const task = dm.manifest.find(t => t.id === taskId);
+            if (!task) return { success: false, error: '任务不存在' };
+            // 磁力任务：先销毁 torrent（释放 Windows 文件锁）
+            if (task.type === 'magnet' && task.infoHash) {
+                try {
+                    await sendMagnetMessage({
+                        action: 'remove',
+                        infoHash: task.infoHash
+                    });
+                } catch (e) {
+                    console.warn('[MAIN] magnet-remove 失败（继续清理磁盘）:', e.message);
+                }
+            }
+            return dm.deleteTask(taskId);
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    /**
+     * 删除任务内单个文件
+     * 入参: { taskId, fileId }
+     */
+    ipcMain.handle('download-delete-file', async (event, { taskId, fileId } = {}) => {
+        try {
+            if (!taskId || typeof taskId !== 'string') {
+                return { success: false, error: '缺少 taskId' };
+            }
+            if (!fileId || typeof fileId !== 'string') {
+                return { success: false, error: '缺少 fileId' };
+            }
+            return dm.deleteTaskFile(taskId, fileId);
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    /**
+     * 设置文件下载优先级
+     * 入参: { taskId, fileId, priority }
+     * 0=不下载, 1=正常, 2=高优先级
+     * 磁力任务会转发到 magnetHandler 子进程的 set-file-priority action
+     */
+    ipcMain.handle('download-set-file-priority', async (event, { taskId, fileId, priority } = {}) => {
+        try {
+            if (!taskId || typeof taskId !== 'string') {
+                return { success: false, error: '缺少 taskId' };
+            }
+            if (!fileId || typeof fileId !== 'string') {
+                return { success: false, error: '缺少 fileId' };
+            }
+            if (![0, 1, 2].includes(priority)) {
+                return { success: false, error: 'priority 必须为 0/1/2' };
+            }
+            const task = dm.manifest.find(t => t.id === taskId);
+            if (!task) return { success: false, error: '任务不存在' };
+            const file = task.files.find(f => f.id === fileId);
+            if (!file) return { success: false, error: '文件不存在' };
+            // 磁力任务：通知子进程调整优先级（实时生效，避免继续下载不需要的文件）
+            if (task.type === 'magnet' && task.infoHash) {
+                try {
+                    await sendMagnetMessage({
+                        action: 'set-file-priority',
+                        infoHash: task.infoHash,
+                        fileName: file.name,
+                        priority
+                    });
+                } catch (e) {
+                    console.warn('[MAIN] 子进程调整优先级失败:', e.message);
+                }
+            }
+            return dm.setFilePriority(taskId, fileId, priority);
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
     // 播放磁力链接中的文件
     ipcMain.handle('play-magnet-file', async (event, { magnetUri, fileName, infoHash }) => {
         console.log('[MAIN] 收到播放磁力文件请求:', fileName, 'infoHash:', infoHash);
@@ -1543,34 +1776,59 @@ function setupIPC(qixingApp) {
 
     // ========== 磁力下载管理 IPC（用于下载页面的暂停/继续/删除控制） ==========
 
-    // 暂停指定 infoHash 的磁力下载
-    // 入参: { infoHash, fileName } —— 必传，子进程用 infoHash 找到对应 torrent；
-    //       不传则按 currentTorrent 处理（兼容旧调用方）
+    // 暂停磁力任务（按 taskId 暂停整个任务的所有文件）
+    // 入参: { taskId } —— 优先按 taskId 查任务；
+    //       兼容旧调用方 { infoHash, fileName }（未传 taskId 时按 infoHash 查任务）
     // 返回: { type: 'paused' | 'error', error?: string, code?: 'TORRENT_NOT_FOUND' }
     //       code=TORRENT_NOT_FOUND 表示子进程没有这个 torrent（多见于播放器关闭后子进程被销毁），
     //       渲染端收到此码应将文件状态直接置为 paused（磁力下载此时实际上已经停了）
     ipcMain.handle('magnet-pause', async (event, payload = {}) => {
         try {
+            // 兼容 taskId 和 infoHash 两种入参：优先 taskId，回退 infoHash
+            let task = null;
+            if (payload.taskId) {
+                task = dm.manifest.find(t => t.id === payload.taskId);
+            } else if (payload.infoHash) {
+                task = dm.manifest.find(t =>
+                    (t.type === 'magnet' || t.sourceType === 'magnet') && t.infoHash === payload.infoHash
+                );
+            }
+            if (!task || (task.type !== 'magnet' && task.sourceType !== 'magnet')) {
+                return { type: 'error', error: '任务不存在或非磁力任务' };
+            }
             return await sendMagnetMessage({
                 action: 'pause',
-                infoHash: payload.infoHash || '',
-                fileName: payload.fileName || ''
+                infoHash: task.infoHash,
+                fileName: (task.files && task.files[0]?.name) || payload.fileName || ''
             });
         } catch (error) {
             return { type: 'error', error: error.message };
         }
     });
 
-    // 继续指定 infoHash 的磁力下载
-    // 入参: { infoHash, fileName } —— 同上
+    // 继续磁力任务（按 taskId 继续）
+    // 入参: { taskId } —— 优先按 taskId 查任务；
+    //       兼容旧调用方 { infoHash, fileName }
     // 返回: { type: 'resumed' | 'error', code?: 'TORRENT_NOT_FOUND' }
     //       code=TORRENT_NOT_FOUND 表示子进程没有这个 torrent，渲染端应回退到 magnet-replay 重新启动
     ipcMain.handle('magnet-resume', async (event, payload = {}) => {
         try {
+            // 兼容 taskId 和 infoHash 两种入参：优先 taskId，回退 infoHash
+            let task = null;
+            if (payload.taskId) {
+                task = dm.manifest.find(t => t.id === payload.taskId);
+            } else if (payload.infoHash) {
+                task = dm.manifest.find(t =>
+                    (t.type === 'magnet' || t.sourceType === 'magnet') && t.infoHash === payload.infoHash
+                );
+            }
+            if (!task || (task.type !== 'magnet' && task.sourceType !== 'magnet')) {
+                return { type: 'error', error: '任务不存在或非磁力任务' };
+            }
             return await sendMagnetMessage({
                 action: 'resume',
-                infoHash: payload.infoHash || '',
-                fileName: payload.fileName || ''
+                infoHash: task.infoHash,
+                fileName: (task.files && task.files[0]?.name) || payload.fileName || ''
             });
         } catch (error) {
             return { type: 'error', error: error.message };
