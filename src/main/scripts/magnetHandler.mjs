@@ -112,6 +112,48 @@ function getMagnetPath(infoHash) {
 }
 
 /**
+ * 写"文件已下载完成"标记文件
+ * 解决 webtorrent 预分配文件大小导致 fs.statSync().size === file.length 误判问题
+ * 标记文件路径：MAGNET_DIR/<infoHash>/<fileName>.complete
+ * 主进程 magnet-check-local 通过此标记判断是否走 file:// 快速路径
+ * @param {string} infoHash - 磁力 infoHash
+ * @param {string} fileName - 文件名
+ */
+function markFileComplete(infoHash, fileName)
+{
+    try
+    {
+        const dir = getMagnetPath(infoHash);
+        const markerPath = path.join(dir, `${fileName}.complete`);
+        fs.writeFileSync(markerPath, String(Date.now()), { encoding: 'utf8' });
+    }
+    catch (err)
+    {
+        console.warn(`[magnetHandler] 写 .complete 标记失败: ${err.message}`);
+    }
+}
+
+/**
+ * 检查文件是否已下载完成（通过 .complete 标记文件）
+ * @param {string} infoHash - 磁力 infoHash
+ * @param {string} fileName - 文件名
+ * @returns {boolean}
+ */
+function isFileComplete(infoHash, fileName)
+{
+    try
+    {
+        const dir = getMagnetPath(infoHash);
+        const markerPath = path.join(dir, `${fileName}.complete`);
+        return fs.existsSync(markerPath);
+    }
+    catch (err)
+    {
+        return false;
+    }
+}
+
+/**
  * 规范化磁力链接
  * 1. 对dn等参数中的特殊字符进行URL编码（如 [ ] @ 等）
  * 2. 追加tracker列表作为tr参数，增加发现peer的概率
@@ -444,6 +486,9 @@ async function resolveMagnet(magnetUri, infoHash) {
                             total: totalLength,
                             progress: 100
                         });
+                        // 写 .complete 标记文件，供 magnet-check-local 快速路径判断
+                        // 解决 webtorrent 预分配文件大小导致的误判问题
+                        torrent.files.forEach(f => markFileComplete(torrent.infoHash, f.name));
                     });
 
                     torrent.on('warning', err => {
@@ -1041,6 +1086,9 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
                             total: Number(torrent.length),
                             progress: 100
                         });
+                        // 写 .complete 标记文件，供 magnet-check-local 快速路径判断
+                        // 解决 webtorrent 预分配文件大小导致的误判问题
+                        torrent.files.forEach(f => markFileComplete(torrent.infoHash, f.name));
                     });
 
                     startFileStream(torrent, fileName, resolve, reject);
@@ -1153,7 +1201,10 @@ function startFileStream(torrent, fileName, resolve, reject) {
 
     // 检查文件是否已下载完成
     const filePath = path.join(getMagnetPath(torrent.infoHash), file.path);
-    const isDownloaded = fs.existsSync(filePath) && fs.statSync(filePath).size === file.length;
+    // 关键：不能用 fs.statSync().size === file.length 判断
+    // webtorrent 预分配文件大小（用 0 填充未下载部分），导致文件一开始就等于 file.length
+    // 必须用 torrent.progress（webtorrent 实际下载进度）或 .complete 标记文件判断
+    const isDownloaded = torrent.progress >= 1 || isFileComplete(torrent.infoHash, fileName);
     
     /**
      * 创建HTTP流服务器并返回streamUrl

@@ -1,6 +1,7 @@
 const { ipcMain, BrowserWindow, app } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { EventEmitter } = require('events');
 const {
     validateVideoData,
     validateDeviceId,
@@ -16,6 +17,12 @@ const portableNodeDownloader = require('./portableNodeDownloader');
  * @param {object} qixingApp - 应用实例
  */
 function setupIPC(qixingApp) {
+    // magnetBridge 事件发射器：转发 magnetHandler 子进程的 progress 事件
+    // 供 main.js transportFactory 实例化的 MagnetTransport.createSegmentWriter 订阅
+    // 用于代理 writer 更新 bytesWritten（反映 webtorrent 实际下载进度）
+    const magnetBridgeEmitter = new EventEmitter();
+    magnetBridgeEmitter.setMaxListeners(20);
+
     // 磁力链原始 URI 缓存（key: infoHash, value: 原始 magnetUri）
     // 关键：子进程首次上报 magnet-status 时只回传 infoHash/fileName，没有原始 magnetUri
     // 但 manifest 记录需要 magnetUri（"继续"按钮的回退路径 magnet-replay 必须用到）
@@ -268,9 +275,11 @@ function setupIPC(qixingApp) {
      * - 命中(exists=true 且 size>0) → 直接用 file:// 打开播放器,毫秒级,不走 webtorrent
      * - 未命中 → 走原 play-magnet-file 路径(webtorrent 流服务器边下边播)
      *
-     * 严格检查 size > 0:
-     * - 部分下载的文件可能存在但 size < 期望长度,直接用 file:// 打开会播放失败
-     * - 这种情况仍走 webtorrent(支持 Range + 边下边播)
+     * 严格检查 .complete 标记文件存在 + 数据文件 size > 0:
+     * - webtorrent 预分配文件大小（用 0 填充未下载部分），不能用 size === file.length 判断
+     * - 必须用 .complete 标记文件（magnetHandler.mjs 在 torrent done 事件中写入）判断
+     * - 没有标记文件 → 文件未完成或未下载 → 走 play-magnet-file 让 webtorrent 边下边播
+     * - 旧文件（用户之前下载完成但无标记）首次播放会走 play-magnet-file，子进程校验后写标记
      */
     ipcMain.handle('magnet-check-local', async (event, { infoHash, fileName } = {}) => {
         try {
@@ -284,6 +293,11 @@ function setupIPC(qixingApp) {
                 return { exists: false };
             }
             const filePath = path.join(os.tmpdir(), 'qixing-torrents', safeHash, fileName);
+            const completeMarkerPath = path.join(os.tmpdir(), 'qixing-torrents', safeHash, `${fileName}.complete`);
+            // 必须有 .complete 标记文件 + 数据文件存在且非空
+            if (!fs.existsSync(completeMarkerPath)) {
+                return { exists: false };
+            }
             if (!fs.existsSync(filePath)) {
                 return { exists: false };
             }
@@ -1183,6 +1197,18 @@ function setupIPC(qixingApp) {
                 eta: typeof msg.eta === 'number' ? msg.eta : null,
                 status: msg.status || (msg.progress >= 100 ? 'completed' : 'downloading')
             };
+            // 转发 progress 到 magnetBridgeEmitter（供 MagnetTransport.createSegmentWriter 代理 writer 订阅）
+            // payload: { infoHash, fileName, downloaded, total, progress, status }
+            if (msg.infoHash) {
+                magnetBridgeEmitter.emit('progress', {
+                    infoHash: msg.infoHash,
+                    fileName: msg.fileName,
+                    downloaded: msg.downloaded,
+                    total: msg.total,
+                    progress: msg.progress,
+                    status: progressData.status
+                });
+            }
             // 转发下载进度到主窗口
             if (qixingApp.mainWindow && !qixingApp.mainWindow.isDestroyed()) {
                 qixingApp.mainWindow.webContents.send('magnet-download-progress', progressData);
@@ -1588,13 +1614,12 @@ function setupIPC(qixingApp) {
     //   3) app.on('before-quit', cleanup);                       // 退出时清理
 
     // 暴露 magnet bridge 给 main.js 的 transportFactory 使用（Task 22 接入 MagnetTransport）
-    // 注意：sendMagnetMessage 是闭包内函数，通过 global 暴露给 main.js
-    // Task 23 删除旧代码时会重构为独立 MagnetProcessBridge 模块
+    // send: 发送 action 到 magnetHandler 子进程
+    // on/off: 订阅 progress 事件（供 MagnetTransport.createSegmentWriter 代理 writer 更新 bytesWritten）
     global.__magnetBridge = {
         send: sendMagnetMessage,
-        // on/off 暂不实现（Task 23 重构时补全，用于 MagnetTransport.createSegmentWriter 订阅 progress 事件）
-        on: null,
-        off: null
+        on: (event, cb) => magnetBridgeEmitter.on(event, cb),
+        off: (event, cb) => magnetBridgeEmitter.off(event, cb)
     };
 }
 
