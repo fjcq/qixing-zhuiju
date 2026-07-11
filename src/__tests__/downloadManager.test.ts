@@ -214,7 +214,8 @@ describe('DownloadManager', () => {
         // 触发对账
         dm._reconcileWithDisk();
         // 关键断言：记录必须保留（启动时归位为 paused，但记录不能丢）
-        const kept = dm.manifest.find(m => m.id === 'm1');
+        // 注意：_reconcileWithDisk 会先迁移旧结构记录，迁移后 id 变为 task_xxx，按 infoHash 查找
+        const kept = dm.manifest.find(m => m.infoHash === 'abcdef1234567890abcdef1234567890abcdef12');
         expect(kept).toBeDefined();
         // 启动时归位：downloading → paused（避免 UI 假下载状态）
         expect(kept.status).toBe('paused');
@@ -237,7 +238,8 @@ describe('DownloadManager', () => {
         });
         if (fs.existsSync(magnetFilePath)) fs.unlinkSync(magnetFilePath);
         dm._reconcileWithDisk();
-        expect(dm.manifest.find(m => m.id === 'm2')).toBeDefined();
+        // 迁移后 id 变为 task_xxx，按 infoHash 查找
+        expect(dm.manifest.find(m => m.infoHash === 'pausedhash00000000000000000000000000000')).toBeDefined();
     });
 
     test('磁盘对账：磁盘上有文件但 manifest 没有 → 补登记', () => {
@@ -246,11 +248,12 @@ describe('DownloadManager', () => {
         const filePath = path.join(TEST_DIR, 'magnet', infoHash, 'restored.mp4');
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         fs.writeFileSync(filePath, 'restored-content');
-        // 确保 manifest 中没有这条
-        dm.manifest = dm.manifest.filter(m => m.path !== filePath);
+        // 确保 manifest 中没有这条（新结构按 task.files[].path 查找）
+        dm.manifest = dm.manifest.filter(m => !(Array.isArray(m.files) && m.files.some(f => f.path === filePath)));
         // 对账
         dm._reconcileWithDisk();
-        const restored = dm.manifest.find(m => m.path === filePath);
+        // 补登记创建单文件 task，按 task.files[0].path 查找
+        const restored = dm.manifest.find(m => Array.isArray(m.files) && m.files.some(f => f.path === filePath));
         expect(restored).toBeDefined();
         expect(restored.sourceType).toBe('magnet');
         expect(restored.infoHash).toBe(infoHash);
@@ -261,9 +264,11 @@ describe('DownloadManager', () => {
         // 模拟：用户手动把一个文件复制到下载目录（绕过我们的下载流程）
         const orphanPath = path.join(TEST_DIR, 'imported-orphan.mp4');
         fs.writeFileSync(orphanPath, 'orphan-content');
-        dm.manifest = dm.manifest.filter(m => m.path !== orphanPath);
+        // 新结构按 task.files[].path 查找
+        dm.manifest = dm.manifest.filter(m => !(Array.isArray(m.files) && m.files.some(f => f.path === orphanPath)));
         dm._reconcileWithDisk();
-        const restored = dm.manifest.find(m => m.path === orphanPath);
+        // 补登记创建单文件 task，按 task.files[0].path 查找
+        const restored = dm.manifest.find(m => Array.isArray(m.files) && m.files.some(f => f.path === orphanPath));
         expect(restored).toBeDefined();
         expect(restored.sourceType).toBe('import');
         expect(restored.name).toBe('imported-orphan.mp4');
@@ -305,7 +310,8 @@ describe('DownloadManager', () => {
             folder: 'magnet'
         });
         dm._reconcileWithDisk();
-        const item = dm.manifest.find(m => m.id === 'm-demote');
+        // 迁移后 id 变为 task_xxx，按 infoHash 查找
+        const item = dm.manifest.find(m => m.infoHash === 'demotedhash00000000000000000000000000');
         expect(item).toBeDefined();
         expect(item.status).toBe('paused');
     });
@@ -325,7 +331,8 @@ describe('DownloadManager', () => {
             folder: 'magnet'
         });
         dm._reconcileWithDisk();
-        const item = dm.manifest.find(m => m.id === 'm-err');
+        // 迁移后 id 变为 task_xxx，按 infoHash 查找
+        const item = dm.manifest.find(m => m.infoHash === 'errhash00000000000000000000000000000');
         expect(item).toBeDefined();
         expect(item.status).toBe('paused');
     });
@@ -345,7 +352,8 @@ describe('DownloadManager', () => {
             folder: 'magnet'
         });
         dm._reconcileWithDisk();
-        const item = dm.manifest.find(m => m.id === 'm-paused');
+        // 迁移后 id 变为 task_xxx，按 infoHash 查找
+        const item = dm.manifest.find(m => m.infoHash === 'pausedhash00000000000000000000000000000');
         expect(item.status).toBe('paused');
     });
 
@@ -369,7 +377,8 @@ describe('DownloadManager', () => {
             folder: 'magnet'
         });
         dm._reconcileWithDisk();
-        const item = dm.manifest.find(m => m.id === 'm-done');
+        // 迁移后 id 变为 task_xxx，按 infoHash 查找
+        const item = dm.manifest.find(m => m.infoHash === 'completed0000000000000000000000000000');
         expect(item.status).toBe('completed');
     });
 
@@ -393,10 +402,11 @@ describe('DownloadManager', () => {
             eta: 30000
         });
         dm._reconcileWithDisk();
-        const item = dm.manifest.find(m => m.id === 'm-stale');
+        // 迁移后 id 变为 task_xxx，按 infoHash 查找
+        const item = dm.manifest.find(m => m.infoHash === 'stale000000000000000000000000000000');
         expect(item.downloadSpeed).toBe(0);
         expect(item.numPeers).toBe(0);
-        expect(item.wires).toBe(0);
+        // 任务级无 wires 字段（迁移时丢失，_reconcileWithDisk 也不处理）
         expect(item.eta).toBeNull();
     });
 
@@ -467,5 +477,322 @@ describe('DownloadManager', () => {
         const item = dm.manifest.find(m => m.id === 'm-exist');
         // 已被记录的 sourceUrl 不应被覆盖（避免 tracker 列表变更影响历史）
         expect(item.sourceUrl).toBe('magnet:?xt=urn:btih:original00000000000000000000000000');
+    });
+
+    // ========== 任务级 CRUD 测试（新数据模型）==========
+
+    test('addMagnetTask 创建新任务（含选中文件和未选中文件）', () => {
+        const infoHash = 'task00010000000000000000000000000000';
+        const result = dm.addMagnetTask({
+            magnetUri: 'magnet:?xt=urn:btih:task00010000000000000000000000000000',
+            infoHash,
+            taskName: '测试任务',
+            selectedFiles: [
+                { name: 'video01.mp4', size: 1024 * 1024, ext: 'mp4' },
+                { name: 'video02.mp4', size: 2048 * 1024, ext: 'mp4' }
+            ],
+            allFiles: [
+                { name: 'video01.mp4', size: 1024 * 1024, ext: 'mp4' },
+                { name: 'video02.mp4', size: 2048 * 1024, ext: 'mp4' },
+                { name: 'subtitle.srt', size: 1024, ext: 'srt' }
+            ]
+        });
+        expect(result.success).toBe(true);
+        expect(result.task.id).toMatch(/^task_/);
+        expect(result.task.type).toBe('magnet');
+        expect(result.task.infoHash).toBe(infoHash);
+        expect(result.task.files).toHaveLength(3);
+        // 选中文件 priority=1, status='downloading'
+        const v1 = result.task.files.find(f => f.name === 'video01.mp4');
+        expect(v1.priority).toBe(1);
+        expect(v1.status).toBe('downloading');
+        // 未选中文件 priority=0, status='skipped'
+        const sub = result.task.files.find(f => f.name === 'subtitle.srt');
+        expect(sub.priority).toBe(0);
+        expect(sub.status).toBe('skipped');
+        // task.totalSize = sum(selectedFiles.size)
+        expect(result.task.totalSize).toBe(1024 * 1024 + 2048 * 1024);
+    });
+
+    test('addMagnetTask 增量更新：同 infoHash 再次添加合并文件', () => {
+        const infoHash = 'task00020000000000000000000000000000';
+        const r1 = dm.addMagnetTask({
+            magnetUri: 'magnet:?xt=urn:btih:task00020000000000000000000000000000',
+            infoHash,
+            taskName: '任务1',
+            selectedFiles: [{ name: 'file1.mp4', size: 1024, ext: 'mp4' }],
+            allFiles: [{ name: 'file1.mp4', size: 1024, ext: 'mp4' }]
+        });
+        expect(r1.success).toBe(true);
+        const r2 = dm.addMagnetTask({
+            infoHash,
+            selectedFiles: [{ name: 'file2.mp4', size: 2048, ext: 'mp4' }]
+        });
+        expect(r2.success).toBe(true);
+        expect(r2.updated).toBe(true);
+        expect(r2.task.files).toHaveLength(2);
+    });
+
+    test('addMagnetTask 缺少 infoHash 返回失败', () => {
+        const r = dm.addMagnetTask({ magnetUri: 'magnet:?xt=urn:btih:xxx', taskName: '无hash' });
+        expect(r.success).toBe(false);
+    });
+
+    test('listTasks 返回聚合视图（含 fileCount 和兼容字段）', () => {
+        dm.addExistingFile({ name: 'sample.mp4', filePath: sampleFile, sourceType: 'url' });
+        const list = dm.listTasks();
+        expect(list).toHaveLength(1);
+        const t = list[0];
+        expect(t.fileCount).toBe(1);
+        expect(t.completedFileCount).toBe(1);
+        expect(t.activeFileCount).toBe(1);
+        // 单文件 task 暴露 path/size/ext 兼容字段
+        expect(t.path).toBeTruthy();
+        expect(t.ext).toBe('mp4');
+    });
+
+    test('listTasks 按类型筛选', () => {
+        dm.addExistingFile({ name: 'sample.mp4', filePath: sampleFile, sourceType: 'import' });
+        dm.addMagnetTask({
+            infoHash: 'task00030000000000000000000000000000',
+            taskName: '磁力任务',
+            selectedFiles: [{ name: 'v.mp4', size: 100, ext: 'mp4' }],
+            allFiles: [{ name: 'v.mp4', size: 100, ext: 'mp4' }]
+        });
+        const magnetOnly = dm.listTasks({ type: 'magnet' });
+        expect(magnetOnly).toHaveLength(1);
+        expect(magnetOnly[0].type).toBe('magnet');
+    });
+
+    test('getTask 返回任务详情（含完整 files，深拷贝）', () => {
+        const r = dm.addMagnetTask({
+            infoHash: 'task00040000000000000000000000000000',
+            taskName: '详情任务',
+            selectedFiles: [{ name: 'a.mp4', size: 100, ext: 'mp4' }],
+            allFiles: [{ name: 'a.mp4', size: 100, ext: 'mp4' }]
+        });
+        const task = dm.getTask(r.task.id);
+        expect(task).not.toBeNull();
+        expect(task.files).toHaveLength(1);
+        expect(task.files[0].name).toBe('a.mp4');
+        // 深拷贝：修改不影响 manifest
+        task.files[0].name = 'modified.mp4';
+        const orig = dm.manifest.find(m => m.id === r.task.id);
+        expect(orig.files[0].name).toBe('a.mp4');
+    });
+
+    test('getTask 任务不存在返回 null', () => {
+        expect(dm.getTask('non-existent')).toBeNull();
+    });
+
+    test('deleteTask 删除整个任务（含磁盘文件和 infoHash 目录）', () => {
+        const infoHash = 'task00050000000000000000000000000000';
+        const r = dm.addMagnetTask({
+            infoHash,
+            taskName: '删除任务',
+            selectedFiles: [{ name: 'del.mp4', size: 100, ext: 'mp4' }],
+            allFiles: [{ name: 'del.mp4', size: 100, ext: 'mp4' }]
+        });
+        const taskId = r.task.id;
+        // 模拟磁盘文件存在
+        const filePath = r.task.files[0].path;
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, 'content');
+        expect(fs.existsSync(filePath)).toBe(true);
+        const result = dm.deleteTask(taskId);
+        expect(result.success).toBe(true);
+        expect(dm.manifest.find(m => m.id === taskId)).toBeUndefined();
+        expect(fs.existsSync(filePath)).toBe(false);
+        // infoHash 目录也应删除（用 path.join 构造，避免 getMagnetPath 重新创建）
+        const infoHashDir = path.join(TEST_DIR, 'magnet', infoHash);
+        expect(fs.existsSync(infoHashDir)).toBe(false);
+    });
+
+    test('deleteTask 任务不存在返回失败', () => {
+        const r = dm.deleteTask('non-existent');
+        expect(r.success).toBe(false);
+    });
+
+    test('deleteTaskFile 删除任务内单文件', () => {
+        const r = dm.addMagnetTask({
+            infoHash: 'task00060000000000000000000000000000',
+            taskName: '多文件任务',
+            selectedFiles: [
+                { name: 'f1.mp4', size: 100, ext: 'mp4' },
+                { name: 'f2.mp4', size: 200, ext: 'mp4' }
+            ],
+            allFiles: [
+                { name: 'f1.mp4', size: 100, ext: 'mp4' },
+                { name: 'f2.mp4', size: 200, ext: 'mp4' }
+            ]
+        });
+        const taskId = r.task.id;
+        const fileId1 = r.task.files[0].id;
+        const filePath1 = r.task.files[0].path;
+        fs.mkdirSync(path.dirname(filePath1), { recursive: true });
+        fs.writeFileSync(filePath1, 'content');
+        const result = dm.deleteTaskFile(taskId, fileId1);
+        expect(result.success).toBe(true);
+        const task = dm.getTask(taskId);
+        expect(task.files).toHaveLength(1);
+        expect(task.files[0].name).toBe('f2.mp4');
+        expect(fs.existsSync(filePath1)).toBe(false);
+    });
+
+    test('deleteTaskFile 删除最后一个文件时自动删除任务', () => {
+        const r = dm.addMagnetTask({
+            infoHash: 'task00070000000000000000000000000000',
+            taskName: '单文件任务',
+            selectedFiles: [{ name: 'only.mp4', size: 100, ext: 'mp4' }],
+            allFiles: [{ name: 'only.mp4', size: 100, ext: 'mp4' }]
+        });
+        const taskId = r.task.id;
+        const fileId = r.task.files[0].id;
+        const result = dm.deleteTaskFile(taskId, fileId);
+        expect(result.success).toBe(true);
+        expect(dm.manifest.find(m => m.id === taskId)).toBeUndefined();
+    });
+
+    test('setFilePriority priority=0 标记为不下载（skipped）', () => {
+        const r = dm.addMagnetTask({
+            infoHash: 'task00080000000000000000000000000000',
+            taskName: '优先级任务',
+            selectedFiles: [
+                { name: 'f1.mp4', size: 100, ext: 'mp4' },
+                { name: 'f2.mp4', size: 200, ext: 'mp4' }
+            ],
+            allFiles: [
+                { name: 'f1.mp4', size: 100, ext: 'mp4' },
+                { name: 'f2.mp4', size: 200, ext: 'mp4' }
+            ]
+        });
+        const taskId = r.task.id;
+        const fileId1 = r.task.files[0].id;
+        const result = dm.setFilePriority(taskId, fileId1, 0);
+        expect(result.success).toBe(true);
+        const task = dm.getTask(taskId);
+        const f1 = task.files.find(f => f.id === fileId1);
+        expect(f1.priority).toBe(0);
+        expect(f1.status).toBe('skipped');
+        // task.totalSize 重算（只算 priority>0 的文件）
+        expect(task.totalSize).toBe(200);
+    });
+
+    test('setFilePriority priority=1 恢复下载', () => {
+        const r = dm.addMagnetTask({
+            infoHash: 'task00090000000000000000000000000000',
+            taskName: '恢复任务',
+            selectedFiles: [],
+            allFiles: [{ name: 'f1.mp4', size: 100, ext: 'mp4' }]
+        });
+        const taskId = r.task.id;
+        const fileId = r.task.files[0].id;
+        // 初始 priority=0（因为 selectedFiles 为空）
+        expect(r.task.files[0].priority).toBe(0);
+        const result = dm.setFilePriority(taskId, fileId, 1);
+        expect(result.success).toBe(true);
+        const task = dm.getTask(taskId);
+        const f = task.files.find(x => x.id === fileId);
+        expect(f.priority).toBe(1);
+        expect(f.status).toBe('downloading');
+    });
+
+    test('setFilePriority 任务不存在返回失败', () => {
+        const r = dm.setFilePriority('non-existent', 'file-x', 0);
+        expect(r.success).toBe(false);
+    });
+
+    // ========== 旧 manifest 迁移测试 ==========
+
+    test('_migrateLegacyManifest 磁力文件按 infoHash 聚合', () => {
+        dm.manifest = [];
+        // 3 个旧结构磁力记录：2 个同 infoHash，1 个不同
+        dm.manifest.push({
+            id: 'old1', name: 'v1.mp4', path: '/path/v1.mp4', size: 100,
+            sourceType: 'magnet', infoHash: 'aaa100000000000000000000000000000000',
+            status: 'completed', ext: 'mp4', folder: 'magnet', addedAt: Date.now()
+        });
+        dm.manifest.push({
+            id: 'old2', name: 'v2.mp4', path: '/path/v2.mp4', size: 200,
+            sourceType: 'magnet', infoHash: 'aaa100000000000000000000000000000000',
+            status: 'completed', ext: 'mp4', folder: 'magnet', addedAt: Date.now()
+        });
+        dm.manifest.push({
+            id: 'old3', name: 'v3.mp4', path: '/path/v3.mp4', size: 300,
+            sourceType: 'magnet', infoHash: 'bbb200000000000000000000000000000000',
+            status: 'completed', ext: 'mp4', folder: 'magnet', addedAt: Date.now()
+        });
+        dm._migrateLegacyManifest();
+        // 同 infoHash 的 2 条合并为 1 个 task，另一条独立 task → 共 2 个 task
+        expect(dm.manifest).toHaveLength(2);
+        const taskA = dm.manifest.find(t => t.infoHash === 'aaa100000000000000000000000000000000');
+        expect(taskA).toBeDefined();
+        expect(taskA.id).toMatch(/^task_/);
+        expect(taskA.type).toBe('magnet');
+        expect(taskA.files).toHaveLength(2);
+        const taskB = dm.manifest.find(t => t.infoHash === 'bbb200000000000000000000000000000000');
+        expect(taskB.files).toHaveLength(1);
+    });
+
+    test('_migrateLegacyManifest URL/import 文件转单文件 task', () => {
+        dm.manifest = [];
+        dm.manifest.push({
+            id: 'u1', name: 'url-file.mp4', path: '/path/url-file.mp4', size: 100,
+            sourceType: 'url', sourceUrl: 'http://example.com/file.mp4',
+            status: 'completed', ext: 'mp4', addedAt: Date.now()
+        });
+        dm.manifest.push({
+            id: 'i1', name: 'import-file.mkv', path: '/path/import-file.mkv', size: 200,
+            sourceType: 'import',
+            status: 'completed', ext: 'mkv', addedAt: Date.now()
+        });
+        dm._migrateLegacyManifest();
+        expect(dm.manifest).toHaveLength(2);
+        for (const t of dm.manifest) {
+            expect(t.files).toHaveLength(1);
+            expect(t.id).toMatch(/^task_/);
+        }
+        const urlTask = dm.manifest.find(t => t.type === 'url');
+        expect(urlTask).toBeDefined();
+        expect(urlTask.files[0].name).toBe('url-file.mp4');
+    });
+
+    test('_migrateLegacyManifest 已是新结构时跳过迁移', () => {
+        dm.manifest = [];
+        dm.manifest.push({
+            id: 'task_keep', type: 'magnet', name: 'keep', status: 'completed',
+            infoHash: 'keep00000000000000000000000000000000',
+            files: [{ id: 'f1', name: 'k.mp4', path: '/path/k.mp4', size: 100, priority: 1, status: 'completed', ext: 'mp4' }],
+            addedAt: Date.now(), mtime: Date.now()
+        });
+        dm._migrateLegacyManifest();
+        // id 不变（未迁移）
+        expect(dm.manifest.find(t => t.id === 'task_keep')).toBeDefined();
+        expect(dm.manifest).toHaveLength(1);
+    });
+
+    test('_migrateLegacyManifest 混合旧结构（磁力+URL）正确迁移', () => {
+        dm.manifest = [];
+        dm.manifest.push({
+            id: 'm1', name: 'v1.mp4', path: '/path/v1.mp4', size: 100,
+            sourceType: 'magnet', infoHash: 'mix0000000000000000000000000000000000',
+            status: 'completed', ext: 'mp4', folder: 'magnet', addedAt: Date.now()
+        });
+        dm.manifest.push({
+            id: 'm2', name: 'v2.mp4', path: '/path/v2.mp4', size: 200,
+            sourceType: 'magnet', infoHash: 'mix0000000000000000000000000000000000',
+            status: 'completed', ext: 'mp4', folder: 'magnet', addedAt: Date.now()
+        });
+        dm.manifest.push({
+            id: 'u1', name: 'url.mp4', path: '/path/url.mp4', size: 50,
+            sourceType: 'url', status: 'completed', ext: 'mp4', addedAt: Date.now()
+        });
+        dm._migrateLegacyManifest();
+        // 1 个磁力 task（含 2 个文件）+ 1 个 URL task（含 1 个文件）
+        expect(dm.manifest).toHaveLength(2);
+        const magnetTask = dm.manifest.find(t => t.type === 'magnet');
+        expect(magnetTask.files).toHaveLength(2);
+        const urlTask = dm.manifest.find(t => t.type === 'url');
+        expect(urlTask.files).toHaveLength(1);
     });
 });
