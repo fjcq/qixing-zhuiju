@@ -423,12 +423,17 @@ class DownloadManager {
 
     /**
      * 删除文件（移到回收站逻辑较复杂，这里直接物理删除；后续可接入 trash 模块）
+     * 关键修复：磁力文件需走 removeMagnetFile，否则会残留 .complete 标记 + infoHash 目录
      * @param {string} id
      */
     deleteFile(id) {
         const idx = this.manifest.findIndex(m => m.id === id);
         if (idx === -1) return { success: false, error: '记录不存在' };
         const item = this.manifest[idx];
+        // 磁力文件委托给 removeMagnetFile：彻底清理数据文件 + .complete 标记 + infoHash 目录
+        if (item.sourceType === 'magnet') {
+            return this.removeMagnetFile(id, { removeFiles: true, removeDir: true });
+        }
         try {
             if (item.path && fs.existsSync(item.path)) {
                 fs.unlinkSync(item.path);
@@ -841,35 +846,62 @@ class DownloadManager {
     }
 
     /**
-     * 删除磁力记录并清理磁盘文件
-     * @param {string} id
+     * 删除磁力记录并彻底清理磁盘文件
+     * 完整删除范围：
+     *   1) 数据文件本身（item.path）
+     *   2) .complete 标记文件（item.path + '.complete'）—— 解决 webtorrent 预分配大小误判的关键标记
+     *   3) 整个 infoHash 子目录（递归删除，包含同 torrent 的其他文件/片段）
+     *   4) manifest 中的记录
+     * 关键修复点：
+     *   - 旧实现仅在"目录为空"时 rmdirSync，残留 .complete 标记或其他片段时目录永远删不掉
+     *   - 改用 fs.rmSync(recursive: true, force: true) 强制递归删除，确保磁盘与清单一致
+     *   - 即使部分文件删除失败也继续清理其他文件，最后才从清单移除（避免半残留状态）
+     * @param {string} id - manifest 记录 ID
      * @param {object} [opts]
      * @param {boolean} [opts.removeFiles=true] - 是否同时删除磁盘文件
-     * @param {boolean} [opts.removeDir=true] - 是否同时删除 infoHash 目录
+     * @param {boolean} [opts.removeDir=true] - 是否同时递归删除 infoHash 目录
      */
     removeMagnetFile(id, opts = {}) {
         const { removeFiles = true, removeDir = true } = opts;
         const idx = this.manifest.findIndex(m => m.id === id);
         if (idx === -1) return { success: false, error: '记录不存在' };
         const item = this.manifest[idx];
+        const errors = [];
+        // 1) 删除数据文件本身
         if (removeFiles && item.path) {
             try {
                 if (fs.existsSync(item.path)) fs.unlinkSync(item.path);
-            } catch (e) { /* 忽略文件删除失败 */ }
+            } catch (e) {
+                errors.push(`数据文件删除失败: ${e.message}`);
+            }
+            // 2) 删除 .complete 标记文件（即使主文件不存在也要清理）
+            // 关键：magnetHandler.mjs 在 torrent done 时写入此标记，不删会残留并干扰 magnet-check-local 判断
+            const markerPath = item.path + '.complete';
+            try {
+                if (fs.existsSync(markerPath)) fs.unlinkSync(markerPath);
+            } catch (e) {
+                errors.push(`标记文件删除失败: ${e.message}`);
+            }
         }
-        // 删除所属 infoHash 目录（如果为空）
+        // 3) 递归删除整个 infoHash 子目录（包含同 torrent 的其他文件/片段/标记）
+        // 关键修复：旧实现只在目录为空时 rmdirSync，残留任何文件就永远删不掉
         if (removeDir && item.infoHash) {
             const dir = this.getMagnetPath(item.infoHash);
             try {
                 if (fs.existsSync(dir)) {
-                    const remaining = fs.readdirSync(dir);
-                    if (remaining.length === 0) fs.rmdirSync(dir);
+                    fs.rmSync(dir, { recursive: true, force: true });
                 }
-            } catch (e) { /* 忽略目录删除失败 */ }
+            } catch (e) {
+                errors.push(`目录递归删除失败: ${e.message}`);
+            }
         }
+        // 4) 从清单移除并持久化（即使部分磁盘删除失败也要移除清单，避免残留幽灵记录）
         this.manifest.splice(idx, 1);
         this._saveManifest();
-        return { success: true };
+        if (errors.length > 0) {
+            console.warn('[DOWNLOAD] 磁力删除部分失败:', errors.join('; '));
+        }
+        return { success: true, warnings: errors.length > 0 ? errors : undefined };
     }
 
     /**

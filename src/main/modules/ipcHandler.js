@@ -781,9 +781,41 @@ function setupIPC(qixingApp) {
         }
     });
 
-    // 删除
+    // 删除文件
+    // 关键修复：磁力文件需先 magnet-remove 销毁 torrent（释放 Windows 文件锁），再清理磁盘
+    // 完整删除链路：
+    //   1) 磁力文件：magnet-remove → 子进程 destroy callback → cleanupDir 删目录 + magnet-status: removed
+    //      → handleMagnetMessage 调 removeMagnetFile 删 manifest + 磁盘 + .complete 标记 + 目录
+    //   2) download-delete handler 兜底调 removeMagnetFile（idx === -1 时说明已被 removed 分支清理，返回 success）
+    //   3) 普通文件：直接 deleteFile
     ipcMain.handle('download-delete', async (event, { id }) => {
         try {
+            // 先查 manifest 记录，判断是否磁力文件
+            const item = dm.manifest.find(m => m.id === id);
+            if (!item) {
+                return { success: false, error: '记录不存在' };
+            }
+            // 磁力文件：先销毁 torrent（释放文件锁），再清理磁盘
+            // 关键：destroy 是异步的，magnet-remove 会等 destroy callback 完成才 resolve
+            if (item.sourceType === 'magnet' && item.infoHash) {
+                try {
+                    await sendMagnetMessage({
+                        action: 'remove',
+                        infoHash: item.infoHash,
+                        fileName: item.name
+                    });
+                } catch (e) {
+                    // 子进程销毁失败不阻塞删除流程，继续清理磁盘（torrent 可能已不存在）
+                    console.warn('[MAIN] magnet-remove 失败（继续清理磁盘）:', e.message);
+                }
+                // 兜底清理：handleMagnetMessage 的 removed 分支可能已删 manifest
+                // 此时 removeMagnetFile 返回 '记录不存在'，视为已删除成功
+                const result = dm.removeMagnetFile(id, { removeFiles: true, removeDir: true });
+                if (result.success) return { success: true };
+                if (result.error === '记录不存在') return { success: true };
+                return result;
+            }
+            // 普通文件：直接 deleteFile
             return dm.deleteFile(id);
         } catch (error) {
             return { success: false, error: error.message };
@@ -1341,9 +1373,28 @@ function setupIPC(qixingApp) {
             return;
         }
 
-        // 没有id的消息（如子进程启动通知）
+        // 没有id的消息（如子进程启动通知、init 回复、运行时错误）
         if (msg.type === 'ready' && msg.message) {
             console.log('[MAIN] [MAGNET]', msg.message);
+            return;
+        }
+        // init 消息的回复：主进程启动子进程后用 child.stdin.write 直接发送 init（不走 sendMagnetMessage）
+        // 所以回复没有 id，落到这里。仅打印调试日志即可（magnetDir 已在发送 init 时记录）
+        if (msg.type === 'initialized') {
+            console.log('[MAIN] [MAGNET] 子进程已初始化, magnetDir:', msg.magnetDir);
+            return;
+        }
+        // 运行时错误（无 id）：uncaughtException / unhandledRejection 等
+        // 关键：打印到终端便于调试，避免"未处理消息"日志噪音掩盖真问题
+        if (msg.type === 'error') {
+            console.error('[MAIN] [MAGNET] 子进程错误:', msg.error || '未知错误');
+            // 转发到主窗口让 UI 能提示用户
+            if (qixingApp.mainWindow && !qixingApp.mainWindow.isDestroyed()) {
+                qixingApp.mainWindow.webContents.send('magnet-error', {
+                    error: msg.error || '未知错误',
+                    timestamp: Date.now()
+                });
+            }
             return;
         }
 

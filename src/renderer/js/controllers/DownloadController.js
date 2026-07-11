@@ -962,21 +962,18 @@
 
         /**
          * 删除文件（带确认）
+         * 关键修复：简化为只调 download-delete IPC
+         * 主进程 download-delete handler 内部统一处理：
+         *   - 磁力文件：先 magnet-remove 销毁 torrent（释放 Windows 文件锁），再 removeMagnetFile 清理磁盘
+         *   - 普通文件：直接 deleteFile
+         * 旧实现的 bug：先 magnet-remove（异步销毁）再 download-delete（同步删文件），
+         *   Windows 文件锁未释放导致 fs.unlinkSync 失败，且 deleteFile 不删 .complete 标记和 infoHash 目录
          */
         async _deleteFile(id) {
             const file = this.files.find(f => f.id === id);
             if (!file) return;
             if (!window.confirm(`确定要删除「${file.name}」吗？\n该操作不可撤销。`)) return;
             try {
-                // 磁力文件：先通知子进程销毁 torrent + 清磁盘存储
-                // 关键：用户可能已下载了一半但还没播，torrent 在子进程里仍占着 peer 连接 / 磁盘
-                // 不告诉子进程的话，即使删了磁盘文件，子进程还会继续往已删的路径写 → 浪费带宽
-                if (file.sourceType === 'magnet' && file.infoHash) {
-                    await window.electron.ipcRenderer.invoke('magnet-remove', {
-                        infoHash: file.infoHash,
-                        fileName: file.name
-                    });
-                }
                 const res = await window.electron.ipcRenderer.invoke('download-delete', { id });
                 if (res && res.success) {
                     this.app.componentService.showNotification('已删除', 'success');

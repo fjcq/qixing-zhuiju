@@ -1787,34 +1787,68 @@ process.stdin.on('data', chunk => {
 
                 case 'remove':
                     // 销毁指定 torrent（默认 currentTorrent，下载管理页可按 infoHash 精确删除）
-                    // 关键：旧实现只支持删除 currentTorrent，但下载管理页可能同时有多个未播的 torrent
-                    // infoHash 优先（精确删除）；空则回退到 currentTorrent
-                    // 异步：data handler 本身是同步的（要处理 stdin buffer 切分），所以用 .then() 而不是 await
+                    // 关键修复：
+                    //   1) 旧实现用 `await Promise.resolve(c.get(targetHash))`，webtorrent v2.x 的 c.get 返回 Promise
+                    //      project_memory 已记录：改用 c.torrents.find() 同步查找（与 findReusableTorrent 一致）
+                    //   2) destroy({ destroyStore: true }) 在 Windows 上不可靠（文件锁/异步未完成）
+                    //      改为 destroy callback 中手动 fs.rmSync 兜底删 infoHash 目录
+                    //   3) 即使 torrent 不在 c.torrents 中（仅 manifest 有记录、子进程未加载过）
+                    //      也发送 removed 状态 + 手动删目录，让主进程能清理 manifest + 磁盘
                     (async () => {
                         const targetHash = (msg.infoHash || '').toLowerCase();
                         let targetTorrent = null;
-                        if (targetHash) {
-                            const t = await Promise.resolve(c.get(targetHash));
-                            if (t) targetTorrent = t;
+                        // 1) c.torrents 数组同步查找（避开 c.get 异步陷阱）
+                        if (targetHash && c && Array.isArray(c.torrents)) {
+                            targetTorrent = c.torrents.find(t => t && t.infoHash === targetHash) || null;
                         }
+                        // 2) 回退到 currentTorrent（兼容旧调用方：未传 infoHash 时）
                         if (!targetTorrent) {
                             targetTorrent = currentTorrent;
                         }
+                        /**
+                         * 兜底删除 infoHash 子目录
+                         * 关键：destroyStore: true 在 Windows 上经常删不掉文件（文件锁/异步未完成）
+                         * 必须在 destroy callback 中手动递归删除整个目录，确保磁盘与清单一致
+                         * @param {string} hash - infoHash
+                         */
+                        const cleanupDir = (hash) => {
+                            if (!hash) return;
+                            try {
+                                const dir = getMagnetPath(hash);
+                                if (fs.existsSync(dir)) {
+                                    fs.rmSync(dir, { recursive: true, force: true });
+                                }
+                            } catch (e) {
+                                console.warn(`[magnetHandler] 兜底删目录失败 ${hash}: ${e.message}`);
+                            }
+                        };
                         if (targetTorrent) {
                             try {
                                 const hash = targetTorrent.infoHash;
-                                targetTorrent.destroy({ destroyStore: true }, () => {
-                                    sendMagnetStatus(hash, { status: 'removed' });
-                                });
                                 if (targetTorrent === currentTorrent) {
                                     currentTorrent = null;
                                 }
-                                sendMessage({ id: msg.id, type: 'removed' });
+                                // 关键：destroy 是异步的，必须等 callback 完成（文件锁释放、目录清理完）
+                                // 再回复 removed 给主进程 + 发送 magnet-status
+                                // 否则主进程 magnet-remove Promise 解析后立即调 deleteFile，
+                                // Windows 文件锁未释放，fs.unlinkSync 会失败
+                                targetTorrent.destroy({ destroyStore: true }, () => {
+                                    cleanupDir(hash);
+                                    sendMagnetStatus(hash, { status: 'removed' });
+                                    sendMessage({ id: msg.id, type: 'removed' });
+                                });
                             } catch (e) {
                                 sendMessage({ id: msg.id, type: 'error', error: '删除失败: ' + e.message });
                             }
                         } else {
-                            sendMessage({ id: msg.id, type: 'error', error: '当前没有活动的 torrent' });
+                            // 子进程没有该 torrent（仅 manifest 有记录、未播放过、已退出等）
+                            // 关键：仍要发送 removed 状态 + 手动删目录，让主进程清理 manifest + 磁盘
+                            // 否则用户点删除后会变成"幽灵记录"：manifest 还在但子进程不知道
+                            if (targetHash) {
+                                cleanupDir(targetHash);
+                                sendMagnetStatus(targetHash, { status: 'removed' });
+                            }
+                            sendMessage({ id: msg.id, type: 'removed' });
                         }
                     })();
                     break;
