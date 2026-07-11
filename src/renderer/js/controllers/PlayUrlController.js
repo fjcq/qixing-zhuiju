@@ -480,8 +480,8 @@
             this._parseStartTime = Date.now();
             this._setState(STATE.PARSE_PROGRESS);
             this._showProgress('正在解析磁力链接...', 0, 'info');
-            // 注意：磁力历史在 _playMagnetFile 用户真正挑了文件后才写入（这里不写）
-            // 避免"未观看"却产生历史条目（之前一直显示"正片"就是这个原因）
+            // 注意：磁力历史在用户真正挑完文件后才写入（addTask 后由下载页管理）
+            // 避免"未观看"却产生历史条目
 
             // 解析阶段超时提示：30秒无结果时提醒用户，60秒时建议取消
             this._parseTimeoutTimer1 = setTimeout(() => {
@@ -497,24 +497,62 @@
             }, 30000);
 
             try {
-                const result = await this._magnetParser.parse(magnetUri);
+                // 1) 解析文件列表（不启动下载，仅返回元数据）
+                const resolveResult = await this._magnetParser.resolveFiles(magnetUri);
                 if (this._parseCancelled) {
                     return;
                 }
-                if (result && result.success) {
-                    this._currentInfoHash = result.infoHash || this._currentInfoHash;
-                    this._hideProgress();
-                    this._renderFilesList(result.files || [], magnetUri);
-                    this._setState(STATE.FILES_READY);
+                if (!resolveResult || !resolveResult.success || !resolveResult.files || resolveResult.files.length === 0) {
+                    throw new Error((resolveResult && resolveResult.error) || '磁力链解析失败或无文件');
+                }
+                this._currentInfoHash = resolveResult.infoHash || this._currentInfoHash;
+                this._hideProgress();
+
+                // 2) 弹出文件选择对话框让用户勾选要下载的文件
+                if (typeof window === 'undefined' || typeof window.FilePickerDialog !== 'function') {
+                    throw new Error('文件选择对话框组件未加载');
+                }
+                const shortHash = (resolveResult.infoHash || infoHash || '').slice(0, 8);
+                const dialog = new window.FilePickerDialog();
+                const dialogResult = await dialog.show({
+                    taskName: `磁力任务 ${shortHash}`,
+                    files: resolveResult.files
+                });
+                if (this._parseCancelled) {
+                    return;
+                }
+                if (!dialogResult.confirmed || !dialogResult.selectedFiles || dialogResult.selectedFiles.length === 0) {
+                    this._notify('已取消添加', 'info');
+                    this._setState(STATE.EDITING);
+                    return;
+                }
+
+                // 3) 添加下载任务（主进程会启动子进程下载 priority>0 的文件）
+                this._showProgress('正在添加下载任务...', 50, 'info');
+                const addResult = await this._magnetParser.addTask({
+                    magnetUri,
+                    infoHash: resolveResult.infoHash,
+                    selectedFiles: dialogResult.selectedFiles,
+                    allFiles: resolveResult.files,
+                    taskName: `磁力任务 ${shortHash}`
+                });
+                if (addResult && addResult.success) {
+                    this._showProgress('已添加下载任务', 100, 'success');
+                    this._notify('已添加下载任务', 'success');
+                    // 切换到下载页查看任务进度
+                    if (this.app && typeof this.app.switchToPage === 'function') {
+                        this.app.switchToPage('downloads');
+                    }
+                    this._setState(STATE.IDLE);
                 } else {
-                    throw new Error((result && result.error) || '磁力链解析失败');
+                    throw new Error((addResult && addResult.error) || '添加任务失败');
                 }
             } catch (error) {
                 if (this._parseCancelled) {
                     return;
                 }
-                console.error('[PlayUrlController] 磁力链解析失败:', error);
-                this._showProgress(`解析失败: ${error.message}`, 0, 'error');
+                console.error('[PlayUrlController] 磁力链处理失败:', error);
+                this._showProgress(`处理失败: ${error.message}`, 0, 'error');
                 this._autoHideProgressOnError();
                 this._setState(STATE.EDITING);
             } finally {
