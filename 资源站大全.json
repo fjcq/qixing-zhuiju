@@ -1,0 +1,536 @@
+{
+    "exportInfo": {
+        "timestamp": 1751856000000,
+        "date": "2026/7/7 10:00:00",
+        "version": "1.1.0",
+        "appName": "七星追剧",
+        "source": "资源站大全 - 手动整理"
+    },
+    "sites": [
+        {
+            "id": "lazi",
+            "name": "[综合]量子资源",
+            "url": "https://cj.lziapi.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "ffzy",
+            "name": "[综合]非凡资源",
+            "url": "https://cj.ffzyapi.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "gszy",
+            "name": "[综合]光速资源",
+            "url": "https://api.guangsuapi.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "hnzy",
+            "name": "[综合]红牛资源",
+            "url": "https://www.hongniuzy2.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "bfzy",
+            "name": "[综合]暴风资源",
+            "url": "https://bfzyapi.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "xlzy",
+            "name": "[综合]新浪资源",
+            "url": "https://api.xinlangapi.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "sdzy",
+            "name": "[综合]闪电资源",
+            "url": "https://www.sdzyapi.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "wlzy",
+            "name": "[综合]卧龙资源",
+            "url": "https://collect.wolongzyw.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "snzy",
+            "name": "[影视]索尼资源",
+            "url": "https://suonizy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "zdzy",
+            "name": "[影视]最大资源",
+            "url": "https://www.zuidazy.co/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "mtzy",
+            "name": "[影视]茅台资源",
+            "url": "https://mtzy.tv/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "360zy",
+            "name": "[影视]360资源",
+            "url": "https://www.360zy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "ryzy",
+            "name": "[影视]如意资源",
+            "url": "https://ryzy.tv/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "mdzy",
+            "name": "[影视]魔都资源",
+            "url": "https://moduzy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "hhzy",
+            "name": "[影视]豪华资源",
+            "url": "https://huohuzy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "qlzy",
+            "name": "[影视]麒麟资源",
+            "url": "https://qilinzyz.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "dytt",
+            "name": "[影视]电影天堂",
+            "url": "https://dyttzyw.tv/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "wjzy",
+            "name": "[影视]无尽资源",
+            "url": "https://wujinzy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "jszy",
+            "name": "[影视]极速资源",
+            "url": "https://www.jisuzy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "hyzy",
+            "name": "[影视]虎牙资源",
+            "url": "https://huyazy.net/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "dbzy",
+            "name": "[影视]豆瓣资源",
+            "url": "https://dbzy.tv/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "yjzy",
+            "name": "[影视]影剧资源",
+            "url": "https://yjzy.me/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "tyys",
+            "name": "[影视]天涯影视",
+            "url": "https://tyyszy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "myzy",
+            "name": "[影视]猫眼资源",
+            "url": "https://www.maoyanzy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "nnzy",
+            "name": "[影视]牛牛资源",
+            "url": "https://niuniuzy.cc/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "okzy",
+            "name": "[影视]OK资源",
+            "url": "https://okzyw.cc/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "yyzy",
+            "name": "[影视]鸭鸭资源",
+            "url": "https://yayazy2.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "aqyzy",
+            "name": "[影视]爱奇艺资源",
+            "url": "https://www.iqiyizy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "tkzy",
+            "name": "[影视]天空资源",
+            "url": "https://api.tiankongapi.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "fszy",
+            "name": "[影视]飞速资源",
+            "url": "https://www.feisuzyapi.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "tpzy",
+            "name": "[影视]淘片资源",
+            "url": "https://taopianapi.com/home/cjapi/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "bdzy",
+            "name": "[影视]百度资源",
+            "url": "https://api.apibdzy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "ukzy",
+            "name": "[影视]U酷资源",
+            "url": "https://www.ukuapi.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "ikzy",
+            "name": "[影视]iKun资源",
+            "url": "https://ikunzyapi.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "kczy",
+            "name": "[影视]快车资源",
+            "url": "https://caiji.kcziyuan.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "jyzy",
+            "name": "[影视]金鹰资源",
+            "url": "https://jinyingzy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "hwzy",
+            "name": "[影视]华为资源",
+            "url": "https://cj.hwzyapi.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "yhzy",
+            "name": "[影视]樱花资源",
+            "url": "https://m3u8.apiyhzy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "yzzy",
+            "name": "[影视]优质资源",
+            "url": "https://1080zyk20.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "wwdj",
+            "name": "[短剧]旺旺短剧",
+            "url": "https://wwzy.tv/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "jldj",
+            "name": "[短剧]锦鲤短剧",
+            "url": "https://jinlidj.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "lzdj",
+            "name": "[短剧]量子短剧",
+            "url": "https://cj.lziapi.com/api.php/provide/vod/?t=46",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "ffdj",
+            "name": "[短剧]非凡短剧",
+            "url": "https://cj.ffzyapi.com/api.php/provide/vod/?t=36",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "lzdm",
+            "name": "[动漫]量子动漫",
+            "url": "https://cj.lziapi.com/api.php/provide/vod/?t=4",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "lbzy",
+            "name": "[午夜]乐播资源",
+            "url": "https://lebozy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "ddzy",
+            "name": "[午夜]大地资源",
+            "url": "https://dadizy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "jkun",
+            "name": "[午夜]JKUN资源",
+            "url": "https://jkunzy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "ytzy",
+            "name": "[午夜]玉兔资源",
+            "url": "https://yutuzy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "jpxzy",
+            "name": "[午夜]精品X资源",
+            "url": "https://jingpinx.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "ljzy",
+            "name": "[午夜]辣椒资源",
+            "url": "http://lajiaozy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "155zy",
+            "name": "[午夜]155资源",
+            "url": "https://155zy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "ddzy2",
+            "name": "[午夜]滴滴资源",
+            "url": "https://didizy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "syzy",
+            "name": "[午夜]鲨鱼资源",
+            "url": "https://shayuzy5.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "askzy",
+            "name": "[午夜]奥斯卡资源",
+            "url": "https://aosikazy1.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "smzy",
+            "name": "[午夜]色猫资源",
+            "url": "https://semaozy8.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "slzy",
+            "name": "[午夜]森林资源",
+            "url": "https://senlinzy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "hlzy",
+            "name": "[午夜]黑料资源",
+            "url": "https://heiliaozy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "nxzy",
+            "name": "[午夜]奶香香资源",
+            "url": "https://naixxzy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "xzy",
+            "name": "[午夜]幸资源",
+            "url": "https://xzytv.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "xbzy",
+            "name": "[午夜]杏吧资源",
+            "url": "https://sex8zy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "ckbh",
+            "name": "[午夜]CK百货资源",
+            "url": "https://ckbh.me/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "bwzy",
+            "name": "[午夜]百万资源",
+            "url": "https://bwzy.tv/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "thzy",
+            "name": "[午夜]桃花资源",
+            "url": "https://thzy1.me/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "ddzy3",
+            "name": "[午夜]豆豆资源",
+            "url": "https://doudouzy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "saav",
+            "name": "[午夜]搜AV资源",
+            "url": "https://souavzyw.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "xjzy",
+            "name": "[午夜]香蕉资源",
+            "url": "https://www.xiangjiaozyw.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "91jp",
+            "name": "[午夜]91精品资源",
+            "url": "https://91jpzyw.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "fqzy",
+            "name": "[午夜]番茄资源",
+            "url": "https://fqzy.me/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "yywcj",
+            "name": "[午夜]优优资源",
+            "url": "https://www.yyzywcj.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "xjzy2",
+            "name": "[午夜]小鸡资源",
+            "url": "https://xiaojizy.live/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "hlouzy",
+            "name": "[午夜]红楼资源",
+            "url": "https://hlouzy.cn/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "lsbzy",
+            "name": "[午夜]老色逼资源",
+            "url": "https://laosebizy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "hsck",
+            "name": "[午夜]黄色仓库资源",
+            "url": "https://hsckzy001.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "dnzzy",
+            "name": "[午夜]大奶子资源",
+            "url": "https://danaizizy.com/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        },
+        {
+            "id": "yytv",
+            "name": "[午夜]优优TV资源",
+            "url": "https://yytv.cc/api.php/provide/vod/",
+            "type": "json",
+            "active": false
+        }
+    ]
+}
