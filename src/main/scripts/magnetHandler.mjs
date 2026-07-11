@@ -1795,6 +1795,7 @@ process.stdin.on('data', chunk => {
                     //   3) 即使 torrent 不在 c.torrents 中（仅 manifest 有记录、子进程未加载过）
                     //      也发送 removed 状态 + 手动删目录，让主进程能清理 manifest + 磁盘
                     (async () => {
+                        const c = getClient();
                         const targetHash = (msg.infoHash || '').toLowerCase();
                         let targetTorrent = null;
                         // 1) c.torrents 数组同步查找（避开 c.get 异步陷阱）
@@ -1849,6 +1850,69 @@ process.stdin.on('data', chunk => {
                                 sendMagnetStatus(targetHash, { status: 'removed' });
                             }
                             sendMessage({ id: msg.id, type: 'removed' });
+                        }
+                    })();
+                    break;
+
+                case 'set-file-priority':
+                    // 设置单个文件下载优先级（0=不下载, 1=正常下载, 2=高优先级）
+                    // 关键：webtorrent 的 file.deselect() 表示不下载，file.select() 表示下载
+                    //   priority=0 → file.deselect()（停止下载该文件，保留已下数据）
+                    //   priority=1 → file.select()（恢复正常下载）
+                    //   priority=2 → file.select()（webtorrent 无原生高优先级，简化为 select）
+                    // torrent 查找用 c.torrents.find() 同步查找（避开 c.get 异步陷阱，与 set-priority 一致）
+                    (async () => {
+                        const c = getClient();
+                        const targetHash = (msg.infoHash || '').toLowerCase();
+                        const fileName = msg.fileName || '';
+                        const priority = Number(msg.priority);
+                        // 参数校验：三者缺一不可，priority 必须是有限数
+                        if (!targetHash || !fileName || !Number.isFinite(priority)) {
+                            sendMessage({ id: msg.id, type: 'error', error: '参数无效' });
+                            return;
+                        }
+                        // c.torrents 数组同步查找（webtorrent v2.x 的 c.get 返回 Promise，不能直接用）
+                        let torrent = null;
+                        if (c && Array.isArray(c.torrents)) {
+                            torrent = c.torrents.find(t => t && t.infoHash === targetHash) || null;
+                        }
+                        if (!torrent) {
+                            sendMessage({
+                                id: msg.id,
+                                type: 'error',
+                                error: 'torrent 不存在',
+                                code: 'TORRENT_NOT_FOUND'
+                            });
+                            return;
+                        }
+                        // 按文件名查找文件对象
+                        const file = torrent.files.find(f => f.name === fileName);
+                        if (!file) {
+                            sendMessage({ id: msg.id, type: 'error', error: '文件不存在' });
+                            return;
+                        }
+                        try {
+                            if (priority === 0) {
+                                // 不下载：deselect 停止下载该文件
+                                file.deselect();
+                            } else {
+                                // 正常/高优先级：select 标记为需要下载
+                                file.select();
+                                // 高优先级（priority === 2）：webtorrent 不直接支持单文件高优先级
+                                // 简化处理：select() 即可，由下载管理器层做后续优化
+                            }
+                            sendMessage({
+                                id: msg.id,
+                                type: 'priority-set',
+                                fileName,
+                                priority
+                            });
+                        } catch (e) {
+                            sendMessage({
+                                id: msg.id,
+                                type: 'error',
+                                error: '设置优先级失败: ' + e.message
+                            });
                         }
                     })();
                     break;
