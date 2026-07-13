@@ -341,6 +341,18 @@ class QixingZhuijuApp {
             }
         });
 
+        // 创建 PlayUrlController 单例（外链页已合并到下载页，PlayUrlController 作为内部播放服务运行）
+        // 关键：容忍外链页 DOM 缺失，仅初始化子模块（_magnetParser）和全局事件订阅
+        // DownloadController._ensurePlaybackService 和 components.js 历史回放都复用此实例
+        if (typeof PlayUrlController !== 'undefined' && !this.playUrlController) {
+            try {
+                this.playUrlController = new PlayUrlController(this);
+                this.playUrlController.initialize();
+            } catch (e) {
+                console.error('[APP] 初始化 PlayUrlController 失败:', e);
+            }
+        }
+
         // 临时：为测试添加一些假的播放历史
         if (this.storageService.getPlayHistory().length === 0) {
             console.log('添加测试播放历史');
@@ -394,10 +406,6 @@ class QixingZhuijuApp {
                         // 加载搜索历史
                         this.loadSearchHistory();
                         break;
-                    case 'play-url':
-                        console.log('[APP] 加载播放链接页面');
-                        this.initializePlayUrlPage();
-                        break;
                     case 'history':
                         console.log('[APP] 加载播放历史页面');
                         this.loadPlayHistory();
@@ -424,14 +432,6 @@ class QixingZhuijuApp {
                 console.error('[APP] 页面数据加载失败:', error);
             }
         }, 50); // 延迟50ms执行，确保UI切换完成
-    }
-
-    // 初始化播放链接页面
-    initializePlayUrlPage() {
-        if (!this.playUrlController) {
-            this.playUrlController = new PlayUrlController(this);
-        }
-        this.playUrlController.initialize();
     }
 
     // 初始化下载管理页面

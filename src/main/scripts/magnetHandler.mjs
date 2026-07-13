@@ -77,6 +77,24 @@ let fileServerPort = 0;
 // 会向主进程/播放器发送过时进度，干扰新文件的 UI 状态
 let streamPeerCheckInterval = null;
 
+// 任务级下载进度上报定时器（resolveMagnet c.add 后启动，1s 上报一次 magnet-status）
+// 关键：c.add 创建 torrent 后，webtorrent 默认 select 所有文件，但 magnet-add-task
+// 会通过 set-file-priority deselect 未选中文件。这个定时器只负责上报任务级进度
+// （downloaded/total/progress/downloadSpeed/numPeers），不参与文件选择
+// fileName 留空，避免触发主进程 handleMagnetMessage 的"首次上报自动创建单文件 task"回退路径
+let resolveProgressInterval = null;
+
+/**
+ * 停止任务级进度上报定时器
+ * 在新 torrent 添加前/destroy 时调用，避免旧 torrent 进度继续上报干扰新状态
+ */
+function stopResolveProgressInterval() {
+    if (resolveProgressInterval) {
+        clearInterval(resolveProgressInterval);
+        resolveProgressInterval = null;
+    }
+}
+
 // 存储目录：默认系统临时目录，启动时由主进程通过 init 消息覆盖
 let MAGNET_DIR = path.join(os.tmpdir(), 'qixing-torrents');
 if (!fs.existsSync(MAGNET_DIR)) {
@@ -114,17 +132,21 @@ function getMagnetPath(infoHash) {
 /**
  * 写"文件已下载完成"标记文件
  * 解决 webtorrent 预分配文件大小导致 fs.statSync().size === file.length 误判问题
- * 标记文件路径：MAGNET_DIR/<infoHash>/<fileName>.complete
+ * 标记文件路径：MAGNET_DIR/<infoHash>/<fileRelPath>.complete（与实际文件同目录）
  * 主进程 magnet-check-local 通过此标记判断是否走 file:// 快速路径
  * @param {string} infoHash - 磁力 infoHash
- * @param {string} fileName - 文件名
+ * @param {string} fileRelPath - 文件相对路径（含 torrent 内部目录结构，如 "MyMovie.HD/MyMovie.mp4"）
  */
-function markFileComplete(infoHash, fileName)
+function markFileComplete(infoHash, fileRelPath)
 {
     try
     {
         const dir = getMagnetPath(infoHash);
-        const markerPath = path.join(dir, `${fileName}.complete`);
+        // 关键：用 fileRelPath（含子目录）构造 marker 路径，确保标记文件与实际文件同目录
+        // 旧 bug：用 fileName（不含子目录）会导致标记文件在根目录，实际文件在子目录，路径不匹配
+        const markerPath = path.join(dir, fileRelPath + '.complete');
+        // 确保子目录存在（torrent 内部目录结构可能不存在）
+        fs.mkdirSync(path.dirname(markerPath), { recursive: true });
         fs.writeFileSync(markerPath, String(Date.now()), { encoding: 'utf8' });
     }
     catch (err)
@@ -136,15 +158,15 @@ function markFileComplete(infoHash, fileName)
 /**
  * 检查文件是否已下载完成（通过 .complete 标记文件）
  * @param {string} infoHash - 磁力 infoHash
- * @param {string} fileName - 文件名
+ * @param {string} fileRelPath - 文件相对路径（含 torrent 内部目录结构）
  * @returns {boolean}
  */
-function isFileComplete(infoHash, fileName)
+function isFileComplete(infoHash, fileRelPath)
 {
     try
     {
         const dir = getMagnetPath(infoHash);
-        const markerPath = path.join(dir, `${fileName}.complete`);
+        const markerPath = path.join(dir, fileRelPath + '.complete');
         return fs.existsSync(markerPath);
     }
     catch (err)
@@ -319,9 +341,17 @@ async function fetchLatestTrackers() {
                     .map(line => line.trim())
                     .filter(line => line && line.startsWith('http'));
                 fetched.push(...trackers);
+            } else {
+                sendMessage({ type: 'log', message: `获取tracker列表 HTTP ${resp.status}: ${url}` });
             }
         } catch (err) {
-            sendMessage({ type: 'log', message: `获取tracker列表失败(${url}): ${err.message}` });
+            // 关键：完整记录 fetch 失败上下文，便于诊断 jsdelivr 是否可达
+            const detail = formatErrorDetail(err);
+            const codePart = detail.code ? ` [${detail.code}]` : '';
+            sendMessage({
+                type: 'log',
+                message: `获取tracker列表失败(${url}): ${detail.message}${codePart}`
+            });
         }
     }
 
@@ -344,6 +374,31 @@ setInterval(fetchLatestTrackers, 6 * 60 * 60 * 1000);
  */
 function sendMessage(msg) {
     process.stdout.write(JSON.stringify(msg) + '\n');
+}
+
+/**
+ * 格式化错误对象为完整诊断信息（消息/错误码/URL/堆栈）
+ * 关键：undici 的 fetch 失败时 err.message 仅 "fetch failed"，真正原因在 err.cause
+ *   - err.cause.code: ECONNREFUSED / ENOTFOUND / ECONNRESET / UND_ERR_CONNECT_TIMEOUT 等
+ *   - err.cause.address/port: 目标地址
+ * 这些信息对诊断"为什么下载未启动"至关重要，必须随 warning 上报
+ * @param {Error} err - 错误对象
+ * @returns {{message: string, code: string, url: string, stack: string}}
+ */
+function formatErrorDetail(err) {
+    if (!err) return { message: '', code: '', url: '', stack: '' };
+    const cause = err.cause || {};
+    // 错误码优先取 err.code，其次 err.cause.code（undici fetch 失败时）
+    const code = err.code || cause.code || '';
+    // URL 优先取 err.url，其次 err.cause.url（undici 内部记录）
+    const url = err.url || cause.url || '';
+    // 堆栈截断前 500 字符，避免日志过长
+    const stack = err.stack ? err.stack.slice(0, 500) : '';
+    // 完整消息：原始 message + cause message（如 "fetch failed: connect ECONNREFUSED 1.2.3.4:6969"）
+    const causeMsg = cause.message ? ` (cause: ${cause.message})` : '';
+    const addressInfo = cause.address ? ` [${cause.address}${cause.port ? ':' + cause.port : ''}]` : '';
+    const message = `${err.message || ''}${causeMsg}${addressInfo}`.trim();
+    return { message, code, url, stack };
 }
 
 /**
@@ -408,7 +463,8 @@ async function resolveMagnet(magnetUri, infoHash) {
             length: f.length,
             path: f.path
         }));
-        return files;
+        // 关键：返回 infoHash（来自 torrent 实例），让主进程 magnet-resolve-files 不依赖磁力链解析
+        return { files, infoHash: existingTorrent.infoHash };
     }
 
     // 先尝试HTTP缓存API获取torrent文件
@@ -440,7 +496,9 @@ async function resolveMagnet(magnetUri, infoHash) {
             let peerCount = 0;
             let resolvePhase = 0; // 阶段计数器，用于区分不同解析阶段
             const progressInterval = setInterval(() => {
-                const t = c.get(infoHash);
+                // 关键：webtorrent v2.x 的 c.get() 返回 Promise，不能同步使用
+                // 改用 c.torrents 数组同步查找（与上方 existingTorrent 查找逻辑一致）
+                const t = c.torrents.find(t => t && t.infoHash === lowerHash);
                 const peers = t ? t.numPeers : peerCount;
                 resolvePhase++;
                 // 阶段化描述：前3次显示"正在搜索节点"，之后显示"正在获取元数据"
@@ -456,7 +514,16 @@ async function resolveMagnet(magnetUri, infoHash) {
             try {
                 c.add(torrentId, {
                     path: getMagnetPath(infoHash),
-                    announce: activeTrackers
+                    announce: activeTrackers,
+                    // 关键修复：从源头禁止 webtorrent 自动 select 所有文件
+                    // 旧实现：c.add 默认 select 所有文件 → ready 回调中再 deselect，
+                    //   但 deselect 时机晚于 webtorrent 内部 select，存在竞态：
+                    //   - 部分文件已被 webtorrent 标记为 "selected"，deselect 后才停止
+                    //   - 后续 set-file-priority 调 file.select() 时，webtorrent 内部状态可能
+                    //     仍认为文件是 "已 deselect"，select 不会真正触发下载（speed=0）
+                    // 新实现：c.add 时直接 deselect=false 选项（webtorrent v2 支持），
+                    //   所有文件默认不下载，set-file-priority 的 file.select() 能干净启动下载
+                    deselect: true
                 }, torrent => {
                     if (settled) return;
                     settled = true;
@@ -465,9 +532,81 @@ async function resolveMagnet(magnetUri, infoHash) {
                     c.off('error', onClientError);
                     currentTorrent = torrent;
 
+                    // 兜底：c.add 的 deselect:true 选项在某些 webtorrent 版本可能不生效
+                    // 这里再次 deselect 所有文件，确保解析阶段不会下载未选中文件
+                    // 即使 deselect:true 已生效，重复 deselect 也是幂等的，无副作用
+                    try {
+                        torrent.files.forEach(f => f.deselect());
+                    } catch (e) {
+                        sendMessage({ type: 'log', message: `deselect 所有文件失败: ${e.message}` });
+                    }
+
                     // 输出torrent使用的所有tracker
                     const trackerUrls = torrent.announce || [];
                     sendMessage({ type: 'log', message: `torrent使用${trackerUrls.length}个tracker` });
+
+                    // 启动任务级进度上报定时器（1s 一次）
+                    // 关键：fileName 留空，避免主进程 handleMagnetMessage 误触发"首次上报自动创建单文件 task"回退
+                    // 主进程收到 fileName 为空的 magnet-status 时，按 infoHash 找 task，
+                    // 直接更新 task.downloaded/downloadSpeed/numPeers（不通过 updateMagnetProgress，
+                    // 因为 updateMagnetProgress 在 fileName 为空时会把进度写到 task.files[0]）
+                    stopResolveProgressInterval();
+                    sendMessage({
+                        type: 'log',
+                        message: `[诊断] 启动进度上报定时器, torrent.numPeers=${torrent.numPeers}, downloaded=${torrent.downloaded}, length=${torrent.length}, files.length=${torrent.files.length}`
+                    });
+                    let diagCounter = 0;
+                    resolveProgressInterval = setInterval(() => {
+                        if (!torrent || torrent.destroyed) {
+                            stopResolveProgressInterval();
+                            return;
+                        }
+                        const downloaded = Number(torrent.downloaded || 0);
+                        const total = Number(torrent.length || 0);
+                        const progress = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
+                        const numPeers = torrent.numPeers || 0;
+                        const speed = Number(torrent.downloadSpeed || 0);
+                        // 关键：status 字段只表达"用户可控的下载状态"（downloading/completed），
+                        // 不用 'no-peers'/'stalled' 污染 status ——
+                        //   1) 主进程 _aggregateTaskStatus 只识别 error/completed/paused，其他都聚合为 'downloading'
+                        //   2) 渲染端 _handleMagnetStatus 会用 data.status 覆盖 task.status
+                        //   3) file.status 还会被 updateMagnetProgress 写入 manifest 持久化
+                        // peer 连接状态走独立的 peerState 字段，UI 据此显示额外提示
+                        const status = progress >= 100 ? 'completed' : 'downloading';
+                        // peerState: 'active' | 'no-peers' | 'stalled' | 'completed'
+                        // - completed: 进度 100%
+                        // - no-peers: 未完成且 numPeers=0（找不到 peer，下载无法启动）
+                        // - stalled: 未完成且 numPeers>0 但 speed=0（有 peer 但无数据传输）
+                        // - active: 未完成且 speed>0
+                        let peerState;
+                        if (progress >= 100) {
+                            peerState = 'completed';
+                        } else if (numPeers === 0) {
+                            peerState = 'no-peers';
+                        } else if (speed === 0) {
+                            peerState = 'stalled';
+                        } else {
+                            peerState = 'active';
+                        }
+                        // 诊断日志：每 5 次上报输出一次详细状态（约 5 秒一次）
+                        diagCounter++;
+                        if (diagCounter % 5 === 0) {
+                            sendMessage({
+                                type: 'log',
+                                message: `[诊断] 进度上报#${diagCounter}: status=${status}, peerState=${peerState}, downloaded=${downloaded}, total=${total}, peers=${numPeers}, speed=${speed}, ready=${torrent.ready}, paused=${torrent.paused}, destroyed=${torrent.destroyed}`
+                            });
+                        }
+                        sendMagnetStatus(torrent.infoHash, {
+                            status,
+                            peerState,
+                            fileName: '',
+                            downloaded,
+                            total,
+                            progress,
+                            downloadSpeed: speed,
+                            numPeers
+                        });
+                    }, 1000);
 
                     // 监听torrent事件
                     torrent.on('wire', (wire, addr) => {
@@ -477,26 +616,53 @@ async function resolveMagnet(magnetUri, infoHash) {
 
                     torrent.on('done', () => {
                         sendMessage({ type: 'done' });
+                        // 完成后停止进度上报定时器
+                        stopResolveProgressInterval();
                         // 通知主进程：整个 torrent 下载完成
                         const totalLength = Number(torrent.length || 0);
                         sendMagnetStatus(torrent.infoHash, {
                             status: 'completed',
-                            fileName: torrent.name,
+                            fileName: '',
                             downloaded: totalLength,
                             total: totalLength,
                             progress: 100
                         });
                         // 写 .complete 标记文件，供 magnet-check-local 快速路径判断
-                        // 解决 webtorrent 预分配文件大小导致的误判问题
-                        torrent.files.forEach(f => markFileComplete(torrent.infoHash, f.name));
+                        // 关键：只给 selected 文件写标记，deselect 的文件未下载不能写
+                        // 旧 bug：torrent.files.forEach 会给所有文件写标记（包括 deselect 的），
+                        // 导致 magnet-check-local 误判未下载文件为"已完成"
+                        torrent.files.forEach(f => {
+                            if (f.selected !== false) {
+                                // 关键：用 f.path（含 torrent 内部目录结构）而非 f.name
+                                // 确保 .complete 标记文件与实际文件同目录
+                                markFileComplete(torrent.infoHash, f.path || f.name);
+                            }
+                        });
                     });
 
                     torrent.on('warning', err => {
-                        sendMessage({ type: 'warning', message: err.message });
+                        // 关键：完整记录 warning 上下文（错误码、cause、tracker URL）
+                        // 旧实现仅发 err.message，丢失 undici 的 cause（含 ECONNREFUSED/ENOTFOUND 等关键码）
+                        // 导致 "[MAIN] [MAGNET] 警告: fetch failed" 无法定位是哪个 tracker 失败
+                        const detail = formatErrorDetail(err);
+                        sendMessage({
+                            type: 'warning',
+                            message: detail.message,
+                            code: detail.code,
+                            url: detail.url,
+                            stack: detail.stack
+                        });
                     });
 
                     torrent.on('error', err => {
-                        sendMessage({ type: 'error', error: err.message });
+                        const detail = formatErrorDetail(err);
+                        sendMessage({
+                            type: 'error',
+                            error: detail.message,
+                            code: detail.code,
+                            url: detail.url,
+                            stack: detail.stack
+                        });
                     });
 
                     // 返回文件列表
@@ -506,7 +672,8 @@ async function resolveMagnet(magnetUri, infoHash) {
                         path: f.path
                     }));
 
-                    resolve(files);
+                    // 关键：返回 infoHash（来自 torrent 实例），让主进程 magnet-resolve-files 不依赖磁力链解析
+                    resolve({ files, infoHash: torrent.infoHash });
                 });
             } catch (addErr) {
                 // 磁力链接已存在（重复添加），尝试获取并等待已有torrent
@@ -520,7 +687,9 @@ async function resolveMagnet(magnetUri, infoHash) {
 
             // 降级方案：等待已存在的torrent完成元数据解析
             if (addFailed) {
-                const pendingTorrent = c.get(infoHash);
+                // 关键：webtorrent v2.x 的 c.get() 返回 Promise，不能同步使用
+                // 改用 c.torrents 数组同步查找（与上方 existingTorrent 查找逻辑一致）
+                const pendingTorrent = c.torrents.find(t => t && t.infoHash === lowerHash);
                 if (pendingTorrent && typeof pendingTorrent.on === 'function') {
                     const onPendingReady = () => {
                         if (settled) return;
@@ -535,7 +704,8 @@ async function resolveMagnet(magnetUri, infoHash) {
                             length: f.length,
                             path: f.path
                         }));
-                        resolve(files);
+                        // 关键：返回 infoHash（来自 torrent 实例），让主进程 magnet-resolve-files 不依赖磁力链解析
+                        resolve({ files, infoHash: pendingTorrent.infoHash });
                     };
                     const onPendingError = (err) => {
                         if (settled) return;
@@ -652,9 +822,20 @@ async function fetchTorrentFromCache(infoHash) {
                 // 内容不是torrent文件（常见于404页面返回HTML），跳过此服务
                 const preview = buffer.subarray(0, Math.min(40, buffer.length)).toString('utf8').replace(/[\r\n]/g, ' ');
                 sendMessage({ type: 'log', message: `缓存服务 ${i + 1} 返回非torrent内容（首字节0x${buffer[0]?.toString(16) || '00'}，前40字节: "${preview}"），跳过` });
+            } else {
+                // 关键：记录 HTTP 状态码，区分 404（资源不存在）和 5xx（服务不可用）
+                sendMessage({ type: 'log', message: `缓存服务 ${i + 1} 返回 HTTP ${response.status} ${response.statusText}` });
             }
         } catch (err) {
-            sendMessage({ type: 'log', message: `缓存服务 ${i + 1} 失败: ${err.message}` });
+            // 关键：完整记录 fetch 失败上下文（错误码、目标 URL、cause）
+            // 旧实现仅 err.message（如 "fetch failed"），无法判断是 DNS、网络还是 SSL 问题
+            const detail = formatErrorDetail(err);
+            const codePart = detail.code ? ` [${detail.code}]` : '';
+            const urlPart = detail.url ? ` url=${detail.url}` : '';
+            sendMessage({
+                type: 'log',
+                message: `缓存服务 ${i + 1} 失败: ${detail.message}${codePart}${urlPart}`
+            });
         }
     }
 
@@ -1087,8 +1268,14 @@ async function playMagnetFile(magnetUri, fileName, infoHash, cachedTorrentPath) 
                             progress: 100
                         });
                         // 写 .complete 标记文件，供 magnet-check-local 快速路径判断
-                        // 解决 webtorrent 预分配文件大小导致的误判问题
-                        torrent.files.forEach(f => markFileComplete(torrent.infoHash, f.name));
+                        // 关键：只给 selected 文件写标记，deselect 的文件未下载不能写
+                        torrent.files.forEach(f => {
+                            if (f.selected !== false) {
+                                // 关键：用 f.path（含 torrent 内部目录结构）而非 f.name
+                                // 确保 .complete 标记文件与实际文件同目录
+                                markFileComplete(torrent.infoHash, f.path || f.name);
+                            }
+                        });
                     });
 
                     startFileStream(torrent, fileName, resolve, reject);
@@ -1185,6 +1372,15 @@ function startFileStream(torrent, fileName, resolve, reject) {
             f.deselect();
         }
     });
+    // 关键：显式 select 当前文件，确保 webtorrent 继续下载该文件（边下边播）
+    // 即使该文件之前是 deselect 状态（用户添加任务时没选它，但后来点播放），也会开始下载
+    // priority=1 表示正常优先级
+    try {
+        file.select(1);
+        sendMessage({ type: 'log', message: `[FILE-SERVER] 已 select 文件: ${fileName}, length=${file.length}, downloaded=${file.downloaded}` });
+    } catch (e) {
+        sendMessage({ type: 'log', message: `[FILE-SERVER] select 文件失败: ${e.message}` });
+    }
 
     // 创建HTTP流服务器（无论文件是否下载完成，都通过HTTP提供，避免file://协议限制）
     if (fileServer) {
@@ -1203,8 +1399,26 @@ function startFileStream(torrent, fileName, resolve, reject) {
     const filePath = path.join(getMagnetPath(torrent.infoHash), file.path);
     // 关键：不能用 fs.statSync().size === file.length 判断
     // webtorrent 预分配文件大小（用 0 填充未下载部分），导致文件一开始就等于 file.length
-    // 必须用 torrent.progress（webtorrent 实际下载进度）或 .complete 标记文件判断
-    const isDownloaded = torrent.progress >= 1 || isFileComplete(torrent.infoHash, fileName);
+    // 必须用 torrent.progress（webtorrent 实际下载进度）+ .complete 标记 + 实际文件大小 三重校验
+    // 关键：用 file.path（含子目录）而非 fileName，确保与 markFileComplete 写标记的路径一致
+    // 修复 bug：旧逻辑用 `torrent.progress >= 1 || isFileComplete` 的或关系，
+    //   只要 .complete 标记存在（可能是旧版本 bug 写下的、或之前真实完成后又删除了数据文件），
+    //   就误判为"已下载"，立即上报 100%，导致用户看到"瞬间100%"但实际无文件。
+    //   现改为三重 AND 校验：webtorrent 进度真正完成 + 标记存在 + 磁盘文件大小匹配
+    const isComplete = isFileComplete(torrent.infoHash, file.path || fileName);
+    let fileSizeOk = false;
+    try {
+        if (isComplete && fs.existsSync(filePath)) {
+            const stat = fs.statSync(filePath);
+            // 文件大小必须等于 file.length（webtorrent 预分配后 size 也会等于 length，
+            // 所以这一条单独不能区分 sparse file 和完整文件，但与其他条件 AND 后能过滤掉
+            // "标记存在但实际文件被删除/截断"的情况）
+            fileSizeOk = stat.isFile() && stat.size === file.length;
+        }
+    } catch (e) {
+        fileSizeOk = false;
+    }
+    const isDownloaded = torrent.progress >= 1 || (isComplete && fileSizeOk);
     
     /**
      * 创建HTTP流服务器并返回streamUrl
@@ -1215,6 +1429,18 @@ function startFileStream(torrent, fileName, resolve, reject) {
             const range = req.headers.range;
             const fileSize = file.length;
 
+            // 关键：获取文件已下载字节数，用于限制返回范围
+            // webtorrent 预分配文件大小，未下载部分是 0 字节
+            // 如果返回 0 字节部分，会破坏视频结构，播放器解码失败
+            // 用 file.downloaded 限制 end，只返回已下载部分的有效数据
+            const downloadedBytes = Number(file.downloaded) || 0;
+
+            // 诊断日志：记录每个请求的方法、URL、Range 头、已下载字节数
+            sendMessage({
+                type: 'log',
+                message: `[FILE-SERVER] ${req.method} ${req.url} Range=${range || 'none'} isDownloaded=${isDownloaded} fileSize=${fileSize} downloaded=${downloadedBytes}`
+            });
+
             // 客户端关闭连接时静默处理，避免FileStream崩溃
             res.on('close', () => {
                 // 连接被客户端关闭（正常行为，如seek/暂停/关闭播放器）
@@ -1223,52 +1449,72 @@ function startFileStream(torrent, fileName, resolve, reject) {
             if (range) {
                 const parts = range.replace(/bytes=/, '').split('-');
                 const start = parseInt(parts[0], 10);
-                const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-                const chunkSize = end - start + 1;
+                const requestedEnd = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+                // 关键修复：限制 end 在已下载范围内，避免返回 0 字节部分
+                // - 文件未完成时，downloadedBytes 是已下载字节数
+                // - 限制 end = min(requestedEnd, start + downloadedBytes - 1)
+                // - 如果 start 已超出已下载范围，返回 416 Range Not Satisfiable
+                let actualEnd = requestedEnd;
+                if (!isDownloaded && downloadedBytes > 0) {
+                    actualEnd = Math.min(requestedEnd, start + downloadedBytes - 1);
+                }
+                if (start > actualEnd) {
+                    // 请求范围超出已下载部分，返回 416
+                    res.writeHead(416, {
+                        'Content-Range': `bytes */${fileSize}`
+                    });
+                    res.end();
+                    sendMessage({ type: 'log', message: `[FILE-SERVER] 416 Range Not Satisfiable: start=${start} > actualEnd=${actualEnd} (downloaded=${downloadedBytes})` });
+                    return;
+                }
+                const chunkSize = actualEnd - start + 1;
 
                 res.writeHead(206, {
-                    'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                    'Content-Range': `bytes ${start}-${actualEnd}/${fileSize}`,
                     'Accept-Ranges': 'bytes',
                     'Content-Length': chunkSize,
                     'Content-Type': getContentType(fileName),
                     'Access-Control-Allow-Origin': '*'
                 });
 
-                if (isDownloaded) {
-                    // 文件已下载完成，直接从本地文件读取（更快更稳定）
-                    const readStream = fs.createReadStream(filePath, { start, end });
-                    readStream.on('error', () => { /* 忽略流错误 */ });
-                    readStream.pipe(res).on('error', () => { /* 忽略管道错误 */ });
-                } else {
-                    // 文件未下载完成，通过webtorrent流式读取
-                    // 若设置了限速（currentSpeedLimit > 0），用 ThrottleTransform 包装
-                    const rawStream = file.createReadStream({ start, end });
-                    const stream = currentSpeedLimit > 0
-                        ? rawStream.pipe(new ThrottleTransform({ bytesPerSec: currentSpeedLimit }))
-                        : rawStream;
-                    stream.on('error', () => { /* 静默处理流错误 */ });
-                    stream.pipe(res).on('error', () => { /* 静默处理管道错误 */ });
-                }
-            } else {
-                res.writeHead(200, {
-                    'Content-Length': fileSize,
-                    'Content-Type': getContentType(fileName),
-                    'Access-Control-Allow-Origin': '*'
+                // 用 fs.createReadStream 读取本地文件，限制 end 在已下载范围
+                const readStream = fs.createReadStream(filePath, { start, end: actualEnd });
+                readStream.on('error', (err) => {
+                    sendMessage({ type: 'log', message: `[FILE-SERVER] fs读取错误: ${err.message}` });
                 });
-
-                if (isDownloaded) {
-                    const readStream = fs.createReadStream(filePath);
-                    readStream.on('error', () => { /* 忽略流错误 */ });
-                    readStream.pipe(res).on('error', () => { /* 忽略管道错误 */ });
+                readStream.pipe(res).on('error', (err) => {
+                    sendMessage({ type: 'log', message: `[FILE-SERVER] 管道错误: ${err.message}` });
+                });
+            } else {
+                // 无 Range 请求：返回已下载部分（不返回整个文件，避免 0 字节部分）
+                if (!isDownloaded && downloadedBytes > 0 && downloadedBytes < fileSize) {
+                    // 文件未完成：只返回已下载部分
+                    res.writeHead(200, {
+                        'Content-Length': downloadedBytes,
+                        'Content-Type': getContentType(fileName),
+                        'Access-Control-Allow-Origin': '*'
+                    });
+                    const readStream = fs.createReadStream(filePath, { start: 0, end: downloadedBytes - 1 });
+                    readStream.on('error', (err) => {
+                        sendMessage({ type: 'log', message: `[FILE-SERVER] fs读取错误: ${err.message}` });
+                    });
+                    readStream.pipe(res).on('error', (err) => {
+                        sendMessage({ type: 'log', message: `[FILE-SERVER] 管道错误: ${err.message}` });
+                    });
                 } else {
-                    // 文件未下载完成，通过webtorrent流式读取（无 Range 请求，整文件流）
-                    // 若设置了限速（currentSpeedLimit > 0），用 ThrottleTransform 包装
-                    const rawStream = file.createReadStream();
-                    const stream = currentSpeedLimit > 0
-                        ? rawStream.pipe(new ThrottleTransform({ bytesPerSec: currentSpeedLimit }))
-                        : rawStream;
-                    stream.on('error', () => { /* 静默处理流错误 */ });
-                    stream.pipe(res).on('error', () => { /* 静默处理管道错误 */ });
+                    // 文件已完成或未开始下载：返回整个文件
+                    res.writeHead(200, {
+                        'Content-Length': fileSize,
+                        'Content-Type': getContentType(fileName),
+                        'Access-Control-Allow-Origin': '*'
+                    });
+                    const readStream = fs.createReadStream(filePath);
+                    readStream.on('error', (err) => {
+                        sendMessage({ type: 'log', message: `[FILE-SERVER] fs读取错误: ${err.message}` });
+                    });
+                    readStream.pipe(res).on('error', (err) => {
+                        sendMessage({ type: 'log', message: `[FILE-SERVER] 管道错误: ${err.message}` });
+                    });
                 }
             }
         });
@@ -1509,6 +1755,8 @@ function destroy() {
         clearInterval(streamPeerCheckInterval);
         streamPeerCheckInterval = null;
     }
+    // 清理任务级进度上报定时器（resolveMagnet c.add 启动的 1s 上报）
+    stopResolveProgressInterval();
     if (fileServer) {
         try { fileServer.close(); } catch (e) { /* 忽略关闭错误 */ }
         fileServer = null;
@@ -1560,8 +1808,13 @@ process.stdin.on('data', chunk => {
 
                 case 'resolve':
                     resolveMagnet(msg.magnetUri, msg.infoHash)
-                        .then(files => {
-                            sendMessage({ id: msg.id, type: 'files', files });
+                        .then(result => {
+                            // resolveMagnet 返回 { files, infoHash }
+                            // 关键：回传 infoHash 给主进程，主进程 magnet-resolve-files 据此返回渲染端
+                            // 否则渲染端 addTask 时 infoHash 为空 → "缺少 infoHash" 错误
+                            const files = (result && result.files) ? result.files : (Array.isArray(result) ? result : []);
+                            const infoHash = (result && result.infoHash) ? result.infoHash : (msg.infoHash || '');
+                            sendMessage({ id: msg.id, type: 'files', files, infoHash });
                         })
                         .catch(err => {
                             sendMessage({ id: msg.id, type: 'error', error: err.message });
@@ -1895,11 +2148,29 @@ process.stdin.on('data', chunk => {
                             if (priority === 0) {
                                 // 不下载：deselect 停止下载该文件
                                 file.deselect();
+                                sendMessage({
+                                    type: 'log',
+                                    message: `[诊断] file.deselect() OK: fileName=${fileName}, file.length=${file.length}, file.downloaded=${file.downloaded}`
+                                });
                             } else {
                                 // 正常/高优先级：select 标记为需要下载
+                                // 关键修复：c.add 默认 select 后又 deselect 的竞态下，
+                                //   file.select() 可能不立即触发下载。需要主动调用：
+                                //   1. file.select() 标记为需要下载
+                                //   2. torrent.resume() 恢复下载（webtorrent 默认不 pause，但调用 resume 无副作用，
+                                //      可触发 wire 重新协商优先级，让 select 真正生效）
                                 file.select();
-                                // 高优先级（priority === 2）：webtorrent 不直接支持单文件高优先级
-                                // 简化处理：select() 即可，由下载管理器层做后续优化
+                                try {
+                                    if (typeof torrent.resume === 'function') {
+                                        torrent.resume();
+                                    }
+                                } catch (e) {
+                                    /* resume 失败不影响 select */
+                                }
+                                sendMessage({
+                                    type: 'log',
+                                    message: `[诊断] file.select() OK: fileName=${fileName}, file.length=${file.length}, file.downloaded=${file.downloaded}, torrent.paused=${torrent.paused}, ready=${torrent.ready}, numPeers=${torrent.numPeers}`
+                                });
                             }
                             sendMessage({
                                 id: msg.id,

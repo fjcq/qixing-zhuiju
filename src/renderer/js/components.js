@@ -1692,11 +1692,11 @@ class ComponentService {
 
         if (type === 'magnet') {
             const fileName = history.vod_name || '';
-            // 导航到外链页（复用进度条 UI）
-            if (window.app && typeof window.app.initializePlayUrlPage === 'function') {
-                window.app.initializePlayUrlPage();
+            // 导航到下载页（外链页已合并，复用 DownloadController 内部的播放服务）
+            if (window.app && typeof window.app.initializeDownloadsPage === 'function') {
+                window.app.initializeDownloadsPage();
                 if (typeof window.app.switchToPage === 'function') {
-                    window.app.switchToPage('play-url');
+                    window.app.switchToPage('downloads');
                 }
             }
             // 优先走续播：跳过 parse，直接调 play() 命中主进程缓存

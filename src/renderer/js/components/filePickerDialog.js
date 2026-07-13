@@ -6,14 +6,15 @@
  *   const dialog = new FilePickerDialog();
  *   const result = await dialog.show({ files, taskName });
  *   if (result.confirmed) {
- *       const selectedFiles = result.selectedFiles; // [{name, size, ext}]
+ *       const selectedFiles = result.selectedFiles; // [{name, size, ext, path}]
  *   }
  *
  * 设计原则：
+ *   - 按 torrent 内部目录结构展示文件（多层目录树，支持折叠/展开）
  *   - 默认勾选所有视频文件（mp4/mkv/webm/avi/mov/flv/wmv/ts/mpeg/mpg）
  *   - 显示每个文件大小 + 已选总大小
  *   - 支持全选/全不选/反选（仅作用于当前搜索筛选后的可见文件）
- *   - 支持按文件名实时搜索筛选
+ *   - 支持按文件名实时搜索筛选（搜索时自动展开匹配文件所在目录）
  *   - 模态对话框，点击遮罩层不关闭（防止误操作丢失选择）
  *   - ESC 键关闭（视为取消）
  *   - 关闭按钮/取消按钮关闭（视为取消）
@@ -89,7 +90,8 @@
             this._overlay = null;
             this._resolve = null;
             this._onKeydown = null;
-            this._fileItems = null;
+            this._fileItems = null;   // 扁平文件项数组（保留索引，便于全选/反选/搜索）
+            this._tree = null;        // 目录树根节点
             this._listEl = null;
             this._emptyEl = null;
             this._toolbar = null;
@@ -99,13 +101,14 @@
          * 显示文件选择对话框
          * @param {object} options - 选项
          * @param {string} [options.taskName='选择下载文件'] - 任务名（用于标题显示）
-         * @param {Array<{name: string, size: number, ext?: string}>} [options.files=[]] - 文件列表
+         * @param {Array<{name: string, size: number, ext?: string, path?: string}>} [options.files=[]] - 文件列表
          * @returns {Promise<{confirmed: boolean, selectedFiles?: Array}>}
          */
         show(options = {}) {
             const { taskName = '选择下载文件', files = [] } = options;
             return new Promise(resolve => {
                 this._resolve = resolve;
+                this._tree = this._buildTree(files);
                 this._overlay = this._buildDom(taskName, files);
                 document.body.appendChild(this._overlay);
                 this._bindEvents();
@@ -120,9 +123,84 @@
         }
 
         /**
+         * 构建目录树
+         * 把扁平文件列表（含 path 字段）构建成嵌套目录树结构
+         * path 格式如 "MyTorrent/Season 1/ep01.mp4"，按 / 或 \ 分割得到层级
+         * （兼容 Windows 路径分隔符，webtorrent 理论上用 /，但防御性处理）
+         * @param {Array} files - 文件列表
+         * @returns {object} 根节点 { name, children: Map, files: [], fullPath }
+         */
+        _buildTree(files) {
+            const root = {
+                name: '',
+                children: new Map(),
+                files: [],
+                fullPath: '',
+                expanded: true
+            };
+            // 调试日志：帮助诊断目录树构建问题
+            const samplePaths = files.slice(0, 5).map(f => ({
+                name: f.name,
+                path: f.path,
+                pathType: typeof f.path,
+                hasPath: !!f.path
+            }));
+            console.log('[FilePickerDialog] 构建目录树, 文件数:', files.length, '前5个样本:', samplePaths);
+            for (const f of files) {
+                // path 是 torrent 内部相对路径（含目录结构）
+                // 若没有 path，用 name 兜底（根目录文件）
+                const fullPath = f.path || f.name || '';
+                // 关键：同时处理 / 和 \ 分隔符，兼容跨平台
+                const segments = String(fullPath).split(/[\\/]/).filter(Boolean);
+                if (segments.length === 0) {
+                    root.files.push(f);
+                    continue;
+                }
+                if (segments.length === 1) {
+                    // 直接在根目录下的文件（无目录结构）
+                    root.files.push(f);
+                    continue;
+                }
+                // 嵌套目录：遍历除最后一段外的所有段作为目录
+                let current = root;
+                for (let i = 0; i < segments.length - 1; i++) {
+                    const seg = segments[i];
+                    if (!current.children.has(seg)) {
+                        current.children.set(seg, {
+                            name: seg,
+                            children: new Map(),
+                            files: [],
+                            fullPath: segments.slice(0, i + 1).join('/'),
+                            expanded: true
+                        });
+                    }
+                    current = current.children.get(seg);
+                }
+                current.files.push(f);
+            }
+            // 调试日志：输出目录树结构概览
+            const dirCount = this._countDirs(root);
+            console.log('[FilePickerDialog] 目录树构建完成, 目录数:', dirCount, '根目录文件数:', root.files.length);
+            return root;
+        }
+
+        /**
+         * 统计目录树中的目录节点数（用于调试）
+         * @param {object} node - 当前节点
+         * @returns {number} 目录节点数
+         */
+        _countDirs(node) {
+            let count = node.children.size;
+            for (const child of node.children.values()) {
+                count += this._countDirs(child);
+            }
+            return count;
+        }
+
+        /**
          * 构建对话框 DOM 结构
          * @param {string} taskName - 任务名
-         * @param {Array} files - 文件列表
+         * @param {Array} files - 文件列表（用于建立扁平索引）
          * @returns {HTMLElement} overlay 根元素
          */
         _buildDom(taskName, files) {
@@ -152,34 +230,14 @@
                 <span class="file-picker__stats"></span>
             `;
 
-            // 文件列表
+            // 文件列表（按目录树渲染）
             const listEl = document.createElement('div');
             listEl.className = 'file-picker__list';
 
-            const fileItems = files.map((f, idx) => {
-                const ext = f.ext || getExt(f.name);
-                const isVideo = VIDEO_EXTS.has(ext);
-                const defaultChecked = isVideo;
-                const itemEl = document.createElement('label');
-                let cls = 'file-picker__file';
-                if (isVideo) cls += ' file-picker__file--video';
-                if (defaultChecked) cls += ' file-picker__file--selected';
-                itemEl.className = cls;
-                itemEl.dataset.idx = String(idx);
-                itemEl.innerHTML = `
-                    <input type="checkbox" class="file-picker__file-checkbox"${defaultChecked ? ' checked' : ''} />
-                    <span class="file-picker__file-icon">${isVideo ? '🎬' : '📄'}</span>
-                    <span class="file-picker__file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
-                    <span class="file-picker__file-size">${formatSize(f.size)}</span>
-                `;
-                listEl.appendChild(itemEl);
-                return {
-                    el: itemEl,
-                    file: f,
-                    checked: defaultChecked,
-                    visible: true
-                };
-            });
+            // 扁平文件项数组（用于事件绑定和统计）
+            // 每个文件项记录：el（DOM 引用）、file（原始数据）、checked（选中状态）、visible（搜索可见性）
+            const fileItems = [];
+            listEl.innerHTML = this._renderTree(this._tree, 0, fileItems);
 
             // 空状态提示（搜索无结果时显示）
             const emptyEl = document.createElement('div');
@@ -212,7 +270,79 @@
         }
 
         /**
-         * 绑定所有事件（复选框、全选、反选、搜索、按钮）
+         * 递归渲染目录树为 HTML 字符串
+         * 同时把文件项的 DOM 引用收集到 fileItems 数组
+         * @param {object} node - 当前目录节点
+         * @param {number} depth - 当前深度（用于缩进）
+         * @param {Array} fileItems - 收集文件项引用的数组
+         * @returns {string} HTML 字符串
+         */
+        _renderTree(node, depth, fileItems) {
+            let html = '';
+            // 渲染子目录（递归）
+            for (const child of node.children.values()) {
+                html += this._renderDirNode(child, depth, fileItems);
+            }
+            // 渲染当前目录下的文件
+            for (const f of node.files) {
+                html += this._renderFileNode(f, depth, fileItems);
+            }
+            return html;
+        }
+
+        /**
+         * 渲染目录节点（含折叠/展开箭头 + 子内容容器）
+         * @param {object} dir - 目录节点
+         * @param {number} depth - 当前深度
+         * @param {Array} fileItems - 收集文件项引用的数组
+         * @returns {string} HTML 字符串
+         */
+        _renderDirNode(dir, depth, fileItems) {
+            const padLeft = depth * 16 + 8;
+            const childrenHtml = this._renderTree(dir, depth + 1, fileItems);
+            return `
+                <div class="file-picker__dir" data-path="${escapeHtml(dir.fullPath)}">
+                    <div class="file-picker__dir-header" style="padding-left: ${padLeft}px">
+                        <span class="file-picker__dir-arrow" title="折叠/展开">▼</span>
+                        <span class="file-picker__dir-icon">📁</span>
+                        <span class="file-picker__dir-name" title="${escapeHtml(dir.fullPath)}">${escapeHtml(dir.name)}</span>
+                    </div>
+                    <div class="file-picker__dir-content">${childrenHtml}</div>
+                </div>
+            `;
+        }
+
+        /**
+         * 渲染文件节点
+         * @param {object} f - 文件数据 {name, size, ext, path}
+         * @param {number} depth - 当前深度（用于缩进）
+         * @param {Array} fileItems - 收集文件项引用的数组（push 一个 item 对象）
+         * @returns {string} HTML 字符串
+         */
+        _renderFileNode(f, depth, fileItems) {
+            const ext = f.ext || getExt(f.name);
+            const isVideo = VIDEO_EXTS.has(ext);
+            const defaultChecked = isVideo;
+            const padLeft = depth * 16 + 8;
+            let cls = 'file-picker__file';
+            if (isVideo) cls += ' file-picker__file--video';
+            if (defaultChecked) cls += ' file-picker__file--selected';
+            // 关键：file-picker__file 元素需要在 DOM 插入后缓存引用
+            // 这里用 data-idx 占位，_bindEvents 中按索引建立引用
+            const idx = fileItems.length;
+            fileItems.push({ el: null, file: f, checked: defaultChecked, visible: true });
+            return `
+                <label class="${cls}" data-idx="${idx}" style="padding-left: ${padLeft}px">
+                    <input type="checkbox" class="file-picker__file-checkbox"${defaultChecked ? ' checked' : ''} />
+                    <span class="file-picker__file-icon">${isVideo ? '🎬' : '📄'}</span>
+                    <span class="file-picker__file-name" title="${escapeHtml(f.path || f.name)}">${escapeHtml(f.name)}</span>
+                    <span class="file-picker__file-size">${formatSize(f.size)}</span>
+                </label>
+            `;
+        }
+
+        /**
+         * 绑定所有事件（复选框、全选、反选、搜索、目录折叠、按钮）
          */
         _bindEvents() {
             // 关闭/取消/确认按钮
@@ -230,13 +360,34 @@
                 }
             });
 
+            // 关键：_renderFileNode 中 fileItems 是按渲染顺序 push 的，
+            // 但 innerHTML 设置后 DOM 元素才存在。这里按 data-idx 建立引用
+            this._fileItems.forEach((it, idx) => {
+                it.el = this._listEl.querySelector(`.file-picker__file[data-idx="${idx}"]`);
+            });
+
             // 单个文件复选框
             this._fileItems.forEach(it => {
+                if (!it.el) return;
                 const cb = it.el.querySelector('.file-picker__file-checkbox');
                 cb.addEventListener('change', () => {
                     it.checked = cb.checked;
                     it.el.classList.toggle('file-picker__file--selected', it.checked);
                     this._updateStats();
+                });
+            });
+
+            // 目录折叠/展开（点击目录标题切换 expanded class）
+            this._listEl.querySelectorAll('.file-picker__dir-header').forEach(header => {
+                header.addEventListener('click', e => {
+                    // 避免点击目录内文件时误触发折叠
+                    if (e.target.closest('.file-picker__file')) return;
+                    const dirEl = header.parentElement;
+                    dirEl.classList.toggle('file-picker__dir--collapsed');
+                    const arrow = header.querySelector('.file-picker__dir-arrow');
+                    if (arrow) {
+                        arrow.textContent = dirEl.classList.contains('file-picker__dir--collapsed') ? '▶' : '▼';
+                    }
                 });
             });
 
@@ -246,9 +397,9 @@
                 this._fileItems.forEach(it => {
                     if (!it.visible) return;
                     it.checked = selectAllCb.checked;
-                    const cb = it.el.querySelector('.file-picker__file-checkbox');
-                    cb.checked = selectAllCb.checked;
-                    it.el.classList.toggle('file-picker__file--selected', it.checked);
+                    const cb = it.el && it.el.querySelector('.file-picker__file-checkbox');
+                    if (cb) cb.checked = selectAllCb.checked;
+                    if (it.el) it.el.classList.toggle('file-picker__file--selected', it.checked);
                 });
                 this._updateStats();
             });
@@ -259,9 +410,9 @@
                     this._fileItems.forEach(it => {
                         if (!it.visible) return;
                         it.checked = !it.checked;
-                        const cb = it.el.querySelector('.file-picker__file-checkbox');
-                        cb.checked = it.checked;
-                        it.el.classList.toggle('file-picker__file--selected', it.checked);
+                        const cb = it.el && it.el.querySelector('.file-picker__file-checkbox');
+                        if (cb) cb.checked = it.checked;
+                        if (it.el) it.el.classList.toggle('file-picker__file--selected', it.checked);
                     });
                     this._updateStats();
                 });
@@ -276,6 +427,7 @@
 
         /**
          * 应用搜索筛选：根据关键词显示/隐藏文件项
+         * 搜索时自动展开匹配文件所在的目录（移除 collapsed class）
          * @param {string} query - 搜索关键词（不区分大小写）
          */
         _applyFilter(query) {
@@ -283,12 +435,23 @@
             let visibleCount = 0;
             this._fileItems.forEach(it => {
                 const name = (it.file.name || '').toLowerCase();
-                const match = !q || name.includes(q);
+                const path = (it.file.path || it.file.name || '').toLowerCase();
+                const match = !q || name.includes(q) || path.includes(q);
                 it.visible = match;
-                it.el.classList.toggle('file-picker__file--hidden', !match);
-                it.el.style.display = match ? '' : 'none';
+                if (it.el) {
+                    it.el.classList.toggle('file-picker__file--hidden', !match);
+                    it.el.style.display = match ? '' : 'none';
+                }
                 if (match) visibleCount++;
             });
+            // 搜索时自动展开所有目录（让匹配文件可见）
+            if (q) {
+                this._listEl.querySelectorAll('.file-picker__dir--collapsed').forEach(el => {
+                    el.classList.remove('file-picker__dir--collapsed');
+                    const arrow = el.querySelector('.file-picker__dir-arrow');
+                    if (arrow) arrow.textContent = '▼';
+                });
+            }
             this._emptyEl.style.display = visibleCount === 0 ? '' : 'none';
         }
 
@@ -341,6 +504,7 @@
             this._resolve = null;
             this._onKeydown = null;
             this._fileItems = null;
+            this._tree = null;
             this._listEl = null;
             this._emptyEl = null;
             this._toolbar = null;

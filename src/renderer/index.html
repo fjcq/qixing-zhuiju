@@ -22,7 +22,6 @@
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/components.css">
     <link rel="stylesheet" href="css/routes.css">
-    <link rel="stylesheet" href="css/play-url.css">
     <link rel="stylesheet" href="css/downloads.css">
     <!-- 版本配置 -->
     <script src="../config/version.js"></script>
@@ -86,16 +85,6 @@
                                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
                             </svg>
                             <span>搜索</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a href="#" data-page="play-url">
-                            <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="12" cy="12" r="10" />
-                                <polygon points="10 8 16 12 10 16 10 8" />
-                            </svg>
-                            <span>外链</span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -224,47 +213,6 @@
                     </div>
                 </div>
 
-                <!-- 外链页面 -->
-                <div id="play-url-page" class="page">
-                    <div class="page-content">
-                        <div class="page-header">
-                            <h2>外链</h2>
-                            <button class="page-header-btn" id="play-url-clear-btn" title="清空输入">清空</button>
-                        </div>
-
-                        <div class="play-url-input-wrapper">
-                            <textarea
-                                id="play-url-input"
-                                class="play-url-input"
-                                placeholder="输入视频链接 / 磁力链 / 本地路径 / Info Hash..."
-                                spellcheck="false"
-                                autocomplete="off"></textarea>
-                            <span class="play-url-badge is-empty" id="play-url-badge">🌐 URL</span>
-                        </div>
-
-                        <button class="play-url-primary-action" id="play-url-submit" disabled>
-                            <span>▶</span>
-                            <span>立即播放</span>
-                        </button>
-
-                        <div class="play-url-progress" id="play-url-progress" style="display: none;">
-                            <div class="play-url-progress-header">
-                                <span id="play-url-progress-status">解析中...</span>
-                                <button class="play-url-progress-cancel" id="play-url-progress-cancel">取消</button>
-                            </div>
-                            <div class="play-url-progress-bar">
-                                <div class="play-url-progress-fill" id="play-url-progress-fill" style="width: 0%;"></div>
-                            </div>
-                        </div>
-
-                        <div class="play-url-files" id="play-url-files"></div>
-
-                        <div class="play-url-buttons">
-                            <button class="play-url-secondary-btn" id="play-url-pick-file" type="button">📁 选择本地文件</button>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- 详情页面 -->
                 <div id="detail-page" class="page">
                     <div class="page-content">
@@ -287,7 +235,7 @@
                     </div>
                 </div>
 
-                <!-- 下载管理页面 -->
+                <!-- 下载管理页面（合并外链功能：URL/磁力/本地统一入口） -->
                 <div id="downloads-page" class="page">
                     <div class="page-content">
                         <div class="page-header">
@@ -296,6 +244,30 @@
                                 <button id="downloads-refresh-btn" class="btn-secondary" title="刷新列表">刷新</button>
                                 <button id="downloads-import-btn" class="btn-secondary" title="导入本地视频文件到下载管理">导入本地</button>
                                 <button id="downloads-open-folder-btn" class="btn-secondary" title="在系统资源管理器中打开下载目录">打开目录</button>
+                            </div>
+                        </div>
+
+                        <!-- 资源输入区（合并自外链页：URL/磁力/本地路径统一入口） -->
+                        <div class="downloads-input-area">
+                            <div class="downloads-input-wrapper">
+                                <input type="text" id="downloads-input" class="downloads-input"
+                                    placeholder="粘贴视频 URL / 磁力链 / 本地文件路径"
+                                    autocomplete="off" spellcheck="false">
+                                <span class="downloads-input-badge is-empty" id="downloads-input-badge">🌐 URL</span>
+                            </div>
+                            <div class="downloads-input-actions">
+                                <button class="btn-primary" id="downloads-add-btn" title="添加为下载任务" disabled>⬇ 添加下载</button>
+                                <button class="btn-secondary" id="downloads-pick-file-btn" title="选择本地视频文件">📁 选择文件</button>
+                            </div>
+                            <!-- 输入区进度反馈（解析/添加/连接过程中显示） -->
+                            <div class="downloads-input-progress" id="downloads-input-progress" style="display: none;">
+                                <div class="downloads-input-progress-header">
+                                    <span id="downloads-input-progress-status">处理中...</span>
+                                    <button class="downloads-input-progress-cancel" id="downloads-input-progress-cancel">取消</button>
+                                </div>
+                                <div class="downloads-input-progress-bar">
+                                    <div class="downloads-input-progress-fill" id="downloads-input-progress-fill" style="width: 0%;"></div>
+                                </div>
                             </div>
                         </div>
 
@@ -349,7 +321,7 @@
                         <div id="downloads-empty" class="empty-state hidden">
                             <i>📥</i>
                             <h3>暂无下载内容</h3>
-                            <p>从「外链」页可触发磁力链下载，或在「外链」页粘贴 HTTP 视频链接进行下载</p>
+                            <p>在上方输入框粘贴视频 URL / 磁力链 / 本地文件路径，点击「添加下载」即可开始</p>
                         </div>
 
                         <!-- 任务详情视图（默认隐藏，Task 7 新增） -->

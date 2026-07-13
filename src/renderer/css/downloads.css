@@ -550,278 +550,845 @@
     flex-wrap: wrap;
 }
 
-/* ==================== Task 7: 任务卡片样式 ==================== */
+/* ==================== 任务卡片样式（玻璃拟态） ==================== */
+/* 卡片主体：深色玻璃面板 + 圆角 + 阴影 + 内高光，hover 上浮 */
 .downloads-task-card {
-    background: var(--bg-secondary, #fff);
-    border: 1px solid var(--border-color, #e0e0e0);
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 12px;
+    background: var(--glass-bg-elevated);
+    backdrop-filter: blur(var(--blur-lg)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--blur-lg)) saturate(180%);
+    border: 1px solid var(--glass-border-default);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md), var(--shadow-inset);
+    padding: var(--space-4) var(--space-5);
+    margin-bottom: var(--space-3);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all var(--duration-normal) var(--ease-default);
 }
 .downloads-task-card:hover {
-    border-color: var(--accent-color, #4a90e2);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    background: var(--glass-bg-surface);
+    border-color: var(--glass-border-strong);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg), var(--shadow-inset);
 }
 .downloads-task-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
 }
 .downloads-task-name {
     font-weight: 600;
-    font-size: 14px;
+    font-size: var(--text-base);
+    color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     flex: 1;
+    min-width: 0;
 }
 .downloads-task-status {
-    font-size: 12px;
-    padding: 2px 8px;
-    border-radius: 12px;
+    font-size: var(--text-xs);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid transparent;
+    border-radius: var(--radius-full);
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
 }
+/* 进度条 */
 .downloads-task-progress {
     height: 6px;
-    background: var(--bg-tertiary, #f0f0f0);
-    border-radius: 3px;
+    background: var(--glass-card-subtle);
+    border: 1px solid var(--glass-border-subtle);
+    border-radius: var(--radius-full);
     overflow: hidden;
-    margin: 8px 0;
+    margin: var(--space-2) 0;
 }
 .downloads-task-progress-fill {
     height: 100%;
-    background: var(--accent-color, #4a90e2);
-    transition: width 0.3s;
+    background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+    box-shadow: 0 0 8px var(--color-primary-glow);
+    transition: width var(--duration-normal) var(--ease-default);
 }
+/* 元信息行 */
 .downloads-task-meta {
     display: flex;
     justify-content: space-between;
-    font-size: 12px;
-    color: var(--text-secondary, #888);
+    align-items: center;
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    gap: var(--space-3);
+    flex-wrap: wrap;
 }
 .downloads-task-stats {
     display: flex;
-    gap: 12px;
+    gap: var(--space-3);
+    flex-wrap: wrap;
 }
+/* 操作按钮区 */
 .downloads-task-actions {
     display: flex;
-    gap: 8px;
-    margin-top: 12px;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--glass-border-subtle);
+    flex-wrap: wrap;
+}
+/* 任务卡片内按钮：覆盖通用 .btn-primary/.btn-secondary/.btn-danger 的浅色主题样式 */
+.downloads-task-actions .btn-primary,
+.downloads-task-actions .btn-secondary,
+.downloads-task-actions .btn-danger {
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-default);
+    border: 1px solid transparent;
+    line-height: 1.4;
+}
+.downloads-task-actions .btn-primary {
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+    color: #fff;
+    box-shadow: var(--shadow-glow-primary);
+}
+.downloads-task-actions .btn-primary:hover {
+    background: linear-gradient(135deg, var(--color-primary-hover) 0%, var(--color-primary-active) 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 0 24px var(--color-primary-glow);
+}
+.downloads-task-actions .btn-secondary {
+    background: var(--glass-card-default);
+    color: var(--text-primary);
+    border-color: var(--glass-border-default);
+}
+.downloads-task-actions .btn-secondary:hover {
+    background: var(--glass-card-hover);
+    border-color: var(--glass-border-strong);
+}
+.downloads-task-actions .btn-danger {
+    background: var(--color-error-bg);
+    color: var(--color-error);
+    border-color: var(--color-danger-border);
+}
+.downloads-task-actions .btn-danger:hover {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: var(--color-error);
+    color: #fff;
 }
 
-/* ==================== Task 7: 任务详情页样式 ==================== */
+/* ==================== 任务详情页样式（玻璃拟态） ==================== */
 .task-detail {
-    margin-top: 16px;
+    margin-top: var(--space-4);
 }
 .task-detail-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--border-color, #e0e0e0);
-    margin-bottom: 16px;
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--glass-border-default);
+    margin-bottom: var(--space-4);
 }
 .task-detail-header h3 {
     margin: 0;
     flex: 1;
-    padding: 0 16px;
-    font-size: 16px;
+    padding: 0 var(--space-4);
+    color: var(--text-primary);
+    font-size: var(--text-lg);
+    font-weight: 600;
 }
 .task-detail-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--space-2);
+}
+/* 详情页头部按钮：与卡片按钮保持一致的玻璃拟态风格 */
+.task-detail-actions .btn-primary,
+.task-detail-actions .btn-secondary,
+.task-detail-actions .btn-danger {
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-default);
+    border: 1px solid transparent;
+    line-height: 1.4;
+}
+.task-detail-actions .btn-primary {
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+    color: #fff;
+    box-shadow: var(--shadow-glow-primary);
+}
+.task-detail-actions .btn-primary:hover {
+    background: linear-gradient(135deg, var(--color-primary-hover) 0%, var(--color-primary-active) 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 0 24px var(--color-primary-glow);
+}
+.task-detail-actions .btn-secondary {
+    background: var(--glass-card-default);
+    color: var(--text-primary);
+    border-color: var(--glass-border-default);
+}
+.task-detail-actions .btn-secondary:hover {
+    background: var(--glass-card-hover);
+    border-color: var(--glass-border-strong);
+}
+.task-detail-actions .btn-danger {
+    background: var(--color-error-bg);
+    color: var(--color-error);
+    border-color: var(--color-danger-border);
+}
+.task-detail-actions .btn-danger:hover {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: var(--color-error);
+    color: #fff;
 }
 .task-detail-files {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-2);
 }
+/* 单个文件项：玻璃卡片 */
 .task-detail-file {
-    background: var(--bg-secondary, #fff);
-    border: 1px solid var(--border-color, #e0e0e0);
-    border-radius: 6px;
-    padding: 12px;
+    background: var(--glass-card-default);
+    backdrop-filter: blur(var(--blur-md));
+    -webkit-backdrop-filter: blur(var(--blur-md));
+    border: 1px solid var(--glass-border-default);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
+    transition: all var(--duration-fast) var(--ease-default);
+}
+.task-detail-file:hover {
+    background: var(--glass-card-hover);
+    border-color: var(--glass-border-strong);
 }
 .task-detail-file-icon {
-    font-size: 20px;
+    font-size: var(--text-xl);
+    flex: 0 0 auto;
 }
 .task-detail-file-info {
     flex: 1;
     overflow: hidden;
+    min-width: 0;
 }
 .task-detail-file-name {
-    font-size: 13px;
+    font-size: var(--text-sm);
+    color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-weight: 500;
 }
 .task-detail-file-meta {
-    font-size: 11px;
-    color: var(--text-secondary, #888);
-    margin-top: 2px;
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    margin-top: var(--space-1);
 }
 .task-detail-file-progress {
-    width: 100px;
+    width: 120px;
     height: 4px;
-    background: var(--bg-tertiary, #f0f0f0);
-    border-radius: 2px;
+    background: var(--glass-card-subtle);
+    border-radius: var(--radius-full);
     overflow: hidden;
+    flex: 0 0 auto;
 }
 .task-detail-file-progress-fill {
     height: 100%;
-    background: var(--accent-color, #4a90e2);
+    background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+    transition: width var(--duration-normal) var(--ease-default);
 }
 .task-detail-file-actions {
     display: flex;
-    gap: 4px;
+    gap: var(--space-1);
+    flex: 0 0 auto;
 }
 .task-detail-file-actions button {
-    padding: 4px 8px;
-    font-size: 11px;
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-xs);
+    background: var(--glass-card-default);
+    color: var(--text-secondary);
+    border: 1px solid var(--glass-border-default);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-default);
+}
+.task-detail-file-actions button:hover {
+    background: var(--glass-card-hover);
+    border-color: var(--glass-border-strong);
+    color: var(--text-primary);
 }
 
-/* ==================== Task 7: 文件选择对话框样式（FilePickerDialog, BEM 命名） ==================== */
+/* ==================== 文件选择对话框（FilePickerDialog, BEM 命名, 玻璃拟态） ==================== */
+/* 遮罩层：深色半透明 + 强模糊，突出对话框主体 */
 .file-picker {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(var(--blur-md));
+    -webkit-backdrop-filter: blur(var(--blur-md));
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10000;
+    z-index: var(--z-modal);
+    animation: fadeIn var(--duration-fast) var(--ease-out);
 }
+/* 对话框主体：深色玻璃面板 + 圆角 + 阴影 + 内高光 */
 .file-picker__dialog {
-    background: var(--bg-primary, #fff);
-    border-radius: 8px;
-    width: 600px;
+    background: var(--glass-bg-elevated);
+    backdrop-filter: blur(var(--blur-xl)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--blur-xl)) saturate(180%);
+    border: 1px solid var(--glass-border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-2xl), var(--shadow-inset);
+    width: 640px;
     max-width: 90vw;
-    max-height: 80vh;
+    max-height: 82vh;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+    animation: scaleIn var(--duration-normal) var(--ease-bounce);
 }
+/* 头部：标题 + 关闭按钮 */
 .file-picker__header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--border-color, #e0e0e0);
+    padding: var(--space-5) var(--space-6);
+    border-bottom: 1px solid var(--glass-border-subtle);
 }
 .file-picker__title {
     margin: 0;
-    font-size: 16px;
+    color: var(--text-primary);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    letter-spacing: 0.3px;
 }
 .file-picker__close {
-    background: none;
-    border: none;
-    font-size: 24px;
+    background: var(--glass-card-default);
+    border: 1px solid var(--glass-border-subtle);
+    border-radius: var(--radius-sm);
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
     cursor: pointer;
-    color: var(--text-secondary, #888);
+    color: var(--text-secondary);
     line-height: 1;
-    padding: 0 4px;
+    padding: 0;
+    transition: all var(--duration-fast) var(--ease-default);
 }
 .file-picker__close:hover {
-    color: var(--text-primary, #333);
+    background: var(--color-error-bg);
+    border-color: var(--color-danger-border);
+    color: var(--color-error);
+    transform: rotate(90deg);
 }
+/* 工具栏：搜索 + 全选 + 反选 + 统计 */
 .file-picker__toolbar {
-    padding: 12px 20px;
-    border-bottom: 1px solid var(--border-color, #e0e0e0);
+    padding: var(--space-3) var(--space-6);
+    border-bottom: 1px solid var(--glass-border-subtle);
     display: flex;
     align-items: center;
-    gap: 12px;
-    font-size: 13px;
+    gap: var(--space-3);
+    font-size: var(--text-sm);
     flex-wrap: wrap;
+    background: var(--glass-card-subtle);
 }
 .file-picker__search {
     flex: 1;
-    min-width: 120px;
-    padding: 4px 8px;
-    border: 1px solid var(--border-color, #ddd);
-    border-radius: 4px;
-    font-size: 13px;
+    min-width: 140px;
+    padding: var(--space-2) var(--space-3);
+    background: var(--glass-bg-base);
+    border: 1px solid var(--glass-border-default);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    outline: none;
+    transition: all var(--duration-fast) var(--ease-default);
+}
+.file-picker__search::placeholder {
+    color: var(--text-muted);
+}
+.file-picker__search:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-glow);
 }
 .file-picker__select-all {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     cursor: pointer;
     white-space: nowrap;
+    color: var(--text-secondary);
+    user-select: none;
+}
+.file-picker__select-all input[type="checkbox"] {
+    accent-color: var(--color-primary);
+    cursor: pointer;
 }
 .file-picker__invert {
-    padding: 4px 10px;
-    background: var(--bg-tertiary, #f5f5f5);
-    border: 1px solid var(--border-color, #ddd);
-    border-radius: 4px;
+    padding: var(--space-1) var(--space-3);
+    background: var(--glass-card-default);
+    border: 1px solid var(--glass-border-default);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--text-xs);
+    transition: all var(--duration-fast) var(--ease-default);
 }
 .file-picker__invert:hover {
-    background: var(--bg-quaternary, #ececec);
+    background: var(--glass-card-hover);
+    border-color: var(--glass-border-strong);
+    color: var(--text-primary);
 }
 .file-picker__stats {
-    color: var(--text-secondary, #888);
-    font-size: 12px;
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
     margin-left: auto;
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }
+/* 文件列表区 */
 .file-picker__list {
     flex: 1;
     overflow-y: auto;
-    padding: 8px 20px;
+    padding: var(--space-2) var(--space-4);
 }
+.file-picker__list::-webkit-scrollbar {
+    width: 8px;
+}
+.file-picker__list::-webkit-scrollbar-track {
+    background: transparent;
+}
+.file-picker__list::-webkit-scrollbar-thumb {
+    background: var(--glass-border-strong);
+    border-radius: var(--radius-full);
+}
+.file-picker__list::-webkit-scrollbar-thumb:hover {
+    background: var(--glass-card-hover);
+}
+/* 单个文件项 */
 .file-picker__file {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 4px;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
     cursor: pointer;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    transition: all var(--duration-fast) var(--ease-default);
 }
 .file-picker__file:hover {
-    background: var(--bg-tertiary, #f5f5f5);
+    background: var(--glass-card-default);
+    border-color: var(--glass-border-subtle);
 }
+/* 选中态：主色调淡色背景 + 主色边框 */
 .file-picker__file--selected {
-    background: var(--bg-accent, #e6f4ff);
+    background: var(--color-primary-glass);
+    border-color: var(--color-primary-border);
+}
+.file-picker__file--selected:hover {
+    background: rgba(0, 120, 212, 0.22);
+    border-color: var(--color-primary);
+}
+/* 视频文件标识：左侧色条 */
+.file-picker__file--video::before {
+    content: '';
+    width: 3px;
+    height: 20px;
+    background: var(--color-primary);
+    border-radius: var(--radius-full);
+    flex: 0 0 auto;
 }
 .file-picker__file--hidden {
     display: none;
 }
 .file-picker__file-checkbox {
     margin: 0;
+    accent-color: var(--color-primary);
     cursor: pointer;
+    width: 16px;
+    height: 16px;
+}
+
+/* ==================== 资源输入区样式（合并自外链页） ==================== */
+/* 单行紧凑输入框 + 智能识别徽章 + 添加下载/立即播放按钮组 + 进度反馈 */
+.downloads-input-area {
+    margin-bottom: 16px;
+    padding: 16px;
+    background: var(--glass-bg-soft, rgba(255, 255, 255, 0.04));
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+    border-radius: 12px;
+}
+
+.downloads-input-wrapper {
+    position: relative;
+    margin-bottom: 10px;
+}
+
+.downloads-input {
+    width: 100%;
+    height: 44px;
+    padding: 0 110px 0 14px;
+    font-size: 14px;
+    color: var(--text-primary, #fff);
+    background: var(--bg-secondary, #1a1d24);
+    border: 1.5px solid var(--border-color, #2d3340);
+    border-radius: 10px;
+    font-family: inherit;
+    box-sizing: border-box;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.downloads-input::placeholder {
+    color: var(--text-secondary, #888);
+}
+
+.downloads-input:focus {
+    outline: none;
+    border-color: #a78bfa;
+    box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.15);
+}
+
+.downloads-input.is-dragover {
+    border-color: #a78bfa;
+    border-style: dashed;
+    background: rgba(167, 139, 250, 0.05);
+}
+
+/* 智能识别徽章（复用外链页颜色系统） */
+.downloads-input-badge {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    pointer-events: none;
+    background: rgba(167, 139, 250, 0.15);
+    color: #a78bfa;
+    border: 1px solid rgba(167, 139, 250, 0.3);
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+    white-space: nowrap;
+}
+
+.downloads-input-badge.is-url {
+    background: rgba(96, 165, 250, 0.15);
+    color: #60a5fa;
+    border-color: rgba(96, 165, 250, 0.3);
+}
+
+.downloads-input-badge.is-local {
+    background: rgba(74, 222, 128, 0.15);
+    color: #4ade80;
+    border-color: rgba(74, 222, 128, 0.3);
+}
+
+.downloads-input-badge.is-magnet {
+    background: rgba(251, 146, 60, 0.15);
+    color: #fb923c;
+    border-color: rgba(251, 146, 60, 0.3);
+}
+
+.downloads-input-badge.is-unknown {
+    background: rgba(248, 113, 113, 0.15);
+    color: #f87171;
+    border-color: rgba(248, 113, 113, 0.3);
+}
+
+/* 按钮组 */
+.downloads-input-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.downloads-input-actions .btn-primary {
+    padding: 8px 16px;
+    border-radius: 8px;
+    background: var(--accent-color, #a78bfa);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 0.2s, opacity 0.2s;
+}
+
+.downloads-input-actions .btn-primary:hover:not(:disabled) {
+    background: var(--accent-color-hover, #8b6cf6);
+}
+
+.downloads-input-actions .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.downloads-input-actions .btn-secondary {
+    padding: 8px 16px;
+    border-radius: 8px;
+    background: var(--glass-bg-medium, rgba(255, 255, 255, 0.08));
+    color: var(--text-primary, #fff);
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.2s, opacity 0.2s;
+}
+
+.downloads-input-actions .btn-secondary:hover:not(:disabled) {
+    background: var(--glass-bg-strong, rgba(255, 255, 255, 0.15));
+}
+
+.downloads-input-actions .btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* 输入区进度反馈（解析/添加/连接过程） */
+.downloads-input-progress {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: var(--bg-secondary, #1a1d24);
+    border: 1px solid var(--border-color, #2d3340);
+    border-radius: 8px;
+}
+
+.downloads-input-progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: var(--text-secondary, #aaa);
+}
+
+.downloads-input-progress-cancel {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary, #aaa);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: background 0.15s, color 0.15s;
+}
+
+.downloads-input-progress-cancel:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary, #fff);
+}
+
+.downloads-input-progress-bar {
+    height: 4px;
+    background: var(--bg-tertiary, rgba(255, 255, 255, 0.05));
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.downloads-input-progress-fill {
+    height: 100%;
+    background: var(--accent-color, #a78bfa);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+/* 进度变体：warning/success/error */
+.downloads-input-progress.is-warning .downloads-input-progress-fill {
+    background: #fbbf24;
+}
+.downloads-input-progress.is-success .downloads-input-progress-fill {
+    background: #4ade80;
+}
+.downloads-input-progress.is-error .downloads-input-progress-fill {
+    background: #f87171;
+}
+.downloads-input-progress.is-warning .downloads-input-progress-header {
+    color: #fbbf24;
+}
+.downloads-input-progress.is-error .downloads-input-progress-header {
+    color: #f87171;
+}
+.downloads-input-progress.is-success .downloads-input-progress-header {
+    color: #4ade80;
 }
 .file-picker__file-icon {
-    font-size: 16px;
+    font-size: var(--text-lg);
+    flex: 0 0 auto;
 }
 .file-picker__file-name {
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 13px;
+    font-size: var(--text-sm);
+    color: var(--text-primary);
 }
 .file-picker__file-size {
-    font-size: 12px;
-    color: var(--text-secondary, #888);
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }
 .file-picker__empty {
-    padding: 24px;
+    padding: var(--space-12) var(--space-6);
     text-align: center;
-    color: var(--text-secondary, #888);
-    font-size: 13px;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
 }
+/* 底部按钮区 */
 .file-picker__footer {
-    padding: 16px 20px;
-    border-top: 1px solid var(--border-color, #e0e0e0);
+    padding: var(--space-4) var(--space-6);
+    border-top: 1px solid var(--glass-border-subtle);
     display: flex;
     justify-content: flex-end;
-    gap: 8px;
+    gap: var(--space-3);
+    background: var(--glass-card-subtle);
+}
+/* 对话框内按钮：覆盖通用 .btn-primary/.btn-secondary 的浅色主题样式 */
+.file-picker__footer .btn-primary,
+.file-picker__footer .btn-secondary {
+    padding: var(--space-2) var(--space-5);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-default);
+    border: 1px solid transparent;
+}
+.file-picker__footer .btn-primary {
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
+    color: #fff;
+    box-shadow: var(--shadow-glow-primary);
+}
+.file-picker__footer .btn-primary:hover {
+    background: linear-gradient(135deg, var(--color-primary-hover) 0%, var(--color-primary-active) 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 0 30px var(--color-primary-glow);
+}
+.file-picker__footer .btn-secondary {
+    background: var(--glass-card-default);
+    color: var(--text-primary);
+    border-color: var(--glass-border-default);
+}
+.file-picker__footer .btn-secondary:hover {
+    background: var(--glass-card-hover);
+    border-color: var(--glass-border-strong);
+}
+
+/* ==================== 目录树样式（FilePickerDialog + 任务详情页共用） ==================== */
+/* 设计：目录节点带折叠/展开箭头，子内容缩进显示，多层嵌套通过 padding-left 控制 */
+
+/* ---------- FilePickerDialog 目录树 ---------- */
+.file-picker__dir {
+    margin: 2px 0;
+}
+.file-picker__dir-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+    border-radius: var(--radius-sm, 6px);
+    color: var(--text-primary, #fff);
+    font-size: 13px;
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid transparent;
+    transition: background 0.15s, border-color 0.15s;
+    user-select: none;
+}
+.file-picker__dir-header:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(167, 139, 250, 0.25);
+}
+.file-picker__dir-arrow {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
+    color: var(--text-secondary, #aaa);
+    font-size: 10px;
+    transition: transform 0.15s;
+}
+.file-picker__dir-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+}
+.file-picker__dir-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* 折叠状态：隐藏子内容容器 */
+.file-picker__dir--collapsed > .file-picker__dir-content {
+    display: none;
+}
+.file-picker__dir-content {
+    /* 子内容容器：左侧细线表示层级 */
+    border-left: 1px dashed rgba(255, 255, 255, 0.1);
+    margin-left: 14px;
+}
+
+/* ---------- 任务详情页目录树 ---------- */
+.task-detail-dir {
+    margin: 4px 0;
+}
+.task-detail-dir-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    cursor: pointer;
+    border-radius: 6px;
+    color: var(--text-primary, #fff);
+    font-size: 13px;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: background 0.15s, border-color 0.15s;
+    user-select: none;
+}
+.task-detail-dir-header:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(77, 171, 247, 0.35);
+}
+.task-detail-dir-arrow {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
+    color: var(--text-secondary, #aaa);
+    font-size: 10px;
+    transition: transform 0.15s;
+}
+.task-detail-dir-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+}
+.task-detail-dir-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* 折叠状态：隐藏子内容容器 */
+.task-detail-dir--collapsed > .task-detail-dir-content {
+    display: none;
+}
+.task-detail-dir-content {
+    border-left: 1px dashed rgba(255, 255, 255, 0.1);
+    margin-left: 14px;
 }

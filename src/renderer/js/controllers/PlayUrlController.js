@@ -65,14 +65,20 @@
 
         /**
          * 初始化页面
+         * 关键：即使外链页 DOM 不存在（已合并到下载页），也要初始化子模块和全局事件订阅
+         * 这样 PlayUrlController 可作为内部播放服务被 DownloadController 复用
          */
         initialize() {
             this._cacheDom();
+            // 子模块必须初始化（_magnetParser 用于解析/播放磁力链）
+            this._initSubModules();
+            // 全局取消事件订阅（不依赖外链页 DOM，跨页面生效）
+            this._setupGlobalCancelListener();
             if (!this._dom || !this._dom.input) {
-                console.warn('[PlayUrlController] DOM 未就绪，跳过初始化');
+                // 外链页 DOM 不存在：仅作为内部播放服务运行，不绑定输入框事件
+                console.log('[PlayUrlController] 外链页 DOM 不存在，以内部播放服务模式运行');
                 return;
             }
-            this._initSubModules();
             this._setupInputEvents();
             this._setupActionButtons();
             this._setupDropZone();
@@ -183,14 +189,22 @@
                 progressCancel.addEventListener('click', () => this._handleParseCancel());
             }
 
-            // 全局浮动进度条 X 按钮的 click 绑定**不在这里**做 —— 改由 app.js
-            // 在 document.body 上做事件委托（不依赖 PlayUrlController 是否初始化）。
-            // 这里改为订阅 document 上的 magnet-progress-cancel CustomEvent，
-            // 当 X 被点击时统一走 _handleParseCancel 清理逻辑。
-            // 关键：removeEventListener 必须用相同函数引用，箭头函数这里安全
-            // （_setupActionButtons 整个方法在 PlayUrlController 生命周期只调一次）
+            // 全局取消事件订阅（_setupGlobalCancelListener 已在 initialize 中提前调用，
+            // 这里再次调用是幂等的——_cancelListenerBound 标志位防止重复绑定）
+            this._setupGlobalCancelListener();
+        }
+
+        /**
+         * 订阅全局 magnet-progress-cancel 事件
+         * 关键：全局浮动进度条 X 按钮由 app.js 在 document.body 上委托绑定，
+         * 派发 magnet-progress-cancel CustomEvent 让 Controller 各自清理内部状态。
+         * 此方法不依赖外链页 DOM，可在 DOM 缺失场景下独立调用。
+         */
+        _setupGlobalCancelListener() {
+            if (this._cancelListenerBound) return;
             this._onMagnetProgressCancel = () => this._handleParseCancel();
             document.addEventListener('magnet-progress-cancel', this._onMagnetProgressCancel);
+            this._cancelListenerBound = true;
         }
 
         /**
@@ -557,6 +571,135 @@
                 this._setState(STATE.EDITING);
             } finally {
                 // 清理超时计时器
+                if (this._parseTimeoutTimer1) {
+                    clearTimeout(this._parseTimeoutTimer1);
+                    this._parseTimeoutTimer1 = null;
+                }
+                if (this._parseTimeoutTimer2) {
+                    clearTimeout(this._parseTimeoutTimer2);
+                    this._parseTimeoutTimer2 = null;
+                }
+            }
+        }
+
+        /**
+         * 磁力链立即播放（解析 + 文件选择 + 播放）
+         * 与 _handleMagnet 的区别：最后一步调 play 而非 addTask
+         * 流程：resolveFiles → 文件选择对话框 → play(magnetUri, fileName, infoHash) → openPlayer
+         * @param {string} magnetUri
+         * @param {string} infoHash
+         */
+        async _resolveAndPlayMagnet(magnetUri, infoHash) {
+            if (!this._magnetParser || !this._magnetParser.isAvailable()) {
+                this._notify('磁力链功能不可用（Electron IPC 缺失）', 'error');
+                return;
+            }
+            this._currentMagnetUri = magnetUri;
+            this._currentInfoHash = infoHash || '';
+            this._parseCancelled = false;
+            this._parseStartTime = Date.now();
+            this._setState(STATE.PARSE_PROGRESS);
+            this._showProgress('正在解析磁力链接...', 0, 'info');
+
+            // 解析阶段超时提示
+            this._parseTimeoutTimer1 = setTimeout(() => {
+                if (this.state !== STATE.PARSE_PROGRESS || this._parseCancelled) return;
+                const elapsed = Math.round((Date.now() - this._parseStartTime) / 1000);
+                this._showProgress(`解析中...已等待 ${elapsed} 秒，资源可能较冷门`, 5, 'warning');
+                this._parseTimeoutTimer2 = setTimeout(() => {
+                    if (this.state !== STATE.PARSE_PROGRESS || this._parseCancelled) return;
+                    const elapsed2 = Math.round((Date.now() - this._parseStartTime) / 1000);
+                    this._showProgress(`解析超时（${elapsed2} 秒），建议取消后重试或更换链接`, 5, 'error');
+                }, 30000);
+            }, 30000);
+
+            try {
+                // 1) 解析文件列表
+                const resolveResult = await this._magnetParser.resolveFiles(magnetUri);
+                if (this._parseCancelled) {
+                    return;
+                }
+                if (!resolveResult || !resolveResult.success || !resolveResult.files || resolveResult.files.length === 0) {
+                    throw new Error((resolveResult && resolveResult.error) || '磁力链解析失败或无文件');
+                }
+                this._currentInfoHash = resolveResult.infoHash || this._currentInfoHash;
+                this._hideProgress();
+
+                // 2) 弹出文件选择对话框（提示用户选择要播放的文件）
+                if (typeof window === 'undefined' || typeof window.FilePickerDialog !== 'function') {
+                    throw new Error('文件选择对话框组件未加载');
+                }
+                const shortHash = (resolveResult.infoHash || infoHash || '').slice(0, 8);
+                const dialog = new window.FilePickerDialog();
+                const dialogResult = await dialog.show({
+                    taskName: `磁力播放 ${shortHash}`,
+                    files: resolveResult.files
+                });
+                if (this._parseCancelled) {
+                    return;
+                }
+                if (!dialogResult.confirmed || !dialogResult.selectedFiles || dialogResult.selectedFiles.length === 0) {
+                    this._notify('已取消播放', 'info');
+                    this._setState(STATE.EDITING);
+                    return;
+                }
+
+                // 3) 取第一个选中的文件作为播放文件（播放只能一次播一个）
+                const targetFile = dialogResult.selectedFiles[0];
+                const fileName = targetFile.name || targetFile.path || '';
+
+                // 4) 切换到 PLAYING 状态，订阅 download-progress 事件
+                this._setState(STATE.PLAYING);
+                this._magnetParser.removeDownloadProgressListener();
+                if (window.electron && window.electron.removePlayerLoadedListener) {
+                    window.electron.removePlayerLoadedListener();
+                    window.electron.removePlayerCanplayListener();
+                }
+                this._magnetParser.onDownloadProgress((data) => this._handleMagnetDownloadProgress(data));
+
+                // 5) 调用 play 拿到 streamUrl
+                this._showProgress(`正在准备播放: ${fileName}`, 0, 'info');
+                const playResult = await this._magnetParser.play(
+                    magnetUri,
+                    fileName,
+                    this._currentInfoHash
+                );
+                if (this._parseCancelled) {
+                    return;
+                }
+                if (!playResult || !playResult.success) {
+                    throw new Error((playResult && playResult.error) || '播放失败');
+                }
+
+                // 6) 写入历史 + 打开播放器
+                this._addHistory(magnetUri, '磁力', 'magnet', {
+                    vod_name: fileName,
+                    episode_name: fileName
+                });
+                const videoData = {
+                    url: playResult.streamUrl,
+                    title: fileName,
+                    vod_name: fileName,
+                    episode_name: fileName,
+                    isDirectPlay: true,
+                    playSource: 'magnet',
+                    isStreaming: !playResult.isLocal,
+                    isLocal: !!playResult.isLocal,
+                    type_name: '磁力',
+                    siteName: '磁力'
+                };
+                await this._openPlayer(videoData);
+                this._hideProgress();
+                this._setState(STATE.IDLE);
+            } catch (error) {
+                if (this._parseCancelled) {
+                    return;
+                }
+                console.error('[PlayUrlController] 磁力链播放失败:', error);
+                this._showProgress(`播放失败: ${error.message}`, 0, 'error');
+                this._autoHideProgressOnError();
+                this._setState(STATE.EDITING);
+            } finally {
                 if (this._parseTimeoutTimer1) {
                     clearTimeout(this._parseTimeoutTimer1);
                     this._parseTimeoutTimer1 = null;

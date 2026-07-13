@@ -1535,7 +1535,19 @@ class VideoPlayer {
                 this.hideLoadingHint();
                 this.video.removeEventListener('loadedmetadata', onLoadedMetadata);
                 this.video.removeEventListener('error', onError);
-                reject(new Error('视频加载失败'));
+                // 关键：记录 video.error 详细信息（错误码 + 消息），便于诊断
+                // 错误码: 1=ABORTED, 2=NETWORK, 3=DECODE, 4=SRC_NOT_SUPPORTED
+                const vErr = this.video.error;
+                const errCode = vErr ? vErr.code : 'unknown';
+                const errMsg = vErr && vErr.message ? vErr.message : '';
+                console.error('[PLAYER] video error 事件:', {
+                    code: errCode,
+                    message: errMsg,
+                    readyState: this.video.readyState,
+                    networkState: this.video.networkState,
+                    src: this.video.src
+                });
+                reject(new Error(`视频加载失败 (code=${errCode}${errMsg ? ': ' + errMsg : ''})`));
             };
 
             this.video.addEventListener('loadedmetadata', onLoadedMetadata);

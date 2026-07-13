@@ -267,7 +267,9 @@ function setupIPC(qixingApp) {
 
     /**
      * 检查磁力文件是否已下载到本地（用于渲染端"快速路径"优化）
-     * 入参: { infoHash, fileName }
+     * 入参: { infoHash, fileName, filePath? }
+     *   - filePath 可选：完整的文件绝对路径（来自 task.files[].path，含子目录）
+     *   - 不传 filePath 时回退到 magnetDir/fileName（兼容旧调用方）
      * 出参: { exists: boolean, path?: string, size?: number }
      *
      * 设计目的:
@@ -279,33 +281,36 @@ function setupIPC(qixingApp) {
      * - webtorrent 预分配文件大小（用 0 填充未下载部分），不能用 size === file.length 判断
      * - 必须用 .complete 标记文件（magnetHandler.mjs 在 torrent done 事件中写入）判断
      * - 没有标记文件 → 文件未完成或未下载 → 走 play-magnet-file 让 webtorrent 边下边播
-     * - 旧文件（用户之前下载完成但无标记）首次播放会走 play-magnet-file，子进程校验后写标记
      */
-    ipcMain.handle('magnet-check-local', async (event, { infoHash, fileName } = {}) => {
+    ipcMain.handle('magnet-check-local', async (event, { infoHash, fileName, filePath } = {}) => {
         try {
             if (!infoHash || !fileName || typeof infoHash !== 'string' || typeof fileName !== 'string') {
                 return { exists: false };
             }
-            // 与 magnetHandler.mjs 的 getMagnetPath 完全一致:
-            // MAGNET_DIR = os.tmpdir()/qixing-torrents,子目录 <infoHash>
             const safeHash = String(infoHash).toLowerCase().replace(/[^a-f0-9]/g, '');
             if (!safeHash || safeHash.length < 32) {
                 return { exists: false };
             }
-            const filePath = path.join(os.tmpdir(), 'qixing-torrents', safeHash, fileName);
-            const completeMarkerPath = path.join(os.tmpdir(), 'qixing-torrents', safeHash, `${fileName}.complete`);
+            // 关键：优先使用渲染端传入的 filePath（含子目录路径，如 magnet/<infoHash>/<torrent.name>/<file>）
+            // 回退到 magnetDir/fileName（兼容旧调用方，仅根目录文件）
+            // webtorrent 下载时可能保留 torrent 内部目录结构，文件在子目录里
+            const magnetDir = qixingApp.downloadManager.getMagnetPath(infoHash);
+            const actualFilePath = (filePath && typeof filePath === 'string')
+                ? filePath
+                : path.join(magnetDir, fileName);
+            const completeMarkerPath = actualFilePath + '.complete';
             // 必须有 .complete 标记文件 + 数据文件存在且非空
             if (!fs.existsSync(completeMarkerPath)) {
                 return { exists: false };
             }
-            if (!fs.existsSync(filePath)) {
+            if (!fs.existsSync(actualFilePath)) {
                 return { exists: false };
             }
-            const stat = fs.statSync(filePath);
+            const stat = fs.statSync(actualFilePath);
             if (!stat.isFile() || stat.size <= 0) {
                 return { exists: false };
             }
-            return { exists: true, path: filePath, size: stat.size };
+            return { exists: true, path: actualFilePath, size: stat.size };
         } catch (error) {
             console.warn('[MAIN] magnet-check-local 失败:', error.message);
             return { exists: false };
@@ -888,28 +893,66 @@ function setupIPC(qixingApp) {
     });
 
     // 选择本地视频文件并导入到下载管理
-    ipcMain.handle('download-import-local', async event => {
+    // 支持两种调用方式：
+    //   1) 不传参数：弹出系统文件选择对话框（多选）
+    //   2) 传入 { filePath }：直接导入指定路径，跳过对话框（用于下载页输入框粘贴本地路径）
+    ipcMain.handle('download-import-local', async (event, payload) => {
         try {
-            const { dialog } = require('electron');
-            const result = await dialog.showOpenDialog({
-                title: '导入本地视频',
-                filters: [{ name: '视频文件', extensions: ['mp4', 'mkv', 'webm', 'avi', 'mov', 'm3u8', 'flv', 'wmv'] }],
-                properties: ['openFile', 'multiSelections']
-            });
-            if (result.canceled || result.filePaths.length === 0) {
-                return { success: false, message: '未选择文件' };
+            const path = require('path');
+            let filePaths = [];
+            if (payload && typeof payload === 'object' && payload.filePath) {
+                // 调用方传入指定路径
+                filePaths = Array.isArray(payload.filePath) ? payload.filePath : [payload.filePath];
+            } else {
+                // 走系统对话框
+                const { dialog } = require('electron');
+                const result = await dialog.showOpenDialog({
+                    title: '导入本地视频',
+                    filters: [{ name: '视频文件', extensions: ['mp4', 'mkv', 'webm', 'avi', 'mov', 'm3u8', 'flv', 'wmv'] }],
+                    properties: ['openFile', 'multiSelections']
+                });
+                if (result.canceled || result.filePaths.length === 0) {
+                    return { success: false, message: '未选择文件' };
+                }
+                filePaths = result.filePaths;
             }
             const imported = [];
-            for (const fp of result.filePaths) {
+            for (const fp of filePaths) {
                 // 不复制文件，只在清单中添加一条记录指向原路径
                 const r = dm.addExistingFile({
-                    name: require('path').basename(fp),
+                    name: path.basename(fp),
                     filePath: fp,
                     sourceType: 'import'
                 });
                 if (r.success) imported.push(r.record);
             }
             return { success: true, imported };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    // URL 持久化下载完成后写入 manifest（统一任务管理）
+    // 由 DownloadController 监听 streaming:completed 事件后调用
+    // 参数：{ url, fileName, filePath, fileSize }
+    ipcMain.handle('url-add-task', async (event, payload = {}) => {
+        try {
+            if (!payload || !payload.filePath) {
+                return { success: false, error: '缺少 filePath' };
+            }
+            const fs = require('fs');
+            if (!fs.existsSync(payload.filePath)) {
+                return { success: false, error: '下载文件不存在' };
+            }
+            // 复用 addExistingFile：创建单文件 task，type='url', status='completed'
+            // 这样 URL 下载任务和磁力任务统一在 manifest 中管理
+            const r = dm.addExistingFile({
+                name: payload.fileName || require('path').basename(payload.filePath),
+                filePath: payload.filePath,
+                sourceType: 'url',
+                sourceUrl: payload.url || ''
+            });
+            return r;
         } catch (error) {
             return { success: false, error: error.message };
         }
@@ -1169,16 +1212,39 @@ function setupIPC(qixingApp) {
 
     /**
      * 判断磁力日志是否为需要输出到终端的关键消息
-     * 屏蔽高频刷屏消息：缓冲进度、wire连接、tracker超时、操作中止等
+     * 屏蔽高频刷屏消息：缓冲进度、wire连接、tracker超时、操作中止、fetch failed 等
+     * 关键：fetch failed 来自 undici 对 tracker announce 的网络错误，单个 tracker 失败时
+     *   bittorrent-tracker 会触发 warning，多个 tracker 并发失败会刷屏；完整错误信息
+     *   已通过 msg.code/url 字段透传，这里按 message 文本去重避免噪音
      */
     const MAGNET_NOISY_PATTERNS = [
         /^缓冲中:/,
         /tracker request timed out/,
-        /This operation was aborted/
+        /This operation was aborted/,
+        /^fetch failed$/i,
+        /cache service .+ failed/i  // 缓存服务 fetch 失败的逐条日志（汇总信息仍保留）
     ];
     function isMagnetKeyLog(text) {
         if (!text || typeof text !== 'string') return false;
         return !MAGNET_NOISY_PATTERNS.some(p => p.test(text));
+    }
+
+    /**
+     * 记录已输出过的 warning（按 message 去重，避免同一 tracker 反复刷屏）
+     * 关键：HTTP tracker 每 30s 重试一次，每次失败都触发 warning，终端会被同一行刷屏
+     * 首次出现时输出完整信息（含 code/url），后续重复仅每 5 分钟刷新一次
+     */
+    const warningDedup = new Map(); // message -> lastPrintedAt
+    const WARNING_DEDUP_INTERVAL_MS = 5 * 60 * 1000;
+    function shouldPrintWarning(message) {
+        if (!message) return false;
+        const now = Date.now();
+        const last = warningDedup.get(message) || 0;
+        if (now - last > WARNING_DEDUP_INTERVAL_MS) {
+            warningDedup.set(message, now);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -1207,10 +1273,24 @@ function setupIPC(qixingApp) {
             return;
         }
 
-        // 警告消息：仅关键警告输出到终端（屏蔽tracker超时/操作中止等高频噪音）
+        // 警告消息：仅关键警告输出到终端（屏蔽tracker超时/操作中止/fetch failed 等高频噪音）
+        // 关键：完整错误信息（code/url）已通过 msg 字段透传，去重后首次出现时打印完整诊断
         if (msg.type === 'warning') {
-            if (isMagnetKeyLog(msg.message)) {
-                console.warn('[MAIN] [MAGNET] 警告:', msg.message);
+            // 终端输出策略：噪音模式过滤 + 5分钟去重
+            if (isMagnetKeyLog(msg.message) && shouldPrintWarning(msg.message)) {
+                const codePart = msg.code ? ` [${msg.code}]` : '';
+                const urlPart = msg.url ? ` url=${msg.url}` : '';
+                console.warn(`[MAIN] [MAGNET] 警告:${codePart}${urlPart}`, msg.message);
+            }
+            // 转发到主窗口（UI 可显示完整诊断）
+            if (qixingApp.mainWindow && !qixingApp.mainWindow.isDestroyed()) {
+                qixingApp.mainWindow.webContents.send('magnet-warning', {
+                    message: msg.message,
+                    code: msg.code || '',
+                    url: msg.url || '',
+                    stack: msg.stack || '',
+                    timestamp: Date.now()
+                });
             }
             return;
         }
@@ -1253,9 +1333,11 @@ function setupIPC(qixingApp) {
             // 让下载页能实时刷新这些数字（_handleMagnetStatus 已支持 downloadSpeed/numPeers/eta 字段）
             if (msg.infoHash) {
                 const dmInner = qixingApp.downloadManager;
+                // 关键：任务级匹配只按 infoHash 找 task（不再按 m.name === msg.fileName 匹配）
+                // 原因：m.name 是 task 显示名（torrent.name，如 "Movie X"），msg.fileName 是文件名
+                // （如 "Movie.X.S01E01.mp4"），两者不会相等，旧条件会误判找不到 task
                 const matched = dmInner.manifest.find(m =>
-                    m.sourceType === 'magnet' && m.infoHash === msg.infoHash &&
-                    (!msg.fileName || m.name === msg.fileName)
+                    (m.type === 'magnet' || m.sourceType === 'magnet') && m.infoHash === msg.infoHash
                 );
                 if (matched) {
                     const statusPayload = {
@@ -1340,17 +1422,82 @@ function setupIPC(qixingApp) {
                 if (msg.status === 'paused') {
                     dm.refreshMagnetSize(task.id);
                 }
-                // 用 updateMagnetProgress 按 infoHash 找 task、按 fileName 找 file 更新进度
-                // 内部已包含 _recomputeTaskStats + 节流持久化（每 2s 一次）
-                dm.updateMagnetProgress(msg.infoHash, msg.fileName, {
-                    downloaded: msg.downloaded,
-                    total: msg.total,
-                    status: msg.status
-                });
-                // 任务级聚合统计字段（updateMagnetProgress 不处理这些字段，需单独更新）
+                // 关键：fileName 为空时是任务级进度上报（来自 resolveMagnet c.add 的 1s 定时器）
+                // 不能调 updateMagnetProgress：它在 fileName 为空时会按 find(f => !fileName)
+                // 命中 task.files[0]，把整个 torrent 的 downloaded 写到第一个文件上，导致单文件进度虚高
+                // 此时只更新任务级聚合字段（downloaded/total/progress），由 _recomputeTaskStats 重算
+                if (msg.fileName) {
+                    // 单文件粒度进度：按 infoHash 找 task、按 fileName 找 file 更新进度
+                    dm.updateMagnetProgress(msg.infoHash, msg.fileName, {
+                        downloaded: msg.downloaded,
+                        total: msg.total,
+                        status: msg.status
+                    });
+                } else if (Number.isFinite(msg.downloaded)) {
+                    // 任务级粒度进度：直接更新 task 聚合字段，避免误写 task.files[0]
+                    // 文件级 downloaded 不更新（无法在不知道每个文件实际下多少的情况下分发）
+                    // 文件状态会通过子进程的 done 事件最终更新为 completed
+                    task.downloaded = msg.downloaded;
+                    if (Number.isFinite(msg.total) && msg.total > 0) {
+                        task.totalSize = msg.total;
+                        task.progress = Math.min(100, (task.downloaded / task.totalSize) * 100);
+                    }
+                    // 关键修复：把任务级 downloaded 分发到各文件，避免 file.downloaded 始终为 0
+                    // 重启后 _recomputeTaskStats 会用 file.downloaded 重算 task.downloaded，
+                    // 如果 file.downloaded=0，task.downloaded 会被重置为 0，进度丢失
+                    // 分发策略：
+                    //   - 单文件任务（只有一个 priority>0 的文件）：直接赋值
+                    //   - 多文件任务：按 file.size 比例分发（粗略，webtorrent 不上报文件级进度）
+                    if (Array.isArray(task.files)) {
+                        const activeFiles = task.files.filter(f => f.priority > 0 && Number(f.size) > 0);
+                        if (activeFiles.length === 1) {
+                            // 单文件任务：直接赋值，不超过文件大小
+                            activeFiles[0].downloaded = Math.min(msg.downloaded, activeFiles[0].size);
+                        } else if (activeFiles.length > 1) {
+                            // 多文件任务：按 file.size 比例分发
+                            const totalFileSize = activeFiles.reduce((sum, f) => sum + f.size, 0);
+                            if (totalFileSize > 0) {
+                                let remaining = msg.downloaded;
+                                activeFiles.forEach((f, i) => {
+                                    if (i === activeFiles.length - 1) {
+                                        // 最后一个文件：用剩余值，避免舍入误差
+                                        f.downloaded = Math.max(0, Math.min(remaining, f.size));
+                                    } else {
+                                        const ratio = f.size / totalFileSize;
+                                        f.downloaded = Math.min(Math.floor(msg.downloaded * ratio), f.size);
+                                        remaining -= f.downloaded;
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    // 任务级状态：只在下载完成时覆盖（保留 manifest 的 paused 状态，避免子进程
+                    // 持续发 'downloading' 把用户暂停的 task 状态覆盖）
+                    if (msg.status === 'completed') {
+                        task.status = 'completed';
+                        // 同步把所有 priority>0 的文件标记为 completed
+                        if (Array.isArray(task.files)) {
+                            task.files.forEach(f => {
+                                if (f.priority > 0) f.status = 'completed';
+                            });
+                        }
+                    }
+                    task.mtime = Date.now();
+                    // 节流持久化
+                    const now = Date.now();
+                    if (!task._lastSave || now - task._lastSave > 2000) {
+                        dm._saveManifest();
+                        task._lastSave = now;
+                    }
+                }
+                // 任务级聚合统计字段（downloadSpeed/numPeers/eta/peerState）
                 if (Number.isFinite(msg.downloadSpeed)) task.downloadSpeed = msg.downloadSpeed;
                 if (Number.isFinite(msg.numPeers)) task.numPeers = msg.numPeers;
                 if (msg.eta != null) task.eta = msg.eta;
+                // peerState: 子进程上报的 peer 连接状态（active/no-peers/stalled/completed）
+                // 关键：独立于 task.status，不污染用户可控的 paused/downloading/completed 状态
+                // UI 据此显示"找不到 peer"/"等待数据"等额外提示
+                if (msg.peerState) task.peerState = msg.peerState;
                 // 关键状态切换立即刷盘（暂停/完成/错误）
                 if (msg.status === 'paused' || msg.status === 'completed' || msg.status === 'error') {
                     dm.flushMagnet(task);
@@ -1486,17 +1633,38 @@ function setupIPC(qixingApp) {
             if (!magnetUri || typeof magnetUri !== 'string' || !magnetUri.startsWith('magnet:')) {
                 return { success: false, error: '无效的磁力链接' };
             }
+            // 从磁力链接中提取 infoHash（与 handle-magnet-link 一致）
+            // 关键：子进程 case 'resolve' 返回的 type:'files' 消息不带 infoHash，
+            // 若主进程不主动提取，渲染端 addTask 时 infoHash 为空 → "缺少 infoHash" 错误
+            let infoHash = '';
+            const hashMatch = magnetUri.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7]{32})/i);
+            if (hashMatch) {
+                infoHash = hashMatch[1].toLowerCase();
+            }
             // 复用 sendMagnetMessage 启动子进程并发送 resolve action
             // 关键：只解析不下载，子进程不会创建 torrent（不调 addMagnetFile）
-            const result = await sendMagnetMessage({ action: 'resolve', magnetUri });
+            const result = await sendMagnetMessage({ action: 'resolve', magnetUri, infoHash });
             if (result.type === 'files') {
+                // 调试日志：确认子进程返回的 files 数据含 path 字段
+                const sampleFiles = (result.files || []).slice(0, 3).map(f => ({
+                    name: f.name,
+                    path: f.path,
+                    hasPath: !!f.path,
+                    pathSeparator: f.path ? (f.path.includes('/') ? '/' : (f.path.includes('\\') ? '\\' : 'none')) : 'N/A'
+                }));
+                console.log('[MAIN] magnet-resolve-files 返回, 文件数:', (result.files || []).length, '前3个样本:', sampleFiles);
                 return {
                     success: true,
-                    infoHash: result.infoHash || '',
+                    // 优先用子进程回传的 infoHash（最权威，来自 torrent.infoHash），
+                    // 兜底用磁力链中提取的 infoHash（防止子进程未回传）
+                    infoHash: result.infoHash || infoHash || '',
+                    // path 字段为 torrent 内部相对路径（如 "dir/subdir/file.mp4"），
+                    // addMagnetTask 据此构造磁盘路径，避免目录结构丢失导致文件找不到
                     files: (result.files || []).map(f => ({
                         name: f.name,
                         size: f.length || f.size || 0,
-                        ext: (f.name || '').split('.').pop().toLowerCase()
+                        ext: (f.name || '').split('.').pop().toLowerCase(),
+                        path: f.path || f.name
                     }))
                 };
             }
@@ -1548,21 +1716,41 @@ function setupIPC(qixingApp) {
                     magnetUri,
                     infoHash
                 });
-                // 对 priority=0 的文件并发调 set-file-priority（deselect），避免下载不需要的文件
-                // allFiles 含所有文件，priority=0 的即未选中的文件
-                const skippedFiles = (allFiles.length > 0 ? allFiles : selectedFiles)
-                    .filter(f => !selectedFiles.some(s => s.name === f.name));
-                if (skippedFiles.length > 0) {
-                    await Promise.all(skippedFiles.map(f => {
+                // 关键：resolveMagnet 创建 torrent 后会 deselect 所有文件（避免 magnet-resolve-files 阶段下载不需要的文件）
+                // 这里必须对选中的文件调 set-file-priority priority=1（select）启动下载
+                // 同时对未选中的文件调 priority=0（deselect），确保子进程不下载不需要的文件
+                const allFilesRef = allFiles.length > 0 ? allFiles : selectedFiles;
+                const selectedNames = new Set(selectedFiles.map(s => s.name));
+                if (allFilesRef.length > 0) {
+                    // 关键：检查每个 set-file-priority 的返回，感知子进程级失败
+                    // 旧实现仅 .catch reject（超时/进程退出），子进程返回 type:'error' 时主进程 resolve 不感知
+                    // 导致 file.select() 失败（如 torrent 不存在、文件不存在）时主进程不知道，UI 仍显示"下载中"
+                    const priorityResults = await Promise.all(allFilesRef.map(f => {
+                        const priority = selectedNames.has(f.name) ? 1 : 0;
                         return sendMagnetMessage({
                             action: 'set-file-priority',
                             infoHash,
                             fileName: f.name,
-                            priority: 0
+                            priority
                         }).catch(e => {
-                            console.warn('[MAIN] deselect 文件失败:', f.name, e.message);
+                            // 网络级失败（子进程退出/超时）：返回标记的 error 对象
+                            return { type: 'error', error: e.message, code: 'IPC_FAILED' };
                         });
                     }));
+                    // 统计失败项并记录（不影响任务创建成功，但要让用户/开发者看到失败原因）
+                    const failures = priorityResults.filter(r => r && r.type === 'error');
+                    if (failures.length > 0) {
+                        const detail = failures.map(f => `[${f.code || 'ERR'}] ${f.error}`).join('; ');
+                        console.warn(`[MAIN] [MAGNET] set-file-priority 失败 ${failures.length}/${allFilesRef.length}: ${detail}`);
+                        // 转发到主窗口让 UI 能提示用户
+                        if (qixingApp.mainWindow && !qixingApp.mainWindow.isDestroyed()) {
+                            qixingApp.mainWindow.webContents.send('magnet-warning', {
+                                message: `部分文件优先级设置失败 (${failures.length}/${allFilesRef.length})`,
+                                detail,
+                                timestamp: Date.now()
+                            });
+                        }
+                    }
                 }
             } catch (e) {
                 console.warn('[MAIN] 启动下载失败（任务已创建，可手动继续）:', e.message);
@@ -1825,11 +2013,55 @@ function setupIPC(qixingApp) {
             if (!task || (task.type !== 'magnet' && task.sourceType !== 'magnet')) {
                 return { type: 'error', error: '任务不存在或非磁力任务' };
             }
-            return await sendMagnetMessage({
+            // 1) 先尝试让子进程恢复（如果它还持有该 torrent）
+            const resumeRes = await sendMagnetMessage({
                 action: 'resume',
                 infoHash: task.infoHash,
                 fileName: (task.files && task.files[0]?.name) || payload.fileName || ''
             });
+            if (resumeRes && resumeRes.type === 'resumed') {
+                return resumeRes;
+            }
+            // 2) TORRENT_NOT_FOUND：子进程已销毁，需要重新创建 torrent 并恢复文件优先级
+            // 关键：不回退到 magnet-replay（只下载单个文件，会丢失用户多文件选择）
+            // 而是重新走 resolve + set-file-priority 流程，对 task.files 中的所有文件恢复 select()
+            // 这样用户当初选择的多个文件都能继续下载
+            if (!(resumeRes && resumeRes.code === 'TORRENT_NOT_FOUND')) {
+                return resumeRes; // 真错误，返回给渲染端
+            }
+            const magnetUri = task.sourceUrl || task.magnetUri ||
+                `magnet:?xt=urn:btih:${task.infoHash}`;
+            // 2.1) 重新创建 torrent（resolveMagnet 会 deselect 所有文件，避免下载未选中文件）
+            await sendMagnetMessage({
+                action: 'resolve',
+                magnetUri,
+                infoHash: task.infoHash
+            });
+            // 2.2) 对 task.files 中的每个文件发 set-file-priority priority=1（select）
+            // 关键：只 select 用户当初选择的文件（task.files 已保存用户选择），其他文件保持 deselect
+            if (Array.isArray(task.files) && task.files.length > 0) {
+                await Promise.all(task.files.map(f => {
+                    return sendMagnetMessage({
+                        action: 'set-file-priority',
+                        infoHash: task.infoHash,
+                        fileName: f.name,
+                        priority: 1
+                    }).catch(e => {
+                        console.warn('[MAIN] 恢复文件优先级失败:', f.name, e.message);
+                    });
+                }));
+            }
+            // 3) 更新 task 状态为 downloading
+            task.status = 'downloading';
+            if (Array.isArray(task.files)) {
+                task.files.forEach(f => {
+                    if (f.priority > 0 && f.status !== 'completed') {
+                        f.status = 'downloading';
+                    }
+                });
+            }
+            dm.flushMagnet(task);
+            return { type: 'resumed', infoHash: task.infoHash };
         } catch (error) {
             return { type: 'error', error: error.message };
         }

@@ -260,6 +260,148 @@ describe('DownloadManager', () => {
         expect(restored.status).toBe('completed');
     });
 
+    test('磁盘对账：跳过 .complete 标记文件（避免误登记为独立 task）', () => {
+        // 关键场景：webtorrent 写的 .complete 标记文件不是下载数据
+        // 旧版本 _scanDownloadDir 会把 .complete 文件误扫，补登记为独立单文件 task
+        // 导致同一个磁力链在 manifest 里被拆成多个 task（每个文件一个 task）
+        const infoHash = 'complete00000000000000000000000000000';
+        const dir = path.join(TEST_DIR, 'magnet', infoHash);
+        fs.mkdirSync(dir, { recursive: true });
+        // 真实视频文件
+        const videoPath = path.join(dir, 'video.mp4');
+        fs.writeFileSync(videoPath, 'video-content');
+        // .complete 标记文件（webtorrent 写的"已完成"标记）
+        fs.writeFileSync(videoPath + '.complete', String(Date.now()));
+        // 另一个 .complete 标记文件
+        fs.writeFileSync(path.join(dir, 'other.jpg.complete'), String(Date.now()));
+        // .torrent 元数据文件
+        fs.writeFileSync(path.join(dir, infoHash + '.torrent'), 'torrent-metadata');
+        // 清空 manifest
+        dm.manifest = [];
+        dm._reconcileWithDisk();
+        // 应该只有 1 个 task（按 infoHash 聚合），包含 1 个真实视频文件
+        const tasks = dm.manifest.filter(t => t.infoHash === infoHash);
+        expect(tasks.length).toBe(1);
+        const task = tasks[0];
+        // task.files 只包含真实视频文件，不包含 .complete/.torrent 标记
+        expect(task.files.length).toBe(1);
+        expect(task.files[0].name).toBe('video.mp4');
+        // 不应该有以 .complete/.torrent 结尾的 file
+        expect(task.files.some(f => f.name.endsWith('.complete'))).toBe(false);
+        expect(task.files.some(f => f.name.endsWith('.torrent'))).toBe(false);
+    });
+
+    test('磁盘对账：磁力多文件按 infoHash 聚合为一个 task（不拆成多个）', () => {
+        // 关键场景：同一个磁力链包含多个文件（如 episode1.mp4、episode2.mp4）
+        // 旧版本会把每个文件登记为独立的单文件 task，导致下载页变成多个任务
+        // 修复后：按 infoHash 聚合为一个 task，task.files 包含所有文件
+        const infoHash = 'multifile00000000000000000000000000000';
+        const dir = path.join(TEST_DIR, 'magnet', infoHash);
+        fs.mkdirSync(dir, { recursive: true });
+        const file1 = path.join(dir, 'episode1.mp4');
+        const file2 = path.join(dir, 'episode2.mp4');
+        fs.writeFileSync(file1, 'ep1-content');
+        fs.writeFileSync(file2, 'ep2-content');
+        // 清空 manifest
+        dm.manifest = [];
+        dm._reconcileWithDisk();
+        // 应该只有 1 个聚合 task
+        const tasks = dm.manifest.filter(t => t.infoHash === infoHash);
+        expect(tasks.length).toBe(1);
+        const task = tasks[0];
+        expect(task.files.length).toBe(2);
+        expect(task.files.some(f => f.name === 'episode1.mp4')).toBe(true);
+        expect(task.files.some(f => f.name === 'episode2.mp4')).toBe(true);
+    });
+
+    test('磁盘对账：磁力文件在子目录里也能扫到（torrent 内部目录结构）', () => {
+        // 关键场景：webtorrent 下载时可能保留 torrent 内部目录结构
+        // 如 magnet/<infoHash>/<torrent.name>/<file>（两层子目录）
+        // 旧版本 _scanDownloadDir 只扫一层，会漏掉子目录里的文件
+        const infoHash = 'subdir000000000000000000000000000000';
+        const dir = path.join(TEST_DIR, 'magnet', infoHash, 'MyMovie.HD');
+        fs.mkdirSync(dir, { recursive: true });
+        const filePath = path.join(dir, 'MyMovie.mp4');
+        fs.writeFileSync(filePath, 'movie-content');
+        // .complete 标记文件也在子目录里
+        fs.writeFileSync(filePath + '.complete', String(Date.now()));
+        dm.manifest = [];
+        dm._reconcileWithDisk();
+        const tasks = dm.manifest.filter(t => t.infoHash === infoHash);
+        expect(tasks.length).toBe(1);
+        expect(tasks[0].files.length).toBe(1);
+        expect(tasks[0].files[0].name).toBe('MyMovie.mp4');
+    });
+
+    test('磁盘对账：合并 manifest 中已存在的同 infoHash 多 task（旧污染数据修复）', () => {
+        // 关键场景：旧版本污染的 manifest 里同一个磁力链被拆成多个单文件 task
+        // 修复后 _mergeMagnetTasksByInfoHash 会把它们合并为一个聚合 task
+        const infoHash = 'polluted000000000000000000000000000000';
+        const dir = path.join(TEST_DIR, 'magnet', infoHash);
+        fs.mkdirSync(dir, { recursive: true });
+        const file1 = path.join(dir, 'file1.mp4');
+        const file2 = path.join(dir, 'file2.mp4');
+        fs.writeFileSync(file1, 'c1');
+        fs.writeFileSync(file2, 'c2');
+        // 模拟旧版本污染的 manifest：两个独立单文件 task（同 infoHash）
+        dm.manifest = [
+            {
+                id: 'task_old1', type: 'magnet', name: 'file1.mp4', status: 'completed',
+                infoHash, sourceType: 'magnet', sourceUrl: 'magnet:?xt=urn:btih:' + infoHash,
+                files: [{ id: 'f1', name: 'file1.mp4', path: file1, size: 2, downloaded: 2, status: 'completed', priority: 1, ext: 'mp4' }]
+            },
+            {
+                id: 'task_old2', type: 'magnet', name: 'file2.mp4', status: 'completed',
+                infoHash, sourceType: 'magnet', sourceUrl: '',
+                files: [{ id: 'f2', name: 'file2.mp4', path: file2, size: 2, downloaded: 2, status: 'completed', priority: 1, ext: 'mp4' }]
+            }
+        ];
+        dm._reconcileWithDisk();
+        // 合并后应该只有 1 个 task
+        const tasks = dm.manifest.filter(t => t.infoHash === infoHash);
+        expect(tasks.length).toBe(1);
+        const task = tasks[0];
+        // task.files 包含两个文件
+        expect(task.files.length).toBe(2);
+        // 应该保留 sourceUrl（从非空 task 继承）
+        expect(task.sourceUrl).toBe('magnet:?xt=urn:btih:' + infoHash);
+    });
+
+    test('磁盘对账：已有 task 时不把磁盘 sparse file 加进 task.files（保留用户选择）', () => {
+        // 关键场景：用户首次添加磁力链时只选了 1 个文件（episode1.mp4），
+        // 但 webtorrent 在 deselect 后仍会预分配其他 sparse file（episode2.mp4 sparse）
+        // 重启后扫描磁盘会发现 episode2.mp4 sparse file，
+        // 但不应该把它加进 task.files（priority=1），否则用户选择会丢失
+        // 修复后：已有 task 时只刷新已存在 file 的 mtime/size，不加磁盘新文件
+        const infoHash = 'sparse0000000000000000000000000000000';
+        const dir = path.join(TEST_DIR, 'magnet', infoHash);
+        fs.mkdirSync(dir, { recursive: true });
+        // 用户当初选的文件（真实下载完成）
+        const selectedFile = path.join(dir, 'episode1.mp4');
+        fs.writeFileSync(selectedFile, 'real-content');
+        // webtorrent 预分配的 sparse file（用户没选，但磁盘上"有"）
+        const sparseFile = path.join(dir, 'episode2.mp4');
+        fs.writeFileSync(sparseFile, ''); // sparse file（size=0 或预分配大小）
+        // manifest 已有 task（用户当初只选了 episode1.mp4）
+        dm.manifest = [
+            {
+                id: 'task_user_select', type: 'magnet', name: 'episode1.mp4', status: 'downloading',
+                infoHash, sourceType: 'magnet', sourceUrl: 'magnet:?xt=urn:btih:' + infoHash,
+                files: [{
+                    id: 'f1', name: 'episode1.mp4', path: selectedFile,
+                    size: 12, downloaded: 12, status: 'completed', priority: 1, ext: 'mp4'
+                }]
+            }
+        ];
+        dm._reconcileWithDisk();
+        // task.files 应该还是只有 1 个文件（episode1.mp4），不应加进 sparse file
+        const task = dm.manifest.find(t => t.id === 'task_user_select');
+        expect(task.files.length).toBe(1);
+        expect(task.files[0].name).toBe('episode1.mp4');
+        // 不应该把 episode2.mp4 加进 task.files
+        expect(task.files.some(f => f.name === 'episode2.mp4')).toBe(false);
+    });
+
     test('磁盘对账：磁盘上有普通文件但 manifest 没有 → 补登记为 import', () => {
         // 模拟：用户手动把一个文件复制到下载目录（绕过我们的下载流程）
         const orphanPath = path.join(TEST_DIR, 'imported-orphan.mp4');
@@ -481,7 +623,7 @@ describe('DownloadManager', () => {
 
     // ========== 任务级 CRUD 测试（新数据模型）==========
 
-    test('addMagnetTask 创建新任务（含选中文件和未选中文件）', () => {
+    test('addMagnetTask 创建新任务（只包含选中文件，不包含未选中文件）', () => {
         const infoHash = 'task00010000000000000000000000000000';
         const result = dm.addMagnetTask({
             magnetUri: 'magnet:?xt=urn:btih:task00010000000000000000000000000000',
@@ -501,15 +643,19 @@ describe('DownloadManager', () => {
         expect(result.task.id).toMatch(/^task_/);
         expect(result.task.type).toBe('magnet');
         expect(result.task.infoHash).toBe(infoHash);
-        expect(result.task.files).toHaveLength(3);
-        // 选中文件 priority=1, status='downloading'
+        // 关键：task.files 只包含用户选中的文件（2 个），未选中的 subtitle.srt 不在 task.files 中
+        // 子进程层通过 set-file-priority deselect 未选中文件，避免下载不需要的数据
+        expect(result.task.files).toHaveLength(2);
+        // 所有选中文件 priority=1, status='downloading'
         const v1 = result.task.files.find(f => f.name === 'video01.mp4');
         expect(v1.priority).toBe(1);
         expect(v1.status).toBe('downloading');
-        // 未选中文件 priority=0, status='skipped'
+        const v2 = result.task.files.find(f => f.name === 'video02.mp4');
+        expect(v2.priority).toBe(1);
+        expect(v2.status).toBe('downloading');
+        // 未选中文件不应出现在 task.files 中
         const sub = result.task.files.find(f => f.name === 'subtitle.srt');
-        expect(sub.priority).toBe(0);
-        expect(sub.status).toBe('skipped');
+        expect(sub).toBeUndefined();
         // task.totalSize = sum(selectedFiles.size)
         expect(result.task.totalSize).toBe(1024 * 1024 + 2048 * 1024);
     });
@@ -679,16 +825,27 @@ describe('DownloadManager', () => {
     });
 
     test('setFilePriority priority=1 恢复下载', () => {
+        // 关键：addMagnetTask 现在只把选中文件加入 task.files（priority=1）
+        // 测试 priority=1 → 0 → 1 的恢复流程：先创建带选中文件的任务，
+        // 再 setFilePriority 改为 0（暂停），最后改回 1（恢复下载）
         const r = dm.addMagnetTask({
             infoHash: 'task00090000000000000000000000000000',
             taskName: '恢复任务',
-            selectedFiles: [],
+            selectedFiles: [{ name: 'f1.mp4', size: 100, ext: 'mp4' }],
             allFiles: [{ name: 'f1.mp4', size: 100, ext: 'mp4' }]
         });
         const taskId = r.task.id;
         const fileId = r.task.files[0].id;
-        // 初始 priority=0（因为 selectedFiles 为空）
-        expect(r.task.files[0].priority).toBe(0);
+        // 初始 priority=1（用户选中该文件）
+        expect(r.task.files[0].priority).toBe(1);
+        // 改为 0（暂停下载该文件）
+        const r0 = dm.setFilePriority(taskId, fileId, 0);
+        expect(r0.success).toBe(true);
+        const task0 = dm.getTask(taskId);
+        const f0 = task0.files.find(x => x.id === fileId);
+        expect(f0.priority).toBe(0);
+        expect(f0.status).toBe('skipped');
+        // 改回 1（恢复下载）
         const result = dm.setFilePriority(taskId, fileId, 1);
         expect(result.success).toBe(true);
         const task = dm.getTask(taskId);

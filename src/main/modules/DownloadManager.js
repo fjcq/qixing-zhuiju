@@ -84,18 +84,35 @@ class DownloadManager {
         // 2) 磁力任务：每个 infoHash 创建一个 task
         for (const [infoHash, files] of magnetGroups) {
             const first = files[0];
-            const taskFiles = files.map(f => ({
-                id: 'file_' + this._generateId(),
-                name: f.name,
-                path: f.path || '',
-                size: Number.isFinite(f.size) ? f.size : 0,
-                downloaded: Number.isFinite(f.size) ? f.size : 0,
-                status: f.status || 'completed',
-                priority: 1,
-                ext: f.ext || this._getExt(f.name || ''),
-                addedAt: f.addedAt || Date.now(),
-                thumbnail: f.thumbnail || ''
-            }));
+            // 提取 torrent 内部相对路径：去掉磁盘前缀 downloadDir/magnet/infoHash/
+            // 用于 UI 渲染目录树（旧 manifest 没存 relativePath，从 path 反推）
+            const magnetDir = path.join(this.downloadDir, 'magnet', infoHash);
+            const taskFiles = files.map(f => {
+                let relPath = f.name || '';
+                if (f.path) {
+                    try {
+                        const rel = path.relative(magnetDir, f.path).replace(/\\/g, '/');
+                        if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
+                            relPath = rel;
+                        }
+                    } catch (e) {
+                        // path.relative 失败时兜底用 name
+                    }
+                }
+                return {
+                    id: 'file_' + this._generateId(),
+                    name: f.name,
+                    relativePath: relPath,
+                    path: f.path || '',
+                    size: Number.isFinite(f.size) ? f.size : 0,
+                    downloaded: Number.isFinite(f.size) ? f.size : 0,
+                    status: f.status || 'completed',
+                    priority: 1,
+                    ext: f.ext || this._getExt(f.name || ''),
+                    addedAt: f.addedAt || Date.now(),
+                    thumbnail: f.thumbnail || ''
+                };
+            });
             const task = {
                 id: 'task_' + this._generateId(),
                 type: 'magnet',
@@ -204,7 +221,13 @@ class DownloadManager {
                     existing.files.push({
                         id: 'file_' + this._generateId(),
                         name: sf.name,
-                        path: path.join(this.getMagnetPath(meta.infoHash), sf.name),
+                        // relativePath：torrent 内部相对路径（含目录结构，如 "MyTorrent/Season 1/ep01.mp4"）
+                        // 用于 UI 渲染目录树；path 是完整磁盘路径，用于实际文件读写
+                        // 关键：parse-torrent 在 Windows 上用 path.join 生成 \ 分隔的路径，
+                        // 这里统一替换为 / 保证跨平台数据一致性
+                        relativePath: (sf.path || sf.name || '').replace(/\\/g, '/'),
+                        // 优先用 torrent 内部相对路径（含目录结构），避免多文件 torrent 路径错乱
+                        path: path.join(this.getMagnetPath(meta.infoHash), sf.path || sf.name),
                         size: sf.size || 0,
                         downloaded: 0,
                         status: 'downloading',
@@ -225,16 +248,23 @@ class DownloadManager {
             return { success: true, task: existing, updated: true };
         }
         // 创建新任务
-        const allFiles = meta.allFiles || meta.selectedFiles || [];
-        const selectedNames = new Set((meta.selectedFiles || []).map(f => f.name));
-        const taskFiles = allFiles.map(f => ({
+        // 关键：task.files 只包含用户选中的文件（selectedFiles），
+        // 不包含 allFiles 中未选中的文件——符合常规下载习惯：一个磁力链 = 一个任务 = 用户选中的文件集合
+        // 子进程层通过 set-file-priority deselect 未选中的文件，避免下载不需要的数据
+        const taskFiles = (meta.selectedFiles || []).map(f => ({
             id: 'file_' + this._generateId(),
             name: f.name,
-            path: path.join(this.getMagnetPath(meta.infoHash), f.name),
+            // relativePath：torrent 内部相对路径（含目录结构，如 "MyTorrent/Season 1/ep01.mp4"）
+            // 用于 UI 渲染目录树；path 是完整磁盘路径，用于实际文件读写
+            // 关键：parse-torrent 在 Windows 上用 path.join 生成 \ 分隔的路径，
+            // 这里统一替换为 / 保证跨平台数据一致性
+            relativePath: (f.path || f.name || '').replace(/\\/g, '/'),
+            // 优先用 torrent 内部相对路径（含目录结构），避免多文件 torrent 路径错乱
+            path: path.join(this.getMagnetPath(meta.infoHash), f.path || f.name),
             size: f.size || 0,
             downloaded: 0,
-            status: selectedNames.has(f.name) ? 'downloading' : 'skipped',
-            priority: selectedNames.has(f.name) ? 1 : 0,
+            status: 'downloading',
+            priority: 1,
             ext: f.ext || this._getExt(f.name),
             addedAt: Date.now(),
             thumbnail: ''
@@ -443,18 +473,83 @@ class DownloadManager {
         // 0) 先迁移可能存在的旧结构记录（防御性：测试或外部代码可能直接 push 旧记录）
         this._migrateLegacyManifest();
 
+        // 0.5) 合并同 infoHash 的多个单文件 task（兼容旧版本污染的 manifest）
+        // 关键：旧版本 _scanDownloadDir 会扫到 .complete 标记文件并补登记为独立单文件 task，
+        // 导致同一个磁力链在 manifest 里被拆成多个 task。这里在 _scanDownloadDir 修复后
+        // 做兜底聚合：把同 infoHash 的多个磁力 task 合并为一个聚合 task
+        this._mergeMagnetTasksByInfoHash();
+
         // 1) 扫描磁盘
         const diskEntries = this._scanDownloadDir();
 
-        // 2) 把磁盘上有但 manifest 没有的文件补登记为单文件 task
+        // 2) 把磁盘上有但 manifest 没有的文件补登记为 task
+        // 关键：磁力文件按 infoHash 聚合为一个 task（避免每个文件变成独立 task）
+        // import 文件保持单文件 task 行为
         let added = 0;
+        // 2.1) 先按 infoHash 分组磁力磁盘条目，import 条目单独处理
+        const magnetGroups = new Map(); // infoHash -> [entry]
+        const importEntries = [];
         for (const entry of diskEntries) {
+            if (entry.sourceType === 'magnet' && entry.infoHash) {
+                const group = magnetGroups.get(entry.infoHash) || [];
+                group.push(entry);
+                magnetGroups.set(entry.infoHash, group);
+            } else {
+                importEntries.push(entry);
+            }
+        }
+        // 2.2) 磁力文件按 infoHash 聚合补登记
+        for (const [infoHash, entries] of magnetGroups) {
+            // 找已有的同 infoHash 磁力 task
+            let existingTask = this.manifest.find(t =>
+                (t.type === 'magnet' || t.sourceType === 'magnet') && t.infoHash === infoHash
+            );
+            if (!existingTask) {
+                // 创建新的聚合磁力 task（包含该 infoHash 下所有磁盘文件）
+                existingTask = this._buildMagnetTaskFromDiskEntries(infoHash, entries);
+                this.manifest.unshift(existingTask);
+                added++;
+            } else {
+                // 关键：已有 task 时只刷新已存在 file 的 mtime/size，不把磁盘上的新文件加进 task.files
+                // 原因：webtorrent 在 deselect 后仍会预分配 sparse file（看起来"有"但下载量为 0），
+                // 如果把磁盘上的 sparse file 都加进 task.files（priority=1），会污染用户当初的选择，
+                // 导致重启后用户选择丢失，所有 sparse file 都被标记为"待下载"
+                // 用户选择已保存在 task.files（priority=1）里，重启后保持不变
+                for (const entry of entries) {
+                    const file = Array.isArray(existingTask.files) &&
+                        existingTask.files.find(f => f.path === entry.path);
+                    if (file) {
+                        // 已有记录：用磁盘上最新的 mtime/size 刷新对应 file
+                        try {
+                            const stat = fs.statSync(entry.path);
+                            file.size = stat.size;
+                            // 关键修复：用 .complete 标记文件判断是否完成
+                            // webtorrent 预分配文件大小，stat.size 是文件总大小，不是已下载字节数
+                            // 旧实现用 stat.size 作为 file.downloaded，导致重启后未完成任务显示 100%
+                            const completeMarker = entry.path + '.complete';
+                            const isComplete = fs.existsSync(completeMarker);
+                            if (isComplete) {
+                                file.downloaded = stat.size;
+                                file.status = 'completed';
+                            } else {
+                                // 未完成：file.downloaded 保持旧值（manifest 中的值）
+                                // file.status 会在后面归位为 'paused'
+                                // 不用 stat.size 覆盖 file.downloaded
+                            }
+                            existingTask.mtime = stat.mtimeMs;
+                        } catch (e) { /* 忽略单条 stat 失败 */ }
+                    }
+                    // 磁盘上有但 task.files 没有的文件（sparse file）：忽略，不加进 task.files
+                }
+            }
+        }
+        // 2.3) import 文件按单文件 task 补登记（保持原行为）
+        for (const entry of importEntries) {
             const existing = this._findTaskByPath(entry.path);
             if (!existing) {
                 this.manifest.unshift(this._buildTaskFromDiskEntry(entry));
                 added++;
             } else {
-                // 已有记录：用磁盘上最新的 mtime/size 刷新对应 file
                 try {
                     const stat = fs.statSync(entry.path);
                     const file = existing.files.find(f => f.path === entry.path);
@@ -521,6 +616,110 @@ class DownloadManager {
     }
 
     /**
+     * 合并同 infoHash 的多个磁力 task 为一个聚合 task
+     * 关键：旧版本 _scanDownloadDir 会扫到 .complete 标记文件并补登记为独立单文件 task，
+     * 导致同一个磁力链在 manifest 里被拆成多个 task。这里做兜底聚合修复。
+     * 合并策略：
+     *   - 第一个 task 作为主 task，保留 id/infoHash/magnetUri
+     *   - 其他 task 的 files 合并到主 task（去重）
+     *   - 保留所有 task 的 sourceUrl/magnetUri（取非空值）
+     */
+    _mergeMagnetTasksByInfoHash() {
+        const groups = new Map(); // infoHash -> [taskIndexes]
+        this.manifest.forEach((task, idx) => {
+            if ((task.type === 'magnet' || task.sourceType === 'magnet') && task.infoHash) {
+                const group = groups.get(task.infoHash) || [];
+                group.push(idx);
+                groups.set(task.infoHash, group);
+            }
+        });
+        let merged = 0;
+        for (const [infoHash, indexes] of groups) {
+            if (indexes.length <= 1) continue;
+            const mainTask = this.manifest[indexes[0]];
+            if (!Array.isArray(mainTask.files)) mainTask.files = [];
+            const existingPaths = new Set(mainTask.files.map(f => f.path));
+            // 合并其他 task 的 files
+            for (let i = 1; i < indexes.length; i++) {
+                const otherTask = this.manifest[indexes[i]];
+                if (Array.isArray(otherTask.files)) {
+                    for (const f of otherTask.files) {
+                        if (f.path && !existingPaths.has(f.path)) {
+                            mainTask.files.push(f);
+                            existingPaths.add(f.path);
+                        }
+                    }
+                }
+                // 合并元数据
+                if (otherTask.magnetUri && !mainTask.magnetUri) mainTask.magnetUri = otherTask.magnetUri;
+                if (otherTask.sourceUrl && !mainTask.sourceUrl) mainTask.sourceUrl = otherTask.sourceUrl;
+                if (otherTask.name && mainTask.name === `magnet_${infoHash.slice(0, 8)}`) {
+                    mainTask.name = otherTask.name;
+                }
+                // 标记待删除（用 falsy 占位，后面 filter 清理）
+                otherTask._merged = true;
+                merged++;
+            }
+            // 重新计算主 task 聚合统计
+            this._recomputeTaskStats(mainTask);
+        }
+        if (merged > 0) {
+            this.manifest = this.manifest.filter(t => !t._merged);
+            console.log(`[DOWNLOAD] 合并 ${merged} 个重复磁力 task`);
+            this._saveManifest();
+        }
+    }
+
+    /**
+     * 从多个磁盘条目构建一个聚合磁力 task（同 infoHash 的所有文件）
+     * @param {string} infoHash
+     * @param {Array} entries - 同 infoHash 的磁盘条目数组
+     */
+    _buildMagnetTaskFromDiskEntries(infoHash, entries) {
+        // 关键修复：用 .complete 标记文件判断是否完成
+        // webtorrent 预分配文件大小，stat.size 是文件总大小，不是已下载字节数
+        // 旧实现假设磁盘文件都已完成，导致未完成的 sparse file 被误标记为 completed
+        const taskFiles = entries.map(entry => {
+            const completeMarker = entry.path + '.complete';
+            const isComplete = fs.existsSync(completeMarker);
+            return {
+                id: 'file_' + this._generateId(),
+                name: entry.fileName,
+                path: entry.path,
+                size: entry.stat.size,
+                downloaded: isComplete ? entry.stat.size : 0,
+                status: isComplete ? 'completed' : 'paused',
+                priority: 1,
+                ext: this._getExt(entry.fileName),
+                addedAt: entry.stat.mtimeMs,
+                thumbnail: ''
+            };
+        });
+        // 任务名：用第一个文件的所在目录名（即 torrent 的 name），没有则用 infoHash 前 8 位
+        const firstEntry = entries[0];
+        const torrentName = firstEntry.folder
+            ? firstEntry.folder.split('/')[0]
+            : `magnet_${infoHash.slice(0, 8)}`;
+        const task = {
+            id: 'task_' + this._generateId(),
+            type: 'magnet',
+            name: torrentName,
+            status: 'completed',
+            addedAt: Math.min(...entries.map(e => e.stat.mtimeMs)),
+            mtime: Math.max(...entries.map(e => e.stat.mtimeMs)),
+            infoHash,
+            magnetUri: '',
+            files: taskFiles,
+            sourceType: 'magnet',
+            sourceUrl: '',
+            folder: 'magnet',
+            thumbnail: ''
+        };
+        this._recomputeTaskStats(task);
+        return task;
+    }
+
+    /**
      * 在 manifest 中查找包含指定路径文件的 task
      * @param {string} filePath
      * @returns {object|null}
@@ -578,14 +777,20 @@ class DownloadManager {
     /**
      * 扫描下载目录，返回所有文件条目
      * 目录约定：
-     *   downloadDir/magnet/<infoHash>/<filename> → 磁力下载（按 infoHash 子目录隔离）
+     *   downloadDir/magnet/<infoHash>/<subdirs>/<filename> → 磁力下载（按 infoHash 子目录隔离，含 torrent 内部目录结构）
      *   downloadDir/<其他子目录或根>/<filename>  → URL/import 下载
+     * 关键：跳过 .complete 标记文件（webtorrent 写的"文件已下载完成"标记，不是真正的下载数据）
+     *       否则 _reconcileWithDisk 会把每个 .complete 文件误登记为独立的单文件 task
      * @returns {Array<{path, sourceType, infoHash?, fileName, folder?, stat}>}
      */
     _scanDownloadDir() {
         const result = [];
         if (!fs.existsSync(this.downloadDir)) return result;
-        // 1) 扫描 magnet/<infoHash>/<file>
+        // 跳过 .complete 标记文件（webtorrent 的"文件已完成"标记，不是下载数据）
+        const isCompleteMarker = (name) => name.endsWith('.complete');
+        // 跳过 .torrent 元数据文件（磁力链解析时缓存的 torrent 文件，不是下载数据）
+        const isTorrentMeta = (name) => name.endsWith('.torrent');
+        // 1) 扫描 magnet/<infoHash>/ 下所有文件（递归子目录，跳过 .complete/.torrent 标记文件）
         const magnetRoot = this.getMagnetDir();
         if (fs.existsSync(magnetRoot)) {
             let infoHashDirs = [];
@@ -596,24 +801,34 @@ class DownloadManager {
             for (const dirent of infoHashDirs) {
                 const infoHash = dirent.name;
                 const dirPath = path.join(magnetRoot, infoHash);
-                let files = [];
-                try {
-                    files = fs.readdirSync(dirPath, { withFileTypes: true })
-                        .filter(f => f.isFile());
-                } catch (e) { /* 忽略单目录失败 */ }
-                for (const fileDirent of files) {
-                    const filePath = path.join(dirPath, fileDirent.name);
+                // 递归扫描 magnet/<infoHash>/ 下所有子目录（torrent 内部目录结构）
+                const walkMagnet = (currentDir, relParts) => {
+                    let entries = [];
                     try {
-                        const stat = fs.statSync(filePath);
-                        result.push({
-                            path: filePath,
-                            sourceType: 'magnet',
-                            infoHash,
-                            fileName: fileDirent.name,
-                            stat
-                        });
-                    } catch (e) { /* 忽略 stat 失败 */ }
-                }
+                        entries = fs.readdirSync(currentDir, { withFileTypes: true });
+                    } catch (e) { return; }
+                    for (const ent of entries) {
+                        if (ent.isDirectory()) {
+                            walkMagnet(path.join(currentDir, ent.name), relParts.concat(ent.name));
+                        } else if (ent.isFile()) {
+                            // 跳过 .complete 标记文件和 .torrent 元数据文件
+                            if (isCompleteMarker(ent.name) || isTorrentMeta(ent.name)) continue;
+                            const filePath = path.join(currentDir, ent.name);
+                            try {
+                                const stat = fs.statSync(filePath);
+                                result.push({
+                                    path: filePath,
+                                    sourceType: 'magnet',
+                                    infoHash,
+                                    fileName: ent.name,
+                                    folder: relParts.join('/') || '',
+                                    stat
+                                });
+                            } catch (e) { /* 忽略 stat 失败 */ }
+                        }
+                    }
+                };
+                walkMagnet(dirPath, []);
             }
         }
         // 2) 扫描 downloadDir 根 + 子目录（排除 magnet/）的非目录文件
@@ -628,6 +843,8 @@ class DownloadManager {
                     if (skipDirs.has(ent.name)) continue;
                     walk(path.join(dir, ent.name), relParts.concat(ent.name));
                 } else if (ent.isFile()) {
+                    // 跳过 .complete 标记文件和 .torrent 元数据文件
+                    if (isCompleteMarker(ent.name) || isTorrentMeta(ent.name)) continue;
                     const filePath = path.join(dir, ent.name);
                     try {
                         const stat = fs.statSync(filePath);

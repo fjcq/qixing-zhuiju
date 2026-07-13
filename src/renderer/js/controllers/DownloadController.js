@@ -36,6 +36,16 @@
             // 搜索/筛选状态（去抖）
             this._searchTimer = null;
             this.initialized = false;
+            // 输入区状态（合并自外链页）
+            this._inputDom = null;
+            this._lastInput = '';
+            this._inputDetectTimer = null;
+            this._inputParseCancelled = false;
+            this._inputParseStartTime = 0;
+            this._inputTimeoutTimer1 = null;
+            this._inputTimeoutTimer2 = null;
+            // 内部播放服务（复用 PlayUrlController 的播放逻辑）
+            this._playbackService = null;
         }
 
         /**
@@ -46,6 +56,7 @@
             this.initialized = true;
             this._bindEvents();
             this._bindIpcListeners();
+            this._setupInputArea();
             // Task 16: 刷新剩余空间指示器 + 绑定全局限速滑块
             this._refreshStorageInfo();
             this._bindGlobalSpeedControl();
@@ -199,7 +210,6 @@
                 refreshBtn.addEventListener('click', () => {
                     this._setState('LOADING');
                     this._loadFiles().finally(() => this._setState('READY'));
-                    this._loadActiveTasks();
                 });
             }
             if (importBtn) {
@@ -277,6 +287,491 @@
                         self._loadFiles();
                     }
                 });
+                // streaming 任务完成：把 URL 下载文件写入 manifest，统一任务管理
+                this._streamingCompletedForManifestUnsub = window.electron.streaming.on('streaming:completed', async (payload) => {
+                    await self._handleStreamingCompletedForManifest(payload);
+                });
+            }
+        }
+
+        // ============================================================
+        // 输入区逻辑（合并自外链页 PlayUrlController）
+        // 设计：单行输入框 + 智能识别徽章 + 添加下载/立即播放按钮
+        // 默认行为是"添加下载"，"立即播放"为可选入口
+        // 播放逻辑复用 PlayUrlController（作为内部播放服务）
+        // ============================================================
+
+        /**
+         * 初始化输入区：缓存 DOM、绑定事件、初始化徽章
+         */
+        _setupInputArea() {
+            this._inputDom = {
+                input: document.getElementById('downloads-input'),
+                badge: document.getElementById('downloads-input-badge'),
+                addBtn: document.getElementById('downloads-add-btn'),
+                pickFileBtn: document.getElementById('downloads-pick-file-btn'),
+                progress: document.getElementById('downloads-input-progress'),
+                progressStatus: document.getElementById('downloads-input-progress-status'),
+                progressFill: document.getElementById('downloads-input-progress-fill'),
+                progressCancel: document.getElementById('downloads-input-progress-cancel')
+            };
+            const d = this._inputDom;
+            if (!d.input) {
+                // DOM 未就绪（可能页面未加载），静默返回
+                return;
+            }
+            // 输入变化：防抖识别类型
+            d.input.addEventListener('input', () => {
+                this._lastInput = d.input.value;
+                this._scheduleInputDetect();
+            });
+            // Ctrl+Enter 触发默认行为（添加下载）
+            d.input.addEventListener('keydown', e => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    this._handleAddDownload();
+                }
+            });
+            // 失焦时立即识别一次
+            d.input.addEventListener('blur', () => {
+                if (this._inputDetectTimer) {
+                    clearTimeout(this._inputDetectTimer);
+                    this._inputDetectTimer = null;
+                }
+                this._detectInput();
+            });
+            // 按钮事件
+            if (d.addBtn) {
+                d.addBtn.addEventListener('click', () => this._handleAddDownload());
+            }
+            if (d.pickFileBtn) {
+                d.pickFileBtn.addEventListener('click', () => this._handlePickFile());
+            }
+            if (d.progressCancel) {
+                d.progressCancel.addEventListener('click', () => this._handleInputParseCancel());
+            }
+            // 拖拽支持
+            this._setupInputDropZone();
+            // 初始化徽章
+            this._updateInputBadge('empty');
+            this._updateInputActions();
+        }
+
+        /**
+         * 设置拖拽支持（拖入本地文件直接填入输入框）
+         */
+        _setupInputDropZone() {
+            const { input } = this._inputDom || {};
+            if (!input) return;
+            const isFileDrag = e => {
+                if (!e.dataTransfer || !e.dataTransfer.types) return false;
+                return Array.from(e.dataTransfer.types).includes('Files');
+            };
+            input.addEventListener('dragover', e => {
+                if (isFileDrag(e)) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'copy';
+                    input.classList.add('is-dragover');
+                }
+            });
+            input.addEventListener('dragleave', () => {
+                input.classList.remove('is-dragover');
+            });
+            input.addEventListener('drop', e => {
+                if (!isFileDrag(e)) return;
+                e.preventDefault();
+                input.classList.remove('is-dragover');
+                const file = e.dataTransfer.files && e.dataTransfer.files[0];
+                if (!file) return;
+                // Electron 扩展：file.path 是绝对路径
+                const filePath = file.path || file.name;
+                input.value = filePath;
+                this._lastInput = filePath;
+                this._detectInput();
+            });
+        }
+
+        /**
+         * 防抖触发识别
+         */
+        _scheduleInputDetect() {
+            if (this._inputDetectTimer) {
+                clearTimeout(this._inputDetectTimer);
+            }
+            this._inputDetectTimer = setTimeout(() => {
+                this._inputDetectTimer = null;
+                this._detectInput();
+            }, 150);
+        }
+
+        /**
+         * 识别当前输入并更新徽章与按钮状态
+         */
+        _detectInput() {
+            const { input } = this._inputDom || {};
+            if (!input || !window.inputRecognizer) {
+                return;
+            }
+            const value = input.value;
+            this._lastInput = value;
+            const result = window.inputRecognizer.detectInputType(value);
+            let badgeKey = 'unknown';
+            if (result.type === 'empty') {
+                badgeKey = 'empty';
+            } else if (result.type === 'url') {
+                badgeKey = 'url';
+            } else if (result.type === 'local') {
+                badgeKey = 'local';
+            } else if (result.type === 'magnet') {
+                badgeKey = 'magnet';
+            }
+            this._updateInputBadge(badgeKey);
+            this._updateInputActions();
+        }
+
+        /**
+         * 更新徽章
+         */
+        _updateInputBadge(key) {
+            const { badge } = this._inputDom || {};
+            if (!badge) return;
+            const config = {
+                empty: { text: '🌐 URL', cls: 'is-empty' },
+                url: { text: '🌐 URL', cls: 'is-url' },
+                local: { text: '📁 本地', cls: 'is-local' },
+                magnet: { text: '🧲 磁力', cls: 'is-magnet' },
+                unknown: { text: '❓ 未知', cls: 'is-unknown' }
+            }[key] || { text: '❓ 未知', cls: 'is-unknown' };
+            badge.textContent = config.text;
+            badge.className = 'downloads-input-badge ' + config.cls;
+        }
+
+        /**
+         * 更新按钮启用状态
+         */
+        _updateInputActions() {
+            const { addBtn, input } = this._inputDom || {};
+            if (!addBtn || !input || !window.inputRecognizer) {
+                return;
+            }
+            const result = window.inputRecognizer.detectInputType(input.value);
+            const enabled = result.type === 'url' || result.type === 'local' || result.type === 'magnet';
+            addBtn.disabled = !enabled;
+        }
+
+        /**
+         * 处理"添加下载"按钮点击
+         * 默认行为：URL → 持久化下载；磁力 → 添加下载任务；本地 → 导入到下载目录
+         */
+        async _handleAddDownload() {
+            if (!window.inputRecognizer) return;
+            const { addBtn } = this._inputDom || {};
+            if (addBtn && addBtn.disabled) return;
+            const result = window.inputRecognizer.detectInputType(this._lastInput);
+            if (result.type === 'empty' || result.type === 'unknown') {
+                this.app.componentService.showNotification('请输入有效的视频链接、磁力链或本地路径', 'warning');
+                return;
+            }
+            if (result.type === 'magnet') {
+                const magnetUri = result.magnetUri || ('magnet:?xt=urn:btih:' + result.hash);
+                await this._downloadMagnet(magnetUri, result.hash || '');
+            } else if (result.type === 'url') {
+                await this._downloadNetworkUrl(result.url || this._lastInput);
+            } else if (result.type === 'local') {
+                await this._importLocalFile(result.path || this._lastInput);
+            }
+        }
+
+        /**
+         * 处理选择本地文件按钮
+         * 选择文件后自动导入到下载目录（不直接播放，播放入口在任务卡片中）
+         */
+        async _handlePickFile() {
+            if (!window.electron || !window.electron.ipcRenderer) {
+                this.app.componentService.showNotification('Electron 环境不可用', 'error');
+                return;
+            }
+            try {
+                const result = await window.electron.ipcRenderer.invoke('select-video-file');
+                if (!result || !result.success) {
+                    return; // 用户取消
+                }
+                const filePath = result.filePath;
+                if (this._inputDom && this._inputDom.input) {
+                    this._inputDom.input.value = filePath;
+                    this._lastInput = filePath;
+                }
+                this._detectInput();
+                // 自动导入到下载目录（用户要求：播放入口在任务卡片中，输入区只负责添加下载）
+                await this._importLocalFile(filePath);
+            } catch (error) {
+                console.error('[DOWNLOAD-CTRL] 选择文件失败:', error);
+                this.app.componentService.showNotification(`选择文件失败: ${error.message}`, 'error');
+            }
+        }
+
+        /**
+         * 取消正在进行的解析/下载
+         */
+        _handleInputParseCancel() {
+            this._inputParseCancelled = true;
+            if (this._inputTimeoutTimer1) {
+                clearTimeout(this._inputTimeoutTimer1);
+                this._inputTimeoutTimer1 = null;
+            }
+            if (this._inputTimeoutTimer2) {
+                clearTimeout(this._inputTimeoutTimer2);
+                this._inputTimeoutTimer2 = null;
+            }
+            this._hideInputProgress();
+            this.app.componentService.showNotification('已取消', 'info');
+        }
+
+        /**
+         * URL 持久化下载（streaming mode='download'）
+         * 下载到 downloadDir，完成后写入 manifest 统一管理
+         * @param {string} url
+         */
+        async _downloadNetworkUrl(url) {
+            if (!url) return;
+            if (!window.electron || !window.electron.streaming) {
+                this.app.componentService.showNotification('下载服务不可用', 'error');
+                return;
+            }
+            const fileName = this._extractFileName(url) || '网络视频';
+            this._inputParseCancelled = false;
+            this._showInputProgress(`正在下载: ${fileName}`, 0, 'info');
+            try {
+                const result = await window.electron.streaming.start({
+                    source: { type: 'url', value: url },
+                    autoPlay: false,
+                    mode: 'download',
+                    priority: 'normal'
+                });
+                if (!result || !result.success) {
+                    const err = (result && result.error) || '未知错误';
+                    this._showInputProgress(`下载失败: ${err}`, 0, 'error');
+                    this._autoHideInputProgress();
+                    this.app.componentService.showNotification(`下载失败: ${err}`, 'error');
+                    return;
+                }
+                // 下载已启动，后续进度由 streaming:progress 事件更新
+                this._showInputProgress(`已开始下载: ${fileName}`, 5, 'info');
+                this.app.componentService.showNotification(`已开始下载: ${fileName}`, 'success');
+                // 清空输入框，准备下一次输入
+                if (this._inputDom && this._inputDom.input) {
+                    this._inputDom.input.value = '';
+                    this._lastInput = '';
+                }
+                this._detectInput();
+                // 3 秒后隐藏输入区进度条（后续进度由任务卡片显示）
+                setTimeout(() => {
+                    if (!this._inputParseCancelled) {
+                        this._hideInputProgress();
+                    }
+                }, 3000);
+            } catch (error) {
+                console.error('[DOWNLOAD-CTRL] URL 下载失败:', error);
+                this._showInputProgress(`下载异常: ${error.message}`, 0, 'error');
+                this._autoHideInputProgress();
+                this.app.componentService.showNotification(`下载异常: ${error.message}`, 'error');
+            }
+        }
+
+        /**
+         * 磁力链下载（解析 + 文件选择 + 添加任务）
+         * 复用 PlayUrlController._handleMagnet 的完整流程
+         * @param {string} magnetUri
+         * @param {string} infoHash
+         */
+        async _downloadMagnet(magnetUri, infoHash) {
+            const svc = this._ensurePlaybackService();
+            if (!svc) return;
+            // PlayUrlController._handleMagnet 默认行为就是"添加下载任务"
+            await svc._handleMagnet(magnetUri, infoHash);
+        }
+
+        /**
+         * 导入本地文件到下载目录
+         * @param {string} filePath
+         */
+        async _importLocalFile(filePath) {
+            if (!window.electron || !window.electron.ipcRenderer) {
+                this.app.componentService.showNotification('Electron 环境不可用', 'error');
+                return;
+            }
+            try {
+                // 复用现有 download-import-local IPC（支持传入指定文件路径）
+                const res = await window.electron.ipcRenderer.invoke('download-import-local', { filePath });
+                if (res && res.success) {
+                    const count = (res.imported || []).length;
+                    this.app.componentService.showNotification(`已导入 ${count} 个文件`, 'success');
+                    this._loadFiles();
+                    // 清空输入框
+                    if (this._inputDom && this._inputDom.input) {
+                        this._inputDom.input.value = '';
+                        this._lastInput = '';
+                    }
+                    this._detectInput();
+                } else if (res && res.message) {
+                    // 取消是正常的，不报错
+                } else {
+                    this.app.componentService.showNotification(`导入失败: ${res?.error || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                this.app.componentService.showNotification('导入异常: ' + error.message, 'error');
+            }
+        }
+
+        /**
+         * streaming:completed 事件处理：URL 下载完成后写入 manifest
+         * 让 URL 下载任务与磁力任务统一在任务列表中管理
+         * @param {Object} payload - { taskId, name, size, savePath, source }
+         */
+        async _handleStreamingCompletedForManifest(payload) {
+            if (!payload || !payload.taskId) return;
+            try {
+                // 获取 streaming 任务详情（包含 source 和 savePath）
+                let taskInfo = null;
+                if (window.electron.streaming && typeof window.electron.streaming.getTask === 'function') {
+                    const r = await window.electron.streaming.getTask(payload.taskId);
+                    if (r && r.success && r.task) {
+                        taskInfo = r.task;
+                    }
+                }
+                if (!taskInfo) return;
+                // 仅处理 url 类型（磁力由 magnet-status 写入 manifest）
+                if (!taskInfo.source || taskInfo.source.type !== 'url') return;
+                const url = taskInfo.source.value || '';
+                const savePath = taskInfo.savePath || '';
+                if (!url || !savePath) return;
+                // 调用 url-add-task IPC 写入 manifest（status='completed'）
+                const fileName = this._extractFileName(url) || taskInfo.name || '网络视频';
+                const r = await window.electron.ipcRenderer.invoke('url-add-task', {
+                    url,
+                    fileName,
+                    filePath: savePath,
+                    fileSize: payload.size || 0
+                });
+                if (r && r.success) {
+                    // 刷新任务列表显示新任务
+                    this._loadFiles();
+                    this._refreshStorageInfo();
+                }
+            } catch (e) {
+                console.error('[DOWNLOAD-CTRL] URL 下载完成写入 manifest 失败:', e);
+            }
+        }
+
+        /**
+         * 显示输入区进度条
+         * @param {string} text 状态文本
+         * @param {number} percent 进度百分比(0-100)
+         * @param {'info'|'warning'|'success'|'error'} variant 变体类型
+         */
+        _showInputProgress(text, percent, variant) {
+            const { progress, progressStatus, progressFill } = this._inputDom || {};
+            if (!progress) return;
+            progress.classList.remove('is-warning', 'is-success', 'is-error');
+            if (variant && variant !== 'info') {
+                progress.classList.add('is-' + variant);
+            }
+            progress.style.display = 'block';
+            if (progressFill) {
+                const safePct = isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+                progressFill.style.width = safePct + '%';
+            }
+            if (progressStatus) {
+                progressStatus.textContent = text || '';
+            }
+        }
+
+        /**
+         * 隐藏输入区进度条
+         */
+        _hideInputProgress() {
+            const { progress } = this._inputDom || {};
+            if (progress) {
+                progress.style.display = 'none';
+            }
+            if (this._inputAutoHideTimer) {
+                clearTimeout(this._inputAutoHideTimer);
+                this._inputAutoHideTimer = null;
+            }
+        }
+
+        /**
+         * 错误状态下自动隐藏进度条
+         */
+        _autoHideInputProgress() {
+            if (this._inputAutoHideTimer) {
+                clearTimeout(this._inputAutoHideTimer);
+            }
+            this._inputAutoHideTimer = setTimeout(() => {
+                this._hideInputProgress();
+                this._inputAutoHideTimer = null;
+            }, 4000);
+        }
+
+        /**
+         * 提取文件名
+         */
+        _extractFileName(urlOrPath) {
+            try {
+                const cleaned = String(urlOrPath).split('?')[0].split('#')[0];
+                const parts = cleaned.split(/[\\/]/);
+                return parts[parts.length - 1] || '';
+            } catch (e) {
+                return '';
+            }
+        }
+
+        /**
+         * 从磁力 URI 提取 infoHash
+         */
+        _extractInfoHash(magnetUri) {
+            if (!magnetUri || typeof magnetUri !== 'string') return '';
+            const m = magnetUri.match(/btih:([a-fA-F0-9]{40}|[A-Z2-7]{32})/i);
+            return m ? m[1] : '';
+        }
+
+        /**
+         * 获取播放服务（PlayUrlController 实例）
+         * 复用 app.playUrlController 单例，避免重复创建实例导致事件订阅冲突
+         * PlayUrlController 改造为容忍 DOM 缺失，可作为内部播放服务使用
+         * 进度反馈通过全局浮动进度条 #global-magnet-progress 显示
+         */
+        _ensurePlaybackService() {
+            if (this._playbackService) return this._playbackService;
+            // 优先复用 app 单例（components.js 历史回放也用这个实例）
+            if (this.app && this.app.playUrlController) {
+                this._playbackService = this.app.playUrlController;
+                // 确保已初始化（容忍 DOM 缺失）
+                if (!this._playbackService._cancelListenerBound) {
+                    try {
+                        this._playbackService.initialize();
+                    } catch (e) {
+                        console.error('[DOWNLOAD-CTRL] 初始化播放服务失败:', e);
+                    }
+                }
+                return this._playbackService;
+            }
+            // 兜底：自己创建一个（理论上 app 会在初始化时创建）
+            if (!window.PlayUrlController) {
+                console.error('[DOWNLOAD-CTRL] PlayUrlController 类未加载');
+                return null;
+            }
+            try {
+                this._playbackService = new window.PlayUrlController(this.app);
+                this._playbackService.initialize();
+                // 同步挂到 app 上，供 components.js 使用
+                if (this.app) {
+                    this.app.playUrlController = this._playbackService;
+                }
+                return this._playbackService;
+            } catch (e) {
+                console.error('[DOWNLOAD-CTRL] 初始化播放服务失败:', e);
+                return null;
             }
         }
 
@@ -366,6 +861,9 @@
             // status 直接信任主进程透传过来的值（用户可控的 paused/downloading/completed），
             // 不要被 progress 事件里的 peer-state（no-peers/connected-waiting）覆盖
             if (data.status) task.status = data.status;
+            // peerState: 子进程上报的 peer 连接状态（active/no-peers/stalled/completed）
+            // 独立于 task.status，UI 据此显示"找不到 peer"/"等待数据"等额外提示
+            if (data.peerState) task.peerState = data.peerState;
             if (Number.isFinite(data.downloadSpeed)) task.downloadSpeed = data.downloadSpeed;
             if (Number.isFinite(data.numPeers)) task.numPeers = data.numPeers;
             if (data.eta != null) task.eta = data.eta; // 允许 null
@@ -651,6 +1149,15 @@
             const sizeText = this._formatSize(t.totalSize || 0);
             const downloadedText = this._formatSize(t.downloaded || 0);
             const safeName = this._escapeHtml(t.name);
+            // 磁力任务额外显示 peer 连接状态（独立于 task.status）
+            // - no-peers: 找不到 peer，下载无法启动（最常见：tracker 不可达/资源无人做种）
+            // - stalled: 有 peer 但无数据传输（peer 不提供该文件块）
+            // 仅在 downloading 状态且 peerState 非空时显示，避免 completed/paused 干扰
+            let peerStateHint = '';
+            if (t.status === 'downloading' && t.peerState && (t.peerState === 'no-peers' || t.peerState === 'stalled')) {
+                const hint = t.peerState === 'no-peers' ? '找不到 peer' : '等待数据';
+                peerStateHint = `<span class="downloads-task-peer-hint" title="${hint}">· ${hint}</span>`;
+            }
 
             return `
                 <div class="downloads-task-card" data-id="${this._escapeHtml(t.id)}">
@@ -662,7 +1169,7 @@
                         <div class="downloads-task-progress-fill" style="width: ${progress}%"></div>
                     </div>
                     <div class="downloads-task-meta">
-                        <span>${completedCount}/${fileCount} 已完成 · ${activeCount} 个下载中</span>
+                        <span>${completedCount}/${fileCount} 已完成 · ${activeCount} 个下载中${peerStateHint}</span>
                         <span>${downloadedText} / ${sizeText} · ${progress}%</span>
                     </div>
                     <div class="downloads-task-actions">
@@ -721,7 +1228,8 @@
         }
 
         /**
-         * 渲染任务详情页：标题 + 文件列表
+         * 渲染任务详情页：标题 + 文件列表（按目录树分组）
+         * 磁力任务的文件可能含多层目录结构（relativePath 字段），按目录树展示更直观
          */
         _renderTaskDetail(task) {
             const titleEl = document.getElementById('task-detail-title');
@@ -730,7 +1238,22 @@
             if (!filesEl) return;
 
             const files = Array.isArray(task.files) ? task.files : [];
-            filesEl.innerHTML = files.map(f => this._renderFileDetailItem(task.id, f)).join('');
+            // 构建目录树并渲染
+            const tree = this._buildFileTree(files);
+            filesEl.innerHTML = this._renderFileTree(tree, 0);
+
+            // 绑定目录折叠/展开事件
+            filesEl.querySelectorAll('.task-detail-dir-header').forEach(header => {
+                header.addEventListener('click', e => {
+                    if (e.target.closest('.task-detail-file')) return;
+                    const dirEl = header.parentElement;
+                    dirEl.classList.toggle('task-detail-dir--collapsed');
+                    const arrow = header.querySelector('.task-detail-dir-arrow');
+                    if (arrow) {
+                        arrow.textContent = dirEl.classList.contains('task-detail-dir--collapsed') ? '▶' : '▼';
+                    }
+                });
+            });
 
             // 绑定文件操作事件
             filesEl.querySelectorAll('.task-detail-file').forEach(el => {
@@ -747,10 +1270,91 @@
         }
 
         /**
+         * 构建文件目录树
+         * 把扁平文件列表（含 relativePath 字段）构建成嵌套目录树
+         * @param {Array} files - 文件列表
+         * @returns {object} 根节点 { name, children: Map, files: [], fullPath }
+         */
+        _buildFileTree(files) {
+            const root = {
+                name: '',
+                children: new Map(),
+                files: [],
+                fullPath: ''
+            };
+            for (const f of files) {
+                // relativePath 是 torrent 内部相对路径（含目录结构，如 "MyTorrent/Season 1/ep01.mp4"）
+                // 旧数据可能没有 relativePath，用 name 兜底（根目录文件）
+                // 关键：同时处理 / 和 \ 分隔符，因为 parse-torrent 在 Windows 上用 path.join 生成 \ 分隔的路径
+                const fullPath = f.relativePath || f.name || '';
+                const segments = String(fullPath).split(/[\\/]/).filter(Boolean);
+                if (segments.length <= 1) {
+                    root.files.push(f);
+                    continue;
+                }
+                let current = root;
+                for (let i = 0; i < segments.length - 1; i++) {
+                    const seg = segments[i];
+                    if (!current.children.has(seg)) {
+                        current.children.set(seg, {
+                            name: seg,
+                            children: new Map(),
+                            files: [],
+                            fullPath: segments.slice(0, i + 1).join('/')
+                        });
+                    }
+                    current = current.children.get(seg);
+                }
+                current.files.push(f);
+            }
+            return root;
+        }
+
+        /**
+         * 递归渲染文件目录树为 HTML
+         * @param {object} node - 当前目录节点
+         * @param {number} depth - 当前深度（用于缩进）
+         * @returns {string} HTML 字符串
+         */
+        _renderFileTree(node, depth) {
+            let html = '';
+            for (const child of node.children.values()) {
+                html += this._renderDirNode(child, depth);
+            }
+            for (const f of node.files) {
+                html += this._renderFileDetailItem(f, depth);
+            }
+            return html;
+        }
+
+        /**
+         * 渲染目录节点（任务详情页用）
+         * @param {object} dir - 目录节点
+         * @param {number} depth - 当前深度
+         * @returns {string} HTML 字符串
+         */
+        _renderDirNode(dir, depth) {
+            const padLeft = depth * 16 + 8;
+            const childrenHtml = this._renderFileTree(dir, depth + 1);
+            return `
+                <div class="task-detail-dir" data-path="${this._escapeHtml(dir.fullPath)}">
+                    <div class="task-detail-dir-header" style="padding-left: ${padLeft}px">
+                        <span class="task-detail-dir-arrow" title="折叠/展开">▼</span>
+                        <span class="task-detail-dir-icon">📁</span>
+                        <span class="task-detail-dir-name" title="${this._escapeHtml(dir.fullPath)}">${this._escapeHtml(dir.name)}</span>
+                    </div>
+                    <div class="task-detail-dir-content">${childrenHtml}</div>
+                </div>
+            `;
+        }
+
+        /**
          * 渲染任务详情页的单个文件项
          * 显示：图标 + 名称 + 状态/大小/进度 + 进度条 + 优先级切换 + 播放/删除按钮
+         * @param {object} f - 文件数据
+         * @param {number} depth - 目录深度（用于缩进）
          */
-        _renderFileDetailItem(taskId, f) {
+        _renderFileDetailItem(f, depth = 0) {
             const statusMeta = STATUS_META[f.status] || STATUS_META.completed;
             const progress = f.size > 0 ? Math.round((f.downloaded / f.size) * 100) : 0;
             const sizeText = this._formatSize(f.size);
@@ -758,9 +1362,10 @@
             // priority > 0 = 下载；priority == 0 = 不下载（与 _setFilePriority 的切换逻辑匹配）
             const priorityLabel = f.priority > 0 ? '下载' : '不下载';
             const safeName = this._escapeHtml(f.name);
+            const padLeft = depth * 16 + 8;
 
             return `
-                <div class="task-detail-file" data-file-id="${this._escapeHtml(f.id)}">
+                <div class="task-detail-file" data-file-id="${this._escapeHtml(f.id)}" style="padding-left: ${padLeft}px">
                     <span class="task-detail-file-icon">🎬</span>
                     <div class="task-detail-file-info">
                         <div class="task-detail-file-name" title="${safeName}">${safeName}</div>
@@ -1150,7 +1755,8 @@
             try {
                 localCheck = await window.electron.ipcRenderer.invoke('magnet-check-local', {
                     infoHash,
-                    fileName
+                    fileName,
+                    filePath: file.path || ''
                 });
             } catch (e) {
                 // 快速路径查不到不报错,继续走 webtorrent 兜底

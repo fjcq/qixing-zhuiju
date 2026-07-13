@@ -56,9 +56,18 @@ contextBridge.exposeInMainWorld('electron', {
                 'magnet-resume',
                 'magnet-remove',
                 'magnet-replay',
+                'magnet-set-status',
+                // 任务级磁力下载 IPC（Task 3 新增）
+                'magnet-resolve-files',
+                'magnet-add-task',
                 // 下载管理相关
                 'download-list',
                 'download-list-active',
+                'download-list-tasks',
+                'download-get-task',
+                'download-delete-task',
+                'download-delete-file',
+                'download-set-file-priority',
                 'download-rename',
                 'download-delete',
                 'download-move',
@@ -68,6 +77,7 @@ contextBridge.exposeInMainWorld('electron', {
                 'download-cancel-task',
                 'download-list-folders',
                 'download-import-local',
+                'url-add-task',
                 'check-file-exists',
                 'magnet-check-local',
                 // Node.js 运行环境相关
